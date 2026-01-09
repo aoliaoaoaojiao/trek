@@ -193,7 +193,7 @@ func NewStatefulAction(state *State, targetWidget *Widget, actionType ActionType
 
 	asa.Hashcode = 0x9e3779b9 + (hashcode << 2) ^ (((stateHash << 4) ^ (targetHash << 3)) << 1)
 
-	log.Debugf("activity state action created hashcode:%d stateHash:%d targetHash:%d", asa.Hashcode, stateHash, targetHash)
+	log.Debugf("page state action created hashcode:%d stateHash:%d targetHash:%d", asa.Hashcode, stateHash, targetHash)
 
 	return asa
 }
@@ -305,10 +305,10 @@ type NetActionParam struct {
 	DeviceID        string `json:"device_id"`
 }
 
-// StatefulActionList ActivityStateAction指针切片
+// StatefulActionList PageNameStateAction指针切片
 type StatefulActionList []*StatefulAction
 
-// StatefulActionSet ActivityStateAction指针集合
+// StatefulActionSet PageNameStateAction指针集合
 type StatefulActionSet map[uintptr]*StatefulAction
 
 // Add 添加到集合

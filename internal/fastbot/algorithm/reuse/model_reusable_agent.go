@@ -2,7 +2,7 @@ package reuse
 
 import (
 	"Trek/internal/fastbot/core/model"
-	types2 "Trek/internal/fastbot/core/types"
+	"Trek/internal/fastbot/core/types"
 	"Trek/internal/fastbot/tool"
 	"Trek/log"
 	"math"
@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-var _ types2.IAgent = (*ModelReusableAgent)(nil)
+var _ types.IAgent = (*ModelReusableAgent)(nil)
 
 const (
 	SarsaRLDefaultAlpha     = 0.25
@@ -28,13 +28,13 @@ type ReuseEntryQValueMap map[uintptr]float64
 
 type ModelReusableAgent struct {
 	model                           *model.Model
-	lastState                       types2.IState
-	currentState                    types2.IState
-	newState                        types2.IState
-	lastAction                      *types2.StatefulAction
-	currentAction                   *types2.StatefulAction
-	newAction                       *types2.StatefulAction
-	validateFilter                  types2.IStatefulActionFilter
+	lastState                       types.IState
+	currentState                    types.IState
+	newState                        types.IState
+	lastAction                      *types.StatefulAction
+	currentAction                   *types.StatefulAction
+	newAction                       *types.StatefulAction
+	validateFilter                  types.IStatefulActionFilter
 	graphStableCounter              int64
 	stateStableCounter              int64
 	pageNameStableCounter           int64
@@ -49,7 +49,7 @@ type ModelReusableAgent struct {
 	alpha           float64
 	epsilon         float64
 	rewardCache     []float64
-	previousActions []types2.IAction
+	previousActions []types.IAction
 	reuseModel      ReuseEntryIntMap
 	reuseQValue     ReuseEntryQValueMap
 	modelSavePath   string
@@ -58,7 +58,7 @@ type ModelReusableAgent struct {
 
 var defaultModelSavePath = "./model_reuse_data.dat"
 
-var createReuseAgent = func(m *model.Model, deviceType types2.DeviceType) (types2.IAgent, error) {
+var createReuseAgent = func(m *model.Model, deviceType types.DeviceType) (types.IAgent, error) {
 	reuseAgent := NewModelReusableAgent(m)
 
 	go func() {
@@ -70,12 +70,12 @@ var createReuseAgent = func(m *model.Model, deviceType types2.DeviceType) (types
 }
 
 func init() {
-	model.RegisterAgentCreator(types2.Reuse.String(), createReuseAgent)
+	model.RegisterAgentCreator(types.Reuse.String(), createReuseAgent)
 }
 
 func NewModelReusableAgent(model *model.Model) *ModelReusableAgent {
 	agent := &ModelReusableAgent{
-		validateFilter:                  types2.NewActionFilterValidDatePriority(),
+		validateFilter:                  types.NewActionFilterValidDatePriority(),
 		graphStableCounter:              0,
 		stateStableCounter:              0,
 		pageNameStableCounter:           0,
@@ -85,12 +85,12 @@ func NewModelReusableAgent(model *model.Model) *ModelReusableAgent {
 		appPageNameJustStarted:          false,
 		currentStateRecovered:           false,
 		currentStateBlockTimes:          0,
-		algorithmType:                   types2.Reuse.String(),
+		algorithmType:                   types.Reuse.String(),
 		model:                           model,
 		alpha:                           SarsaRLDefaultAlpha,
 		epsilon:                         SarsaRLDefaultEpsilon,
 		rewardCache:                     make([]float64, 0),
-		previousActions:                 make([]types2.IAction, 0),
+		previousActions:                 make([]types.IAction, 0),
 		reuseModel:                      make(ReuseEntryIntMap),
 		reuseQValue:                     make(ReuseEntryQValueMap),
 		modelSavePath:                   defaultModelSavePath,
@@ -98,37 +98,37 @@ func NewModelReusableAgent(model *model.Model) *ModelReusableAgent {
 	return agent
 }
 
-func (a *ModelReusableAgent) CreateState(pageName string, element *types2.Element) types2.IState {
+func (a *ModelReusableAgent) CreateState(pageName string, element *types.Element) types.IState {
 
 	statePointer := Create(pageName, element)
 
 	return &statePointer.State
 }
 
-func (a *ModelReusableAgent) OnAddNode(node types2.IState) {
+func (a *ModelReusableAgent) OnAddNode(node types.IState) {
 	a.newState = node
 
-	if BLOCK_STATETIME_RESTART != -1 {
-		if a.newState.Equals(a.currentState) {
-			a.currentStateBlockTimes++
-		} else {
-			a.currentStateBlockTimes = 0
-		}
-	}
+	//if BLOCK_STATETIME_RESTART != -1 {
+	//	if a.newState.Equals(a.currentState) {
+	//		a.currentStateBlockTimes++
+	//	} else {
+	//		a.currentStateBlockTimes = 0
+	//	}
+	//}
 }
 
 func (a *ModelReusableAgent) GetCurrentStateBlockTimes() int {
 	return a.currentStateBlockTimes
 }
 
-func (a *ModelReusableAgent) ResolveNewAction() types2.IAction {
+func (a *ModelReusableAgent) ResolveNewAction() types.IAction {
 	a.adjustActions()
 	action := a.SelectNewAction()
 	if action == nil {
 		return nil
 	}
 
-	statefulAction, ok := action.(*types2.StatefulAction)
+	statefulAction, ok := action.(*types.StatefulAction)
 	if !ok {
 		return nil
 	}
@@ -175,7 +175,7 @@ func (a *ModelReusableAgent) UpdateStrategy() {
 	}
 }
 
-func (a *ModelReusableAgent) MoveForward(nextState types2.IState) {
+func (a *ModelReusableAgent) MoveForward(nextState types.IState) {
 	a.lastState = a.currentState
 	a.currentState = a.newState
 	a.newState = nextState
@@ -209,35 +209,35 @@ func (a *ModelReusableAgent) SetModel(model *model.Model) {
 	a.model = model
 }
 
-func (a *ModelReusableAgent) GetLastState() types2.IState {
+func (a *ModelReusableAgent) GetLastState() types.IState {
 	return a.lastState
 }
 
-func (a *ModelReusableAgent) GetCurrentState() types2.IState {
+func (a *ModelReusableAgent) GetCurrentState() types.IState {
 	return a.currentState
 }
 
-func (a *ModelReusableAgent) GetNewState() types2.IState {
+func (a *ModelReusableAgent) GetNewState() types.IState {
 	return a.newState
 }
 
-func (a *ModelReusableAgent) GetLastAction() *types2.StatefulAction {
+func (a *ModelReusableAgent) GetLastAction() *types.StatefulAction {
 	return a.lastAction
 }
 
-func (a *ModelReusableAgent) GetCurrentAction() *types2.StatefulAction {
+func (a *ModelReusableAgent) GetCurrentAction() *types.StatefulAction {
 	return a.currentAction
 }
 
-func (a *ModelReusableAgent) GetNewAction() *types2.StatefulAction {
+func (a *ModelReusableAgent) GetNewAction() *types.StatefulAction {
 	return a.newAction
 }
 
-func (a *ModelReusableAgent) GetValidateFilter() types2.IStatefulActionFilter {
+func (a *ModelReusableAgent) GetValidateFilter() types.IStatefulActionFilter {
 	return a.validateFilter
 }
 
-func (a *ModelReusableAgent) SetValidateFilter(filter types2.IStatefulActionFilter) {
+func (a *ModelReusableAgent) SetValidateFilter(filter types.IStatefulActionFilter) {
 	a.validateFilter = filter
 }
 
@@ -281,14 +281,14 @@ func (a *ModelReusableAgent) SetCurrentStateRecovered(recovered bool) {
 	a.currentStateRecovered = recovered
 }
 
-func (a *ModelReusableAgent) handleNullAction() types2.IAction {
+func (a *ModelReusableAgent) handleNullAction() types.IAction {
 	if a.newState == nil {
 		return nil
 	}
 
 	action := a.newStateRandomPickAction(a.validateFilter)
 	if action != nil {
-		if pageStateAction, ok := action.(*types2.StatefulAction); ok {
+		if pageStateAction, ok := action.(*types.StatefulAction); ok {
 			resolved := a.newState.ResolveAt(pageStateAction, a.model.GetGraph().GetTimestamp())
 			if resolved != nil {
 				return resolved
@@ -299,7 +299,7 @@ func (a *ModelReusableAgent) handleNullAction() types2.IAction {
 	return nil
 }
 
-func (a *ModelReusableAgent) newStateRandomPickAction(filter types2.IStatefulActionFilter) types2.IAction {
+func (a *ModelReusableAgent) newStateRandomPickAction(filter types.IStatefulActionFilter) types.IAction {
 	return a.newState.RandomPickAction(filter, true)
 }
 
@@ -347,8 +347,8 @@ func (a *ModelReusableAgent) adjustActions() {
 	a.newState.SetPriority(int32(totalPriority))
 }
 
-func (a *ModelReusableAgent) SelectNewAction() types2.IAction {
-	var action types2.IAction
+func (a *ModelReusableAgent) SelectNewAction() types.IAction {
+	var action types.IAction
 
 	action = a.selectUnperformedActionNotInReuseModel()
 	if action != nil {
@@ -427,7 +427,7 @@ func (a *ModelReusableAgent) computeRewardOfLatestAction() float64 {
 	log.Debugf("computeReward: visitedPages count %d", len(visitedPages))
 
 	if len(a.previousActions) > 0 {
-		lastSelectedAction := a.previousActions[len(a.previousActions)-1].(*types2.StatefulAction)
+		lastSelectedAction := a.previousActions[len(a.previousActions)-1].(*types.StatefulAction)
 		log.Debugf("computeReward: lastSelectedAction %s %d", lastSelectedAction.GetId(), int(lastSelectedAction.GetVisitedCount()))
 
 		rewardValue = a.probabilityOfVisitingNewActivities(lastSelectedAction, visitedPages)
@@ -461,7 +461,7 @@ func (a *ModelReusableAgent) computeRewardOfLatestAction() float64 {
 	return rewardValue
 }
 
-func (a *ModelReusableAgent) probabilityOfVisitingNewActivities(action *types2.StatefulAction, visitedActivities map[string]struct{}) float64 {
+func (a *ModelReusableAgent) probabilityOfVisitingNewActivities(action *types.StatefulAction, visitedActivities map[string]struct{}) float64 {
 	value := 0.0
 	total := 0
 	unvisited := 0
@@ -483,7 +483,7 @@ func (a *ModelReusableAgent) probabilityOfVisitingNewActivities(action *types2.S
 	return value
 }
 
-func (a *ModelReusableAgent) getStateActionExpectationValue(state types2.IState, visitedActivities map[string]struct{}) float64 {
+func (a *ModelReusableAgent) getStateActionExpectationValue(state types.IState, visitedActivities map[string]struct{}) float64 {
 	value := 0.0
 
 	for _, action := range state.GetActions() {
@@ -503,11 +503,11 @@ func (a *ModelReusableAgent) getStateActionExpectationValue(state types2.IState,
 	return value
 }
 
-func (a *ModelReusableAgent) getQValue(action types2.IAction) float64 {
+func (a *ModelReusableAgent) getQValue(action types.IAction) float64 {
 	return action.GetQValue()
 }
 
-func (a *ModelReusableAgent) setQValue(action types2.IAction, qValue float64) {
+func (a *ModelReusableAgent) setQValue(action types.IAction, qValue float64) {
 	action.SetQValue(qValue)
 }
 
@@ -519,7 +519,7 @@ func (a *ModelReusableAgent) updateReuseModel() {
 
 	lastAction := a.previousActions[len(a.previousActions)-1]
 
-	modelAction, ok := lastAction.(*types2.StatefulAction)
+	modelAction, ok := lastAction.(*types.StatefulAction)
 
 	if !ok || a.newState == nil {
 
@@ -553,8 +553,8 @@ func (a *ModelReusableAgent) updateReuseModel() {
 		modelAction.GetQValue())
 }
 
-func (a *ModelReusableAgent) selectUnperformedActionNotInReuseModel() types2.IAction {
-	var actionsNotInModel []types2.IAction
+func (a *ModelReusableAgent) selectUnperformedActionNotInReuseModel() types.IAction {
+	var actionsNotInModel []types.IAction
 
 	for _, action := range a.newState.GetActions() {
 		if action.IsModelAct() {
@@ -594,8 +594,8 @@ func (a *ModelReusableAgent) selectUnperformedActionNotInReuseModel() types2.IAc
 	return nil
 }
 
-func (a *ModelReusableAgent) selectUnperformedActionInReuseModel() types2.IAction {
-	var nextAction types2.IAction
+func (a *ModelReusableAgent) selectUnperformedActionInReuseModel() types.IAction {
+	var nextAction types.IAction
 	maxValue := -math.MaxFloat64
 
 	for _, action := range a.newState.TargetActions() {
@@ -633,8 +633,8 @@ func (a *ModelReusableAgent) selectUnperformedActionInReuseModel() types2.IActio
 	return nextAction
 }
 
-func (a *ModelReusableAgent) selectActionByQValue() types2.IAction {
-	var returnAction types2.IAction
+func (a *ModelReusableAgent) selectActionByQValue() types.IAction {
+	var returnAction types.IAction
 	maxQ := -math.MaxFloat64
 
 	graphRef := a.model.GetGraph()
@@ -671,10 +671,10 @@ func (a *ModelReusableAgent) selectActionByQValue() types2.IAction {
 	return returnAction
 }
 
-func (a *ModelReusableAgent) selectNewActionEpsilonGreedyRandomly() types2.IAction {
+func (a *ModelReusableAgent) selectNewActionEpsilonGreedyRandomly() types.IAction {
 	if a.eGreedy() {
 		log.Debugf("Try to select the max value action")
-		action := a.newState.GreedyPickAction(types2.EnableValidValuePriorityFilter)
+		action := a.newState.GreedyPickAction(types.EnableValidValuePriorityFilter)
 		if action != nil {
 
 		} else {
@@ -683,7 +683,7 @@ func (a *ModelReusableAgent) selectNewActionEpsilonGreedyRandomly() types2.IActi
 		return action
 	}
 	log.Debugf("Try to randomly select a value action.")
-	action := a.newStateRandomPickAction(types2.EnableValidValuePriorityFilter)
+	action := a.newStateRandomPickAction(types.EnableValidValuePriorityFilter)
 	if action != nil {
 
 	} else {

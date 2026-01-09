@@ -13,7 +13,7 @@ type PageNameAction struct {
 
 // pageName
 
-// NewPageNameAction 创建新的ActivityNameAction
+// NewPageNameAction 创建新的PageNameNameAction
 func NewPageNameAction(pageName string, widget *types.Widget, actionType types.ActionType) *PageNameAction {
 	// 创建基础的StatefulAction
 	baseAction := types.NewStatefulAction(nil, widget, actionType)
@@ -37,7 +37,7 @@ func NewPageNameAction(pageName string, widget *types.Widget, actionType types.A
 	pageAction.Hashcode = 0x9e3779b9 + (pageNameHashCode << 2) ^
 		(((actionTypeHashCode << 6) ^ (targetHash << 1)) << 1)
 
-	log.Debugf("pageName name action created pageName:%s hashcode:%d activityHash:%d targetHash:%d",
+	log.Debugf("pageName name action created pageName:%s hashcode:%d pageHash:%d targetHash:%d",
 		pageName, pageAction.Hashcode, pageNameHashCode, targetHash)
 
 	return pageAction

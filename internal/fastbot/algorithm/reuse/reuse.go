@@ -1,4 +1,4 @@
-// Package reuse 实现重用相关的功能，包括RichWidget、PageNameNameAction和ReuseState
+// Package reuse 实现重用相关的功能，包括RichWidget、ActivityNameAction和ReuseState
 package reuse
 
 import (

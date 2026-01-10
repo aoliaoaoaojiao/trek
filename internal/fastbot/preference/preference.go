@@ -65,7 +65,7 @@ func GetInstance() *Preference {
 	return instance
 }
 
-func (p *Preference) ResolvePageAndGetSpecifiedAction(pageName string, rootXML *types.Element) types.IAction {
+func (p *Preference) ResolvePageAndGetSpecifiedAction(pageName string, rootXML types.IElement) types.IAction {
 	if rootXML != nil {
 		p.resolvePage(pageName, rootXML)
 	}
@@ -101,24 +101,24 @@ func (p *Preference) ResolvePageAndGetSpecifiedAction(pageName string, rootXML *
 	return returnAction
 }
 
-func (p *Preference) resolvePage(pageName string, rootXML *types.Element) {
+func (p *Preference) resolvePage(pageName string, rootXML types.IElement) {
 	p.cachePageTexts(rootXML)
 }
 
-func (p *Preference) cachePageTexts(rootXML *types.Element) {
+func (p *Preference) cachePageTexts(rootXML types.IElement) {
 	if rootXML == nil {
 		return
 	}
-	text := rootXML.Text
+	text := rootXML.GetText()
 	if text != "" {
 		p.pageTextsCache = append(p.pageTextsCache, text)
 	}
-	for _, child := range rootXML.Children {
+	for _, child := range rootXML.GetChildren() {
 		p.cachePageTexts(child)
 	}
 }
 
-func (p *Preference) patchActionBounds(action *CustomAction, rootXML *types.Element) bool {
+func (p *Preference) patchActionBounds(action *CustomAction, rootXML types.IElement) bool {
 	return true
 }
 

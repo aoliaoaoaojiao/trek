@@ -4,6 +4,7 @@ package reuse_proto;
 
 option go_package = "./proto";
 
+
 // 单个页面的访问次数（页面ID -> 次数）
 message PageVisitCount {
   map<string, int32> page_visits = 1;
@@ -15,12 +16,12 @@ message ActionPageStatistics {
 }
 
 // Action的Q值统计（ActionID -> Q值）
-message ActionQValueStatistics {
+message ActionQValue {
   map<uint64, double> action_qvalues = 1;
 }
 
 // 完整的重用模型（包含所有Action的页面统计和Q值）
 message ReuseModel {
   ActionPageStatistics action_statistics = 1;
-  ActionQValueStatistics qvalue_statistics = 2;
+  ActionQValue qvalue_statistics = 2;
 }

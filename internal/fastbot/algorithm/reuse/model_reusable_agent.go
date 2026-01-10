@@ -1,17 +1,17 @@
 package reuse
 
 import (
+	protoPkg "Trek/internal/fastbot/algorithm/reuse/proto"
 	"Trek/internal/fastbot/core/model"
 	"Trek/internal/fastbot/core/types"
 	"Trek/internal/fastbot/tool"
 	"Trek/log"
+	"fmt"
 	"math"
 	"math/rand"
 	"os"
 	"sync"
 	"time"
-
-	protoPkg "Trek/internal/fastbot/algorithm/reuse/proto"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -26,6 +26,10 @@ const (
 	EntropyAlpha            = 0.1
 	BLOCK_STATETIME_RESTART = -1
 )
+
+type PageVisitCount map[string]int
+type ActionPageStatistics map[uintptr]PageVisitCount
+type ActionQValue map[uintptr]float64
 
 type ModelReusableAgent struct {
 	model                           *model.Model
@@ -47,33 +51,47 @@ type ModelReusableAgent struct {
 	currentStateBlockTimes          int
 	algorithmType                   string
 
-	alpha             float64
-	epsilon           float64
-	rewardCache       []float64
-	previousActions   []types.IAction
-	reuseModel        *protoPkg.ActionPageStatistics
-	enableQValueReuse bool
-	reuseQValue       *protoPkg.ActionQValueStatistics
-	modelSavePath     string
-	reuseModelLock    sync.Mutex
+	alpha           float64
+	epsilon         float64
+	rewardCache     []float64
+	previousActions []types.IAction
+	reuseModel      ActionPageStatistics
+	reuseQValue     ActionQValue
+	modelSavePath   string
+	reuseModelLock  sync.Mutex
+
+	stopChan chan struct{}
+	stopOnce sync.Once
 }
 
-func (a *ModelReusableAgent) EnableQValueReuse() bool {
-	return a.enableQValueReuse
+func (a *ModelReusableAgent) Stop() {
+	a.SaveReuseModel() // 在停止前保存模型
+	a.stopOnce.Do(func() {
+		close(a.stopChan)
+	})
 }
-
-func (a *ModelReusableAgent) SetEnableQValueReuse(enableQValueReuse bool) {
-	a.enableQValueReuse = enableQValueReuse
-}
-
-var defaultModelSavePath = "./model_reuse_data.dat"
 
 var createReuseAgent = func(m *model.Model, deviceType types.DeviceType) (types.IAgent, error) {
 	reuseAgent := NewModelReusableAgent(m)
 
+	reuseAgent.LoadReuseModel()
+
+	// 启动定时保存模型的goroutine
 	go func() {
-		time.Sleep(3 * time.Second)
-		//f.threadModelStorage(reuseAgent)
+		ticker := time.NewTicker(10 * time.Minute) // 每10分钟保存一次
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				if err := reuseAgent.SaveReuseModel(); err != nil {
+					log.Errorf("Failed to auto-save reuse model: %v", err)
+				}
+			case <-reuseAgent.stopChan:
+				log.Info("Stopping reuse model auto-save routine")
+				return
+			}
+		}
 	}()
 
 	return reuseAgent, nil
@@ -101,16 +119,19 @@ func NewModelReusableAgent(model *model.Model) *ModelReusableAgent {
 		epsilon:                         SarsaRLDefaultEpsilon,
 		rewardCache:                     make([]float64, 0),
 		previousActions:                 make([]types.IAction, 0),
-		reuseModel:                      &protoPkg.ActionPageStatistics{ActionPages: make(map[uint64]*protoPkg.PageVisitCount)},
-
-		reuseQValue: &protoPkg.ActionQValueStatistics{ActionQvalues: make(map[uint64]float64)},
-
-		modelSavePath: defaultModelSavePath,
+		reuseModel:                      make(ActionPageStatistics),
+		reuseQValue:                     make(ActionQValue),
+		stopChan:                        make(chan struct{}),
+	}
+	if model.GetPackageName() != "" {
+		agent.modelSavePath = fmt.Sprintf("./%s_reuse.model", model.GetPackageName())
+	} else {
+		agent.modelSavePath = "./default_reuse.model"
 	}
 	return agent
 }
 
-func (a *ModelReusableAgent) CreateState(pageName string, element *types.Element) types.IState {
+func (a *ModelReusableAgent) CreateState(pageName string, element types.IElement) types.IState {
 
 	statePointer := Create(pageName, element)
 
@@ -478,12 +499,12 @@ func (a *ModelReusableAgent) probabilityOfVisitingNewActivities(action *types.St
 	total := 0
 	unvisited := 0
 
-	actionMapIterator, exists := a.reuseModel.ActionPages[uint64(action.Hash())]
-	if exists && actionMapIterator != nil {
-		for pageName, count := range actionMapIterator.PageVisits {
-			total += int(count)
+	actionMapIterator := a.reuseModel[action.Hash()]
+	if actionMapIterator != nil {
+		for pageName, count := range actionMapIterator {
+			total += count
 			if _, exists := visitedActivities[pageName]; !exists {
-				unvisited += int(count)
+				unvisited += count
 			}
 		}
 
@@ -501,7 +522,7 @@ func (a *ModelReusableAgent) getStateActionExpectationValue(state types.IState, 
 	for _, action := range state.GetActions() {
 		actionHash := action.Hash()
 
-		if _, exists := a.reuseModel.ActionPages[uint64(actionHash)]; exists {
+		if _, exists := a.reuseModel[actionHash]; !exists {
 			value += 1.0
 		} else if action.GetVisitedCount() >= 1 {
 			value += 0.5
@@ -549,16 +570,17 @@ func (a *ModelReusableAgent) updateReuseModel() {
 	a.reuseModelLock.Lock()
 	defer a.reuseModelLock.Unlock()
 
-	entryMap, exists := a.reuseModel.ActionPages[uint64(hash)]
-	if !exists || entryMap == nil {
+	entryMap := a.reuseModel[hash]
+	if entryMap == nil {
 		log.Debugf("can not find action in reuse map")
-		entryMap = &protoPkg.PageVisitCount{PageVisits: make(map[string]int32)}
-		a.reuseModel.ActionPages[uint64(hash)] = entryMap
+		entryMap = make(PageVisitCount)
+		a.reuseModel[hash] = entryMap
+	} else {
+		//entryMap[pageName]
+		entryMap[pageName]++
 	}
-	// Increment page visit count
-	entryMap.PageVisits[pageName]++
 
-	a.reuseQValue.ActionQvalues[uint64(hash)] = modelAction.GetQValue()
+	a.reuseQValue[hash] = modelAction.GetQValue()
 	log.Debugf("Updated Q-value for action %s: %.6f",
 		modelAction.GetId(),
 		modelAction.GetQValue())
@@ -570,7 +592,7 @@ func (a *ModelReusableAgent) selectUnperformedActionNotInReuseModel() types.IAct
 	for _, action := range a.newState.GetActions() {
 		if action.IsModelAct() {
 			actionHash := action.Hash()
-			if _, exists := a.reuseModel.ActionPages[uint64(actionHash)]; !exists {
+			if _, exists := a.reuseModel[actionHash]; !exists {
 				if action.GetVisitedCount() <= 0 {
 					actionsNotInModel = append(actionsNotInModel, action)
 				}
@@ -612,7 +634,7 @@ func (a *ModelReusableAgent) selectUnperformedActionInReuseModel() types.IAction
 	for _, action := range a.newState.TargetActions() {
 		actionHash := action.Hash()
 
-		if _, exists := a.reuseModel.ActionPages[uint64(actionHash)]; exists {
+		if _, exists := a.reuseModel[actionHash]; exists {
 			if action.GetVisitedCount() > 0 {
 				log.Debugf("action has been visited")
 				continue
@@ -656,7 +678,7 @@ func (a *ModelReusableAgent) selectActionByQValue() types.IAction {
 		actionHash := action.Hash()
 
 		if action.GetVisitedCount() <= 0 {
-			if _, exists := a.reuseModel.ActionPages[uint64(actionHash)]; exists {
+			if _, exists := a.reuseModel[actionHash]; exists {
 				qv += a.probabilityOfVisitingNewActivities(action, visitedActivities)
 			} else {
 				log.Debugf("qvalue pick return a action: %s", action.String())
@@ -713,95 +735,111 @@ func (a *ModelReusableAgent) eGreedy() bool {
 	return true
 }
 
-func (a *ModelReusableAgent) LoadReuseModel(modelFilepath string) {
-	loadFilePath := modelFilepath
-	if loadFilePath == "" {
-		loadFilePath = a.modelSavePath
-	}
-	log.Infof("begin load model: %s", loadFilePath)
+func (a *ModelReusableAgent) LoadReuseModel() {
+	log.Infof("begin load model: %s", a.modelSavePath)
 
 	a.reuseModelLock.Lock()
 	defer a.reuseModelLock.Unlock()
 
 	// 读取文件
-	data, err := os.ReadFile(loadFilePath)
+	data, err := os.ReadFile(a.modelSavePath)
 	if err != nil {
 		log.Errorf("Failed to read reuse model file: %v", err)
-		// 如果文件不存在，则保留现有的空模型
-		if os.IsNotExist(err) {
-			log.Info("Model file does not exist, starting with empty model")
-			return
-		}
 		return
 	}
 
-	// 创建一个新的 ReuseModel 实例
+	// 解析protobuf数据
 	fullModel := &protoPkg.ReuseModel{}
-
-	// 反序列化模型
 	err = proto.Unmarshal(data, fullModel)
 	if err != nil {
 		log.Errorf("Failed to unmarshal reuse model: %v", err)
 		return
 	}
 
-	// 将加载的模型赋值给 agent 的 reuseModel 和 reuseQValue
-	a.reuseModel = fullModel.GetActionStatistics()
-	if a.reuseModel == nil {
-		a.reuseModel = &protoPkg.ActionPageStatistics{ActionPages: make(map[uint64]*protoPkg.PageVisitCount)}
-	}
-
-	if a.enableQValueReuse {
-		a.reuseQValue = fullModel.GetQvalueStatistics()
-		if a.reuseQValue == nil {
-			a.reuseQValue = &protoPkg.ActionQValueStatistics{ActionQvalues: make(map[uint64]float64)}
+	// 将protobuf数据转换为内存数据结构
+	if fullModel.ActionStatistics != nil {
+		for actionId, pageVisitCount := range fullModel.ActionStatistics.ActionPages {
+			if pageVisitCount != nil {
+				reuseEntryM := make(PageVisitCount)
+				for pageId, count := range pageVisitCount.PageVisits {
+					reuseEntryM[pageId] = int(count)
+				}
+				a.reuseModel[uintptr(actionId)] = reuseEntryM
+			}
 		}
-	} else {
-		a.reuseQValue = &protoPkg.ActionQValueStatistics{ActionQvalues: make(map[uint64]float64)}
 	}
 
-	log.Infof("Successfully loaded reuse model from %s", loadFilePath)
+	if fullModel.QvalueStatistics != nil {
+		for actionId, qvalue := range fullModel.QvalueStatistics.ActionQvalues {
+			a.reuseQValue[uintptr(actionId)] = qvalue
+		}
+	}
+
+	log.Infof("Successfully loaded reuse model from %s", a.modelSavePath)
 }
 
-func (a *ModelReusableAgent) SaveReuseModel(modelFilepath string) {
-	outputFilePath := modelFilepath
-	if outputFilePath == "" {
-		outputFilePath = a.modelSavePath
-	}
+func (a *ModelReusableAgent) SaveReuseModel() error {
+
+	outputFilePath := a.modelSavePath
+
 	log.Infof("save model to path: %s", outputFilePath)
 
 	a.reuseModelLock.Lock()
 	defer a.reuseModelLock.Unlock()
 
-	// 创建完整的 ReuseModel 结构
-	fullModel := &protoPkg.ReuseModel{
-		ActionStatistics: a.reuseModel,
-	}
-	if a.enableQValueReuse {
-		fullModel.QvalueStatistics = a.reuseQValue
+	// 将内存数据结构转换为protobuf格式
+	actionStatistics := &protoPkg.ActionPageStatistics{
+		ActionPages: make(map[uint64]*protoPkg.PageVisitCount),
 	}
 
-	// 序列化模型
+	for actionId, entryMap := range a.reuseModel {
+		if entryMap != nil {
+			pageVisitCount := &protoPkg.PageVisitCount{
+				PageVisits: make(map[string]int32),
+			}
+			for pageId, count := range entryMap {
+				pageVisitCount.PageVisits[pageId] = int32(count)
+			}
+			actionStatistics.ActionPages[uint64(actionId)] = pageVisitCount
+		}
+	}
+
+	qvalueStatistics := &protoPkg.ActionQValue{
+		ActionQvalues: make(map[uint64]float64),
+	}
+
+	for actionId, qvalue := range a.reuseQValue {
+		qvalueStatistics.ActionQvalues[uint64(actionId)] = qvalue
+	}
+
+	// 创建完整的模型
+	fullModel := &protoPkg.ReuseModel{
+		ActionStatistics: actionStatistics,
+		QvalueStatistics: qvalueStatistics,
+	}
+
+	// 序列化为protobuf格式
 	data, err := proto.Marshal(fullModel)
 	if err != nil {
 		log.Errorf("Failed to marshal reuse model: %v", err)
-		return
+		return err
 	}
 
 	// 写入文件
 	if err := os.WriteFile(outputFilePath, data, 0644); err != nil {
 		log.Errorf("Failed to save reuse model to file: %v", err)
-		return
+		return err
 	}
 
 	log.Infof("Successfully saved reuse model to %s", outputFilePath)
+	return nil
 }
 
-func (a *ModelReusableAgent) GetReuseModel() *protoPkg.ActionPageStatistics {
+func (a *ModelReusableAgent) GetReuseModel() ActionPageStatistics {
 	return a.reuseModel
 }
 
-func (a *ModelReusableAgent) GetReuseQValue() *protoPkg.ActionQValueStatistics {
+func (a *ModelReusableAgent) GetReuseQValue() ActionQValue {
 	return a.reuseQValue
 }
 

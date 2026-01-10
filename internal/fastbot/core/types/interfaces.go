@@ -27,7 +27,8 @@ type IAgent interface {
 	UpdateStrategy()
 	MoveForward(nextState IState)
 	GetAlgorithmType() string
-	CreateState(pageName string, element *Element) IState
+	CreateState(pageName string, element IElement) IState
+	Stop()
 }
 
 type HashNode interface {
@@ -89,4 +90,60 @@ type IState interface {
 	ClearDetails()
 	Equals(state IState) bool
 	IsSaturated(action *StatefulAction) bool
+}
+
+type IElement interface {
+	SimpleIdentifier() uintptr
+
+	GetParent() IElement
+
+	GetText() string
+
+	GetValidText() string
+
+	GetClickable() bool
+
+	GetLongClickable() bool
+
+	GetCheckBoxable() bool
+
+	GetEnable() bool
+	//SetEnable(enable bool)
+
+	IsEditText() bool
+
+	GetScrollType() ScrollType
+
+	GetBounds() *Rect
+
+	GetPath() string
+
+	GetChildren() []IElement
+}
+
+// IWidget Widget接口，定义了Widget的基本操作和属性访问方法
+type IWidget interface {
+	// 基础信息获取方法
+	GetElementIdentifier() uintptr
+	GetText() string
+	GetBounds() *Rect
+	GetEnabled() bool
+	GetPath() string
+
+	// 操作和动作相关方法
+	HasOperate(opt OperateType) bool
+	HasAction() bool
+	GetActions() []ActionType
+	IsEditable() bool
+
+	// 层级关系方法
+	GetParent() IWidget
+
+	// 标识和哈希方法
+	Hash() uintptr
+
+	// 字符串表示
+	String() string
+
+	ClearDetails()
 }

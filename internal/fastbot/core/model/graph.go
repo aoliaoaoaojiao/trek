@@ -41,9 +41,9 @@ type Graph struct {
 	types.Node
 	states           types.StateSet
 	visitedPages     map[string]struct{}
-	pageDistri       map[string]PairIntFloat
+	pageDistri       map[string]VisitCountReward
 	totalDistri      int64
-	widgetActions    map[*types.Widget]types.StatefulActionSet
+	widgetActions    map[uintptr]types.StatefulActionSet
 	unvisitedActions types.StatefulActionSet
 	visitedActions   types.StatefulActionSet
 	actionCounter    ActionCounter
@@ -51,9 +51,9 @@ type Graph struct {
 	timeStamp        time.Time
 }
 
-type PairIntFloat struct {
-	First  int
-	Second float64
+type VisitCountReward struct {
+	Count  int     // 访问计数
+	Reward float64 // 奖励值
 }
 
 func NewGraph() *Graph {
@@ -61,10 +61,10 @@ func NewGraph() *Graph {
 		Node:             *types.NewNode(),
 		states:           make(types.StateSet),
 		visitedPages:     make(map[string]struct{}),
-		pageDistri:       make(map[string]PairIntFloat),
+		pageDistri:       make(map[string]VisitCountReward),
 		totalDistri:      0,
 		actionCounter:    *NewActionCounter(),
-		widgetActions:    make(map[*types.Widget]types.StatefulActionSet),
+		widgetActions:    make(map[uintptr]types.StatefulActionSet),
 		unvisitedActions: make(types.StatefulActionSet),
 		visitedActions:   make(types.StatefulActionSet),
 		listeners:        make([]types.IGraphListener, 0),
@@ -116,11 +116,11 @@ func (g *Graph) AddState(state types.IState) types.IState {
 
 	// 更新活动分布统计
 	if _, exists := g.pageDistri[pageNameString]; !exists {
-		g.pageDistri[pageNameString] = PairIntFloat{0, 0.0}
+		g.pageDistri[pageNameString] = VisitCountReward{0, 0.0}
 	}
 	pair := g.pageDistri[pageNameString]
-	pair.First++
-	pair.Second = float64(pair.First) / float64(g.totalDistri)
+	pair.Count++
+	pair.Reward = float64(pair.Count) / float64(g.totalDistri)
 	g.pageDistri[pageNameString] = pair
 
 	// 添加来自状态的动作
@@ -141,7 +141,7 @@ func (g *Graph) GetActionCounter() *ActionCounter {
 	return &g.actionCounter
 }
 
-func (g *Graph) GetWidgetActions() map[*types.Widget]types.StatefulActionSet {
+func (g *Graph) GetWidgetActions() map[uintptr]types.StatefulActionSet {
 	return g.widgetActions
 }
 
@@ -157,7 +157,7 @@ func (g *Graph) GetStates() types.StateSet {
 	return g.states
 }
 
-func (g *Graph) GetPageDistri() map[string]PairIntFloat {
+func (g *Graph) GetPageDistri() map[string]VisitCountReward {
 	return g.pageDistri
 }
 
@@ -174,14 +174,14 @@ func (g *Graph) AddVisitedPage(pageName string) {
 }
 
 func (g *Graph) UpdatePageDistri(pageName string, count int, reward float64) {
-	g.pageDistri[pageName] = PairIntFloat{count, reward}
+	g.pageDistri[pageName] = VisitCountReward{count, reward}
 }
 
-func (g *Graph) AddWidgetAction(widget *types.Widget, action *types.StatefulAction) {
-	if g.widgetActions[widget] == nil {
-		g.widgetActions[widget] = make(types.StatefulActionSet)
+func (g *Graph) AddWidgetAction(widget types.IWidget, action *types.StatefulAction) {
+	if g.widgetActions[widget.Hash()] == nil {
+		g.widgetActions[widget.Hash()] = make(types.StatefulActionSet)
 	}
-	g.widgetActions[widget][action.Hash()] = action
+	g.widgetActions[widget.Hash()][action.Hash()] = action
 }
 
 func (g *Graph) AddUnvisitedAction(action *types.StatefulAction) {

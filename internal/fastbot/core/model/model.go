@@ -22,13 +22,21 @@ func RegisterAgentCreator(algorithmType string, agentCreator IAgentCreator) {
 	agentCreators[algorithmType] = agentCreator
 }
 
-func NewModel() *Model {
+type IElementCreator func(guiContent string) (types.IElement, error)
+
+var elementCreators map[string]IElementCreator = make(map[string]IElementCreator)
+
+func RegisterElementCreator(eleType string, creator IElementCreator) {
+	elementCreators[eleType] = creator
+}
+
+func NewModel(packageName string) *Model {
 
 	return &Model{
 		graph:          NewGraph(),
 		deviceAgentMap: make(map[string]types.IAgent),
 		preference:     preference.GetInstance(),
-		packageName:    "",
+		packageName:    packageName,
 	}
 }
 
@@ -92,9 +100,15 @@ func (m *Model) StateSize() int {
 
 const DefaultDeviceID = "0000001"
 
-func (m *Model) GetOperate(descContent string, pageName string, deviceID string) string {
+func (m *Model) GetOperate(elemType string, descContent string, pageName string, deviceID string) string {
 
-	elem, err := types.CreateFromXml(descContent)
+	var elem types.IElement
+	var err error
+
+	if elementCreator, ok := elementCreators[elemType]; ok {
+		elem, err = elementCreator(descContent)
+	}
+
 	if err != nil || elem == nil {
 
 		return ""
@@ -103,7 +117,7 @@ func (m *Model) GetOperate(descContent string, pageName string, deviceID string)
 	return operate.ToJSON()
 }
 
-func (m *Model) GetOperateOpt(elem *types.Element, pageName string, deviceID string) *types.DeviceOperateWrapper {
+func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID string) *types.DeviceOperateWrapper {
 	//methodStartTime := time.Now()
 
 	customAction := m.resolvePageAndGetSpecifiedAction(pageName, elem)
@@ -251,7 +265,7 @@ func (m *Model) GetOperateOpt(elem *types.Element, pageName string, deviceID str
 	return operate
 }
 
-func (m *Model) resolvePageAndGetSpecifiedAction(page string, elem *types.Element) types.IAction {
+func (m *Model) resolvePageAndGetSpecifiedAction(page string, elem types.IElement) types.IAction {
 	if m.preference != nil {
 		return m.preference.ResolvePageAndGetSpecifiedAction(page, elem)
 	}

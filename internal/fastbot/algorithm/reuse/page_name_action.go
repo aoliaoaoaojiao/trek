@@ -1,22 +1,22 @@
 package reuse
 
 import (
-	types2 "Trek/internal/fastbot/core/types"
+	"Trek/internal/fastbot/core/types"
 	"Trek/log"
 )
 
 // PageNameAction 带页面名称的动作
 type PageNameAction struct {
-	types2.StatefulAction
+	types.StatefulAction
 	pageName string
 }
 
 // pageName
 
 // NewPageNameAction 创建新的ActivityNameAction
-func NewPageNameAction(pageName string, widget *types2.Widget, actionType types2.ActionType) *PageNameAction {
+func NewPageNameAction(pageName string, widget types.IWidget, actionType types.ActionType) *PageNameAction {
 	// 创建基础的StatefulAction
-	baseAction := types2.NewStatefulAction(nil, widget, actionType)
+	baseAction := types.NewStatefulAction(nil, widget, actionType)
 
 	pageAction := &PageNameAction{
 		StatefulAction: *baseAction,

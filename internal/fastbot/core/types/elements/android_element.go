@@ -1,6 +1,8 @@
-package types
+package elements
 
 import (
+	"Trek/internal/fastbot/core/model"
+	"Trek/internal/fastbot/core/types"
 	"Trek/internal/fastbot/tool"
 	"Trek/log"
 	"encoding/json"
@@ -10,6 +12,8 @@ import (
 
 	"github.com/beevik/etree"
 )
+
+var _ types.IElement = (*AndroidElement)(nil)
 
 // Xpath XPath结构
 type Xpath struct {
@@ -44,8 +48,8 @@ func (x *Xpath) String() string {
 	return x.XpathStr
 }
 
-// Element 元素结构
-type Element struct {
+// AndroidElement 元素结构
+type AndroidElement struct {
 	ResourceID    string
 	Classname     string
 	PackageName   string
@@ -66,108 +70,97 @@ type Element struct {
 	Password      bool
 	Selected      bool
 	IsEditable    bool
-	Bounds        *Rect
-	Children      []*Element
-	Parent        *Element
+	Bounds        *types.Rect
+	Children      []types.IElement
+	Parent        *AndroidElement
 	ValidText     string
+	xpath         string
 }
 
-// NewElement 创建新的元素
-func NewElement() *Element {
-	return &Element{
-		Enabled:       false,
-		Checked:       false,
-		Checkable:     false,
-		Clickable:     false,
-		Focusable:     false,
-		Scrollable:    false,
-		LongClickable: false,
-		ChildCount:    0,
-		Focused:       false,
-		Index:         -1,
-		Password:      false,
-		Selected:      false,
-		IsEditable:    false,
-		Bounds:        NewRect(0, 0, 0, 0),
-		Children:      make([]*Element, 0),
-		Parent:        nil,
-	}
+func (e *AndroidElement) SimpleIdentifier() uintptr {
+	hashcode1 := tool.HashString(e.Classname)
+	hashcode2 := tool.HashString(e.ResourceID)
+	return hashcode1 ^ (hashcode2 << 4)
+}
+
+func (e *AndroidElement) GetPath() string {
+	return e.xpath
 }
 
 // GetClassname 获取类名
-func (e *Element) GetClassname() string {
+func (e *AndroidElement) GetClassname() string {
 	return e.Classname
 }
 
 // GetResourceID 获取资源ID
-func (e *Element) GetResourceID() string {
+func (e *AndroidElement) GetResourceID() string {
 	return e.ResourceID
 }
 
 // GetText 获取文本
-func (e *Element) GetText() string {
+func (e *AndroidElement) GetText() string {
 	return e.Text
 }
 
 // GetContentDesc 获取内容描述
-func (e *Element) GetContentDesc() string {
+func (e *AndroidElement) GetContentDesc() string {
 	return e.ContentDesc
 }
 
 // GetPackageName 获取包名
-func (e *Element) GetPackageName() string {
+func (e *AndroidElement) GetPackageName() string {
 	return e.PackageName
 }
 
 // GetBounds 获取边界
-func (e *Element) GetBounds() *Rect {
+func (e *AndroidElement) GetBounds() *types.Rect {
 	return e.Bounds
 }
 
 // GetIndex 获取索引
-func (e *Element) GetIndex() int {
+func (e *AndroidElement) GetIndex() int {
 	return e.Index
 }
 
 // GetClickable 获取是否可点击
-func (e *Element) GetClickable() bool {
+func (e *AndroidElement) GetClickable() bool {
 	return e.Clickable
 }
 
 // GetLongClickable 获取是否可长按
-func (e *Element) GetLongClickable() bool {
+func (e *AndroidElement) GetLongClickable() bool {
 	return e.LongClickable
 }
 
-// GetCheckable 获取是否可勾选
-func (e *Element) GetCheckable() bool {
+// GetCheckBoxable 获取是否可勾选
+func (e *AndroidElement) GetCheckBoxable() bool {
 	return e.Checkable
 }
 
 // GetScrollable 获取是否可滚动
-func (e *Element) GetScrollable() bool {
+func (e *AndroidElement) GetScrollable() bool {
 	return e.Scrollable
 }
 
 // GetEnable 获取是否启用
-func (e *Element) GetEnable() bool {
+func (e *AndroidElement) GetEnable() bool {
 	return e.Enabled
 }
 
 // GetChildren 获取子元素
-func (e *Element) GetChildren() []*Element {
+func (e *AndroidElement) GetChildren() []types.IElement {
 	return e.Children
 }
 
 // GetParent 获取父元素
-func (e *Element) GetParent() *Element {
+func (e *AndroidElement) GetParent() types.IElement {
 	return e.Parent
 }
 
 // GetScrollType 获取滚动类型
-func (e *Element) GetScrollType() ScrollType {
+func (e *AndroidElement) GetScrollType() types.ScrollType {
 	if !e.Scrollable {
-		return NONE
+		return types.NONE
 	}
 
 	// 根据类名精确判断滚动类型
@@ -178,90 +171,90 @@ func (e *Element) GetScrollType() ScrollType {
 		"android.support.v17.leanback.widget.VerticalGridView",
 		"android.support.v7.widget.RecyclerView",
 		"androidx.recyclerview.widget.RecyclerView":
-		return Vertical
+		return types.Vertical
 	case "android.widget.HorizontalScrollView",
 		"android.support.v17.leanback.widget.HorizontalGridView",
 		"android.support.v4.view.ViewPager":
-		return Horizontal
+		return types.Horizontal
 	}
 
 	// 如果类名包含"ScrollView"，则支持所有方向滚动
 	if strings.Contains(e.Classname, "ScrollView") {
-		return ALL
+		return types.ALL
 	}
 
 	// 默认情况下支持所有方向滚动（iOS兼容性）
-	return ALL
+	return types.ALL
 }
 
 // IsWebView 判断是否为WebView
-func (e *Element) IsWebView() bool {
+func (e *AndroidElement) IsWebView() bool {
 	return strings.Contains(strings.ToLower(e.Classname), "webview")
 }
 
 // IsEditText 判断是否为编辑文本
-func (e *Element) IsEditText() bool {
+func (e *AndroidElement) IsEditText() bool {
 	return strings.Contains(strings.ToLower(e.Classname), "edittext") || e.IsEditable
 }
 
 // ResetResourceID 重置资源ID
-func (e *Element) ResetResourceID(resourceID string) {
+func (e *AndroidElement) ResetResourceID(resourceID string) {
 	e.ResourceID = resourceID
 }
 
 // ResetContentDesc 重置内容描述
-func (e *Element) ResetContentDesc(content string) {
+func (e *AndroidElement) ResetContentDesc(content string) {
 	e.ContentDesc = content
 }
 
 // ResetText 重置文本
-func (e *Element) ResetText(text string) {
+func (e *AndroidElement) ResetText(text string) {
 	e.Text = text
 }
 
 // ResetIndex 重置索引
-func (e *Element) ResetIndex(index int) {
+func (e *AndroidElement) ResetIndex(index int) {
 	e.Index = index
 }
 
 // ResetClassname 重置类名
-func (e *Element) ResetClassname(className string) {
+func (e *AndroidElement) ResetClassname(className string) {
 	e.Classname = className
 }
 
 // ResetClickable 重置可点击状态
-func (e *Element) ResetClickable(clickable bool) {
+func (e *AndroidElement) ResetClickable(clickable bool) {
 	e.Clickable = clickable
 }
 
 // ResetScrollable 重置可滚动状态
-func (e *Element) ResetScrollable(scrollable bool) {
+func (e *AndroidElement) ResetScrollable(scrollable bool) {
 	e.Scrollable = scrollable
 }
 
 // ResetEnabled 重置启用状态
-func (e *Element) ResetEnabled(enable bool) {
+func (e *AndroidElement) ResetEnabled(enable bool) {
 	e.Enabled = enable
 }
 
 // ResetBounds 重置边界
-func (e *Element) ResetBounds(rect *Rect) {
+func (e *AndroidElement) ResetBounds(rect *types.Rect) {
 	e.Bounds = rect
 }
 
 // ResetParent 重置父元素
-func (e *Element) ResetParent(parent *Element) {
+func (e *AndroidElement) ResetParent(parent *AndroidElement) {
 	e.Parent = parent
 }
 
 // AddChild 添加子元素
-func (e *Element) AddChild(child *Element) {
+func (e *AndroidElement) AddChild(child *AndroidElement) {
 	e.Children = append(e.Children, child)
 	child.Parent = e
 }
 
 // MatchXpathSelector 匹配XPath选择器
-func (e *Element) MatchXpathSelector(xpathSelector *Xpath) bool {
+func (e *AndroidElement) MatchXpathSelector(xpathSelector *Xpath) bool {
 	if xpathSelector == nil {
 		log.Debugf("xpath selector is null")
 		return false
@@ -316,7 +309,7 @@ func (e *Element) MatchXpathSelector(xpathSelector *Xpath) bool {
 }
 
 // DeleteElement 删除元素
-func (e *Element) DeleteElement() {
+func (e *AndroidElement) DeleteElement() {
 	if e.Parent != nil {
 		for i, child := range e.Parent.Children {
 			if child == e {
@@ -330,26 +323,31 @@ func (e *Element) DeleteElement() {
 }
 
 // RecursiveElements 递归获取元素
-func (e *Element) RecursiveElements(filter func(*Element) bool, result []*Element) []*Element {
+func (e *AndroidElement) RecursiveElements(filter func(*AndroidElement) bool, result []*AndroidElement) []*AndroidElement {
 	if filter(e) {
 		result = append(result, e)
 	}
 	for _, child := range e.Children {
-		result = child.RecursiveElements(filter, result)
+		if androidChild, ok := child.(*AndroidElement); ok {
+			result = androidChild.RecursiveElements(filter, result)
+		}
+
 	}
 	return result
 }
 
 // RecursiveDoElements 递归执行操作
-func (e *Element) RecursiveDoElements(doFunc func(*Element)) {
+func (e *AndroidElement) RecursiveDoElements(doFunc func(*AndroidElement)) {
 	doFunc(e)
 	for _, child := range e.Children {
-		child.RecursiveDoElements(doFunc)
+		if androidChild, ok := child.(*AndroidElement); ok {
+			androidChild.RecursiveDoElements(doFunc)
+		}
 	}
 }
 
 // ToJSON 转换为JSON
-func (e *Element) ToJSON() string {
+func (e *AndroidElement) ToJSON() string {
 	data := map[string]interface{}{
 		"resource_id":    e.ResourceID,
 		"class":          e.Classname,
@@ -378,7 +376,7 @@ func (e *Element) ToJSON() string {
 }
 
 // ToXML 转换为XML
-func (e *Element) ToXML() string {
+func (e *AndroidElement) ToXML() string {
 	doc := etree.NewDocument()
 	root := e.toXMLNode(doc)
 	doc.SetRoot(root)
@@ -390,7 +388,7 @@ func (e *Element) ToXML() string {
 }
 
 // toXMLNode 转换为XML节点
-func (e *Element) toXMLNode(doc *etree.Document) *etree.Element {
+func (e *AndroidElement) toXMLNode(doc *etree.Document) *etree.Element {
 	node := doc.CreateElement("node")
 
 	node.CreateAttr("bounds", e.Bounds.String())
@@ -415,15 +413,17 @@ func (e *Element) toXMLNode(doc *etree.Document) *etree.Element {
 	node.CreateAttr("editable", strconv.FormatBool(e.IsEditable))
 
 	for _, child := range e.Children {
-		childNode := child.toXMLNode(doc)
-		node.AddChild(childNode)
+		if androidChild, ok := child.(*AndroidElement); ok {
+			childNode := androidChild.toXMLNode(doc)
+			node.AddChild(childNode)
+		}
 	}
 
 	return node
 }
 
 // FromJSON 从JSON创建元素
-func (e *Element) FromJSON(jsonData string) error {
+func (e *AndroidElement) FromJSON(jsonData string) error {
 	var data map[string]interface{}
 	if err := json.Unmarshal([]byte(jsonData), &data); err != nil {
 		return err
@@ -487,22 +487,55 @@ func (e *Element) FromJSON(jsonData string) error {
 		e.ValidText = val
 	}
 
+	if e.Classname == "android.widget.EditText" ||
+		e.Classname == "android.inputmethodservice.ExtractEditText" ||
+		e.Classname == "android.widget.AutoCompleteTextView" ||
+		e.Classname == "android.widget.MultiAutoCompleteTextView" {
+		e.IsEditable = true
+	}
+
 	return nil
 }
 
 // String 实现Stringer接口
-func (e *Element) String() string {
-	return fmt.Sprintf("Element{class:%s, text:%s, resource-id:%s, bounds:%s}",
+func (e *AndroidElement) String() string {
+	return fmt.Sprintf("AndroidElement{class:%s, text:%s, resource-id:%s, bounds:%s}",
 		e.Classname, e.Text, e.ResourceID, e.Bounds.String())
 }
 
 // GetValidText 获取有效文本
-func (e *Element) GetValidText() string {
+func (e *AndroidElement) GetValidText() string {
 	return e.ValidText
 }
 
+// NewElement 创建新的元素
+func NewElement() *AndroidElement {
+	return &AndroidElement{
+		Enabled:       false,
+		Checked:       false,
+		Checkable:     false,
+		Clickable:     false,
+		Focusable:     false,
+		Scrollable:    false,
+		LongClickable: false,
+		ChildCount:    0,
+		Focused:       false,
+		Index:         -1,
+		Password:      false,
+		Selected:      false,
+		IsEditable:    false,
+		Bounds:        types.NewRect(0, 0, 0, 0),
+		Children:      make([]types.IElement, 0),
+		Parent:        nil,
+	}
+}
+
+func init() {
+	model.RegisterElementCreator(string(ANDROID_ELEMENT), CreateFromXml)
+}
+
 // CreateFromXml 从XML创建元素
-func CreateFromXml(xmlContent string) (*Element, error) {
+func CreateFromXml(xmlContent string) (types.IElement, error) {
 
 	doc := etree.NewDocument()
 	if err := doc.ReadFromString(xmlContent); err != nil {
@@ -514,7 +547,7 @@ func CreateFromXml(xmlContent string) (*Element, error) {
 }
 
 // createFromXmlDoc 从XML文档创建元素
-func createFromXmlDoc(doc *etree.Document) (*Element, error) {
+func createFromXmlDoc(doc *etree.Document) (*AndroidElement, error) {
 	root := doc.Root()
 	if root == nil {
 		return nil, fmt.Errorf("no root element found")
@@ -529,7 +562,10 @@ func createFromXmlDoc(doc *etree.Document) (*Element, error) {
 }
 
 // fromXMLNode 从XML节点创建元素
-func (e *Element) fromXMLNode(xmlNode *etree.Element, parent *Element) {
+func (e *AndroidElement) fromXMLNode(xmlNode *etree.Element, parent *AndroidElement) {
+
+	e.xpath = xmlNode.GetPath()
+
 	e.Parent = parent
 
 	// 解析属性
@@ -601,7 +637,7 @@ func (e *Element) fromXMLNode(xmlNode *etree.Element, parent *Element) {
 	}
 
 	// C++版本中的逻辑：强制为EditText元素添加点击和启用功能
-	if FORCE_EDITTEXT_CLICK_TRUE && e.IsEditText() {
+	if types.FORCE_EDITTEXT_CLICK_TRUE && e.IsEditText() {
 		e.LongClickable = true
 		e.Clickable = true
 		e.Enabled = true
@@ -616,11 +652,11 @@ func (e *Element) fromXMLNode(xmlNode *etree.Element, parent *Element) {
 }
 
 // parseBounds 解析边界字符串
-func parseBounds(boundsStr string) *Rect {
+func parseBounds(boundsStr string) *types.Rect {
 	// 边界格式通常是 "[left,top][right,bottom]"
 	parts := strings.Split(boundsStr, "][")
 	if len(parts) != 2 {
-		return NewRect(0, 0, 0, 0)
+		return types.NewRect(0, 0, 0, 0)
 	}
 
 	leftTop := strings.Trim(parts[0], "[]")
@@ -630,7 +666,7 @@ func parseBounds(boundsStr string) *Rect {
 	rb := strings.Split(rightBottom, ",")
 
 	if len(lt) != 2 || len(rb) != 2 {
-		return NewRect(0, 0, 0, 0)
+		return types.NewRect(0, 0, 0, 0)
 	}
 
 	left, _ := strconv.Atoi(lt[0])
@@ -638,10 +674,10 @@ func parseBounds(boundsStr string) *Rect {
 	right, _ := strconv.Atoi(rb[0])
 	bottom, _ := strconv.Atoi(rb[1])
 
-	return NewRect(left, top, right, bottom)
+	return types.NewRect(left, top, right, bottom)
 }
 
-func (e *Element) Hash(recursive bool) uintptr {
+func (e *AndroidElement) Hash(recursive bool) uintptr {
 	hashcode := uintptr(0x1)
 	hashcode1 := uintptr(127) * tool.HashString(e.ResourceID) << 1
 	hashcode2 := tool.HashString(e.Classname) << 2
@@ -655,9 +691,11 @@ func (e *Element) Hash(recursive bool) uintptr {
 
 	if recursive {
 		for i := 0; i < len(e.Children); i++ {
-			childHash := e.Children[i].Hash(false) << 2
-			hashcode ^= childHash
-			hashcode ^= uintptr(0x7398c + (tool.HashInt(i) << 8))
+			if child, ok := e.Children[i].(*AndroidElement); ok {
+				childHash := child.Hash(false) << 2
+				hashcode ^= childHash
+				hashcode ^= uintptr(0x7398c + (tool.HashInt(i) << 8))
+			}
 		}
 	}
 

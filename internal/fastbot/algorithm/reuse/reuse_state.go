@@ -1,19 +1,19 @@
 package reuse
 
 import (
-	types2 "Trek/internal/fastbot/core/types"
+	"Trek/internal/fastbot/core/types"
 	"Trek/log"
 )
 
 // ReuseState 重用状态类，持有所有Widgets及其关联的动作等
 type ReuseState struct {
 	pageName string
-	types2.State
+	types.State
 }
 
 // NewReuseState 创建新的ReuseState
 func NewReuseState(pageName string) *ReuseState {
-	baseState := types2.NewStateWithPage(pageName)
+	baseState := types.NewStateWithPage(pageName)
 
 	rs := &ReuseState{
 		pageName: pageName,
@@ -25,7 +25,7 @@ func NewReuseState(pageName string) *ReuseState {
 }
 
 // Create 根据元素和活动名称创建ReuseState
-func Create(pageName string, element *types2.Element) *ReuseState {
+func Create(pageName string, element types.IElement) *ReuseState {
 
 	statePointer := NewReuseState(pageName)
 	log.Debugf("Creating ReuseState for page: %s", pageName)
@@ -35,7 +35,7 @@ func Create(pageName string, element *types2.Element) *ReuseState {
 }
 
 // buildState 构建状态
-func (rs *ReuseState) buildState(element *types2.Element) {
+func (rs *ReuseState) buildState(element types.IElement) {
 	rs.buildStateFromElement(nil, element)
 	rs.mergeWidgetsInState()
 	rs.buildHashForState()
@@ -43,7 +43,7 @@ func (rs *ReuseState) buildState(element *types2.Element) {
 }
 
 // buildStateFromElement 从元素构建状态
-func (rs *ReuseState) buildStateFromElement(parentWidget *RichWidget, element *types2.Element) {
+func (rs *ReuseState) buildStateFromElement(parentWidget *RichWidget, element types.IElement) {
 	rs.buildBoundingBox(element)
 
 	// 使用RichWidget构建状态
@@ -57,15 +57,15 @@ func (rs *ReuseState) buildStateFromElement(parentWidget *RichWidget, element *t
 }
 
 // buildFromElement 从元素构建
-func (rs *ReuseState) buildFromElement(parentWidget *RichWidget, elem *types2.Element) {
+func (rs *ReuseState) buildFromElement(parentWidget *RichWidget, elem types.IElement) {
 	rs.buildBoundingBox(elem)
 
-	var parentWidgetPtr *types2.Widget
+	var parentWidgetPtr *types.Widget
 	if parentWidget != nil {
 		parentWidgetPtr = &parentWidget.Widget
 	}
 
-	widget := types2.NewWidget(parentWidgetPtr, elem)
+	widget := types.NewWidget(parentWidgetPtr, elem)
 	rs.Widgets = append(rs.Widgets, widget)
 	log.Debugf("Added Widget to state, total widgets now: %d", len(rs.Widgets))
 
@@ -75,13 +75,13 @@ func (rs *ReuseState) buildFromElement(parentWidget *RichWidget, elem *types2.El
 }
 
 // buildBoundingBox 构建边界框
-func (rs *ReuseState) buildBoundingBox(element *types2.Element) {
+func (rs *ReuseState) buildBoundingBox(element types.IElement) {
 	if element.GetParent() == nil && !element.GetBounds().IsEmpty() {
-		if types2.SameRootBounds.IsEmpty() && element != nil {
-			types2.SameRootBounds = element.GetBounds()
+		if types.SameRootBounds.IsEmpty() && element != nil {
+			types.SameRootBounds = element.GetBounds()
 		}
-		if types2.SameRootBounds.Equal(element.GetBounds()) {
-			rs.RootBounds = types2.SameRootBounds
+		if types.SameRootBounds.Equal(element.GetBounds()) {
+			rs.RootBounds = types.SameRootBounds
 		} else {
 			rs.RootBounds = element.GetBounds()
 		}
@@ -93,7 +93,7 @@ func (rs *ReuseState) buildHashForState() {
 	// 构建哈希
 	pageString := rs.PageName
 	pageHash := (HashString(pageString) * 31) << 5
-	pageHash ^= (CombineHashWidgets(rs.Widgets, types2.STATE_WITH_WIDGET_ORDER) << 1)
+	pageHash ^= (CombineHashWidgets(rs.Widgets, types.STATE_WITH_WIDGET_ORDER) << 1)
 	rs.Hashcode = pageHash
 
 }
@@ -115,7 +115,7 @@ func (rs *ReuseState) buildActionForState() {
 	}
 
 	// 创建返回动作
-	backAction := NewPageNameAction(rs.PageName, nil, types2.BACK)
+	backAction := NewPageNameAction(rs.PageName, nil, types.BACK)
 	rs.BackAction = &backAction.StatefulAction
 	rs.Actions = append(rs.Actions, rs.BackAction)
 	log.Debugf("Added back action to state, total actions now: %d", len(rs.Actions))
@@ -123,12 +123,12 @@ func (rs *ReuseState) buildActionForState() {
 
 // mergeWidgetsInState 合并状态中的Widgets
 func (rs *ReuseState) mergeWidgetsInState() {
-	mergedWidgets := make(types2.WidgetSet)
+	mergedWidgets := make(types.WidgetSet)
 	mergedCount := rs.MergeWidgetAndStoreMergedOnes(mergedWidgets)
 
 	if mergedCount != 0 {
 		log.Debugf("build state merged %d widget", mergedCount)
-		rs.Widgets = make(types2.WidgetList, 0, len(mergedWidgets))
+		rs.Widgets = make(types.WidgetList, 0, len(mergedWidgets))
 		for _, widget := range mergedWidgets {
 			rs.Widgets = append(rs.Widgets, widget)
 		}

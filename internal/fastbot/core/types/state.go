@@ -205,7 +205,7 @@ func (s *State) ResolveAt(action *StatefulAction, t time.Time) *StatefulAction {
 }
 
 // ContainsTarget 检查是否包含目标Widget
-func (s *State) ContainsTarget(widget *Widget) bool {
+func (s *State) ContainsTarget(widget IWidget) bool {
 	if widget == nil {
 		return false
 	}
@@ -393,7 +393,7 @@ func CombineHashWidgets(widgets WidgetList, withOrder bool) uintptr {
 }
 
 // BuildFromElement 从Element构建
-func (s *State) BuildFromElement(parentWidget *Widget, elem *Element) {
+func (s *State) BuildFromElement(parentWidget IWidget, elem IElement) {
 	if elem == nil {
 		return
 	}
@@ -448,7 +448,7 @@ func (s *State) pickAction(filter IStatefulActionFilter, includeBack bool, index
 }
 
 // Create 创建State
-func Create(elem *Element, pageName string) *State {
+func Create(elem IElement, pageName string) *State {
 	state := NewStateWithPage(pageName)
 
 	if elem != nil {

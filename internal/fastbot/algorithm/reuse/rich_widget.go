@@ -1,25 +1,25 @@
 package reuse
 
 import (
-	types2 "Trek/internal/fastbot/core/types"
+	"Trek/internal/fastbot/core/types"
 	"Trek/log"
 )
 
 // RichWidget 使用动作、类名、资源ID、自身（或其子元素）的文本
 // 来嵌入和生成哈希码，用于标识widget
 type RichWidget struct {
-	types2.Widget
+	types.Widget
 	WidgetHashcode uintptr
 }
 
 // NewRichWidget 创建新的RichWidget
-func NewRichWidget(parent *RichWidget, element *types2.Element) *RichWidget {
+func NewRichWidget(parent *RichWidget, element types.IElement) *RichWidget {
 	// 首先创建基础Widget
-	var parentWidget *types2.Widget
+	var parentWidget *types.Widget
 	if parent != nil {
 		parentWidget = &parent.Widget
 	}
-	baseWidget := types2.NewWidget(parentWidget, element)
+	baseWidget := types.NewWidget(parentWidget, element)
 
 	rw := &RichWidget{
 		Widget:         *baseWidget,
@@ -27,8 +27,8 @@ func NewRichWidget(parent *RichWidget, element *types2.Element) *RichWidget {
 	}
 
 	// 计算RichWidget的哈希码
-	hashcode1 := HashString(rw.Clazz)
-	hashcode2 := HashString(rw.ResourceID)
+	hashcode1 := rw.GetElementIdentifier()
+	//hashcode2 := HashString(rw.ResourceID)
 
 	// 计算动作哈希码
 	hashcode3 := uintptr(0x1)
@@ -39,7 +39,8 @@ func NewRichWidget(parent *RichWidget, element *types2.Element) *RichWidget {
 	}
 
 	// 计算widget哈希码
-	rw.WidgetHashcode = ((hashcode1 ^ (hashcode2 << 4)) >> 2) ^ ((uintptr(127) * hashcode3) << 1)
+	//rw.WidgetHashcode = ((hashcode1 ^ (hashcode2 << 4)) >> 2) ^ ((uintptr(127) * hashcode3) << 1)
+	rw.WidgetHashcode = (hashcode1 >> 2) ^ ((uintptr(127) * hashcode3) << 1)
 
 	// 获取有效的文本
 	elementText := rw.getValidTextFromWidgetAndChildren(element)
@@ -48,15 +49,17 @@ func NewRichWidget(parent *RichWidget, element *types2.Element) *RichWidget {
 		rw.WidgetHashcode ^= (0x79b9 + (textHash << 1))
 	}
 
-	log.Debugf("RichWidget created with hashcode:%d, clazz:%s, resourceID:%s, text:%s",
-		rw.WidgetHashcode, rw.Clazz, rw.ResourceID, elementText)
+	log.Debugf("RichWidget created with hashcode:%d, identifier:%s, text:%s",
+		rw.WidgetHashcode, rw.GetElementIdentifier(), elementText)
+
+	//rw.Widget.Hashcode = rw.Hashcode
 
 	return rw
 }
 
 // getValidTextFromWidgetAndChildren 从widget及其子元素获取有效文本
 // 如果父widget不可点击，则获取子元素的有效文本
-func (rw *RichWidget) getValidTextFromWidgetAndChildren(element *types2.Element) string {
+func (rw *RichWidget) getValidTextFromWidgetAndChildren(element types.IElement) string {
 	txt := element.GetValidText()
 	log.Debugf("Getting valid text from element, current text: %s", txt)
 	if txt == "" {
@@ -73,6 +76,7 @@ func (rw *RichWidget) getValidTextFromWidgetAndChildren(element *types2.Element)
 
 // Hash 重写Hash方法，返回RichWidget的哈希码
 func (rw *RichWidget) Hash() uintptr {
+
 	return rw.WidgetHashcode
 }
 

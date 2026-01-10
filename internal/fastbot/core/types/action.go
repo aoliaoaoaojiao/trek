@@ -162,12 +162,12 @@ type StatefulAction struct {
 	Action
 	// 表示动作的起始状态节点，构建状态转移图的关键连接点
 	State    *State
-	Target   *Widget
+	Target   IWidget
 	Hashcode uintptr
 }
 
 // NewStatefulAction 创建新的NewStatefulAction
-func NewStatefulAction(state *State, targetWidget *Widget, actionType ActionType) *StatefulAction {
+func NewStatefulAction(state *State, targetWidget IWidget, actionType ActionType) *StatefulAction {
 	asa := &StatefulAction{
 		Action:   *NewAction(actionType),
 		State:    state,
@@ -204,7 +204,7 @@ func (asa *StatefulAction) GetState() *State {
 }
 
 // GetTarget 获取目标
-func (asa *StatefulAction) GetTarget() *Widget {
+func (asa *StatefulAction) GetTarget() IWidget {
 	return asa.Target
 }
 
@@ -225,7 +225,7 @@ func (asa *StatefulAction) IsValid() bool {
 }
 
 // SetTarget 设置目标
-func (asa *StatefulAction) SetTarget(widget *Widget) {
+func (asa *StatefulAction) SetTarget(widget IWidget) {
 	asa.Target = widget
 }
 

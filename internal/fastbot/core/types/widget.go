@@ -2,28 +2,32 @@ package types
 
 import (
 	"Trek/internal/fastbot/tool"
-	"Trek/log"
 	"fmt"
 	"sort"
 	"strings"
 )
 
+var _ IWidget = (*Widget)(nil)
+
 // Widget Widget结构，使用Widget内部文本来嵌入和识别Widget
 type Widget struct {
-	Hashcode        uintptr
-	Parent          *Widget
-	Text            string
-	Index           int
-	Clazz           string
-	ResourceID      string
-	Enabled         bool
-	Editable        bool
-	OperateMask     OperateType
-	Bounds          *Rect
-	ContextDesc     string
-	Actions         map[ActionType]bool
-	IsEditableField bool       // 更精确的编辑框判断（避免与方法名冲突）
+	Hashcode uintptr
+	Parent   IWidget
+	Text     string
+
+	path string
+
+	Enabled     bool
+	Editable    bool
+	OperateMask OperateType
+	Bounds      *Rect
+	ContextDesc string
+	Actions     map[ActionType]bool
+
 	ScrollTypeField ScrollType // 滚动类型
+	//ClassName       string
+	//ResourceID      string
+	elementSimpleIdentifier uintptr
 }
 
 // 状态处理常量
@@ -46,7 +50,7 @@ const (
 )
 
 // NewWidget 创建新的Widget
-func NewWidget(parent *Widget, element *Element) *Widget {
+func NewWidget(parent IWidget, element IElement) *Widget {
 	widget := &Widget{
 		Parent:          parent,
 		Actions:         make(map[ActionType]bool),
@@ -65,7 +69,7 @@ func NewWidget(parent *Widget, element *Element) *Widget {
 }
 
 // GetParent 获取父Widget
-func (w *Widget) GetParent() *Widget {
+func (w *Widget) GetParent() IWidget {
 	return w.Parent
 }
 
@@ -108,37 +112,40 @@ func (w *Widget) HasAction() bool {
 
 // IsEditable 检查是否可编辑
 func (w *Widget) IsEditable() bool {
-	return w.IsEditableField
+	return w.Editable
 }
 
 // Hash 计算哈希值
 func (w *Widget) Hash() uintptr {
 	if w.Hashcode == 0 {
 		// 基础哈希计算
-		hashcode1 := tool.HashString(w.Clazz)
-		hashcode2 := tool.HashString(w.ResourceID)
+		//hashcode1 := tool.HashString(w.elementSimpleIdentifier)
+		//hashcode2 := tool.HashString(w.ResourceID)
 		hashcode3 := tool.HashInt(int(w.OperateMask))
 		hashcode4 := tool.HashInt(int(w.ScrollTypeField))
 
-		w.Hashcode = ((hashcode1 ^ (hashcode2 << 4)) >> 2) ^
+		w.Hashcode = (w.elementSimpleIdentifier >> 2) ^
 			(((127 * hashcode3 << 1) ^ (256 * hashcode4 << 3)) >> 1)
+
+		//w.Hashcode = (hashcode1 >> 2) ^
+		//	(((127 * hashcode3 << 1) ^ (256 * hashcode4 << 3)) >> 1)
 	}
 	return w.Hashcode
 }
 
+func (w *Widget) GetElementIdentifier() uintptr {
+	return w.elementSimpleIdentifier
+}
+
 // String 返回字符串表示
 func (w *Widget) String() string {
-	return fmt.Sprintf("Widget{text:%s, class:%s, resource-id:%s, bounds:%s, enabled:%t}",
-		w.Text, w.Clazz, w.ResourceID, w.Bounds.String(), w.Enabled)
+	return fmt.Sprintf("Widget{text:%s, bounds:%s, enabled:%t, path:%s}",
+		w.Text, w.Bounds.String(), w.Enabled, w.path)
 }
 
 // BuildFullXpath 构建完整XPath
-func (w *Widget) BuildFullXpath() string {
-	xpath := w.toXPath()
-	if w.Parent != nil {
-		return w.Parent.BuildFullXpath() + "/" + xpath
-	}
-	return "/" + xpath
+func (w *Widget) GetPath() string {
+	return w.path
 }
 
 // ClearDetails 清除详细信息
@@ -211,27 +218,27 @@ func (w *Widget) preprocessText() {
 	}
 
 	// 索引哈希处理
-	if STATE_WITH_INDEX {
-		indexHash := tool.HashInt(w.Index)
-		w.Hashcode ^= ((0x79b9 + (indexHash << 6)) << 1)
-	}
+	//if STATE_WITH_INDEX {
+	//	indexHash := tool.HashInt(w.Index)
+	//	w.Hashcode ^= ((0x79b9 + (indexHash << 6)) << 1)
+	//}
 }
 
 // initFormElement 从Element初始化
-func (w *Widget) initFormElement(element *Element) {
+func (w *Widget) initFormElement(element IElement) {
 	// 先设置基本属性
 	w.Text = element.GetText()
-	w.Clazz = element.GetClassname()
-	w.ResourceID = element.GetResourceID()
-	w.Index = element.GetIndex()
+	w.elementSimpleIdentifier = element.SimpleIdentifier()
+	w.path = element.GetPath()
+	//w.Index = element.GetIndex()
 	w.Enabled = element.GetEnable()
 	w.Editable = element.IsEditText()
 	w.Bounds = element.GetBounds()
-	w.ContextDesc = element.GetContentDesc()
+	//w.ContextDesc = element.GetContentDesc()
 	w.ScrollTypeField = element.GetScrollType()
 
 	// 设置操作掩码
-	if element.GetCheckable() {
+	if element.GetCheckBoxable() {
 		w.enableOperate(Checkable)
 	}
 	if element.GetEnable() {
@@ -240,7 +247,7 @@ func (w *Widget) initFormElement(element *Element) {
 	if element.GetClickable() {
 		w.enableOperate(Clickable)
 	}
-	if element.GetScrollable() {
+	if element.GetScrollType() != NONE {
 		w.enableOperate(Scrollable)
 	}
 	if element.GetLongClickable() {
@@ -268,14 +275,14 @@ func (w *Widget) initFormElement(element *Element) {
 		// 不添加滚动动作
 	}
 
-	// 精确的编辑框判断
-	w.IsEditableField = (w.Clazz == "android.widget.EditText" ||
-		w.Clazz == "android.inputmethodservice.ExtractEditText" ||
-		w.Clazz == "android.widget.AutoCompleteTextView" ||
-		w.Clazz == "android.widget.MultiAutoCompleteTextView")
+	//// 精确的编辑框判断
+	//w.IsEditableField = (w.Clazz == "android.widget.EditText" ||
+	//	w.Clazz == "android.inputmethodservice.ExtractEditText" ||
+	//	w.Clazz == "android.widget.AutoCompleteTextView" ||
+	//	w.Clazz == "android.widget.MultiAutoCompleteTextView")
 
 	// 特殊处理：强制为EditText元素添加点击和长按功能（类似C++版本的FORCE_EDITTEXT_CLICK_TRUE）
-	if FORCE_EDITTEXT_CLICK_TRUE && w.IsEditableField {
+	if FORCE_EDITTEXT_CLICK_TRUE && w.Editable {
 		// 强制设置操作掩码和动作
 		w.enableOperate(Clickable)
 		w.enableOperate(LongClickable)
@@ -283,74 +290,44 @@ func (w *Widget) initFormElement(element *Element) {
 		w.Actions[LONG_CLICK] = true
 	}
 
-	if w.HasAction() {
-		// 特殊的SCROLL_BOTTOM_UP_N动作
-		if SCROLL_BOTTOM_UP_N_ENABLE && (w.Clazz == "android.widget.ListView" ||
-			w.Clazz == "android.support.v7.widget.RecyclerView" ||
-			w.Clazz == "androidx.recyclerview.widget.RecyclerView") {
-			w.Actions[SCROLL_BOTTOM_UP_N] = true
-		}
-	}
+	//if w.HasAction() {
+	//	// 特殊的SCROLL_BOTTOM_UP_N动作
+	//	if SCROLL_BOTTOM_UP_N_ENABLE && (w.Clazz == "android.widget.ListView" ||
+	//		w.Clazz == "android.support.v7.widget.RecyclerView" ||
+	//		w.Clazz == "androidx.recyclerview.widget.RecyclerView") {
+	//		w.Actions[SCROLL_BOTTOM_UP_N] = true
+	//	}
+	//}
 
 	w.Hash()
 
 }
 
-// toXPath 转换为XPath
-func (w *Widget) toXPath() string {
-	var xpath strings.Builder
-
-	if w.Clazz == "" && w.Text == "" && w.ResourceID == "" {
-		log.Debugf("widget detail has been clear")
-		xpath.WriteString("*")
-	} else if w.Clazz != "" {
-		xpath.WriteString(fmt.Sprintf("*[@class='%s'", w.Clazz))
-	} else {
-		xpath.WriteString("*")
-	}
-
-	if w.Text != "" {
-		xpath.WriteString(fmt.Sprintf(" and @text='%s'", w.Text))
-	}
-
-	if w.ResourceID != "" {
-		xpath.WriteString(fmt.Sprintf(" and @resource-id='%s'", w.ResourceID))
-	}
-
-	if w.Index >= 0 {
-		xpath.WriteString(fmt.Sprintf(" and @index='%d'", w.Index))
-	}
-
-	xpath.WriteString("]")
-
-	return xpath.String()
-}
-
 // WidgetList Widget指针切片
-type WidgetList []*Widget
+type WidgetList []IWidget
 
 // WidgetSet Widget指针集合
-type WidgetSet map[uintptr]*Widget
+type WidgetSet map[uintptr]IWidget
 
 // WidgetListMap Widget指针向量映射
 type WidgetListMap map[uintptr]WidgetList
 
 // Add 添加到集合
-func (s WidgetSet) Add(widget *Widget) {
+func (s WidgetSet) Add(widget IWidget) {
 	if widget != nil {
 		s[widget.Hash()] = widget
 	}
 }
 
 // Remove 从集合中移除
-func (s WidgetSet) Remove(widget *Widget) {
+func (s WidgetSet) Remove(widget IWidget) {
 	if widget != nil {
 		delete(s, widget.Hash())
 	}
 }
 
 // Contains 检查是否包含
-func (s WidgetSet) Contains(widget *Widget) bool {
+func (s WidgetSet) Contains(widget IWidget) bool {
 	if widget == nil {
 		return false
 	}
@@ -368,7 +345,7 @@ func (s WidgetSet) ToSlice() WidgetList {
 }
 
 // Add 添加到映射
-func (m WidgetListMap) Add(hash uintptr, widget *Widget) {
+func (m WidgetListMap) Add(hash uintptr, widget IWidget) {
 	if m[hash] == nil {
 		m[hash] = make(WidgetList, 0)
 	}

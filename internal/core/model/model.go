@@ -1,20 +1,20 @@
 package model
 
 import (
-	"Trek/internal/fastbot/core/types"
-	"Trek/internal/fastbot/preference"
+	types2 "Trek/internal/core/types"
+	"Trek/internal/preference"
 	"Trek/log"
 )
 
 type Model struct {
 	graph           *Graph
-	deviceAgentMap  map[string]types.IAgent
+	deviceAgentMap  map[string]types2.IAgent
 	preference      *preference.Preference
 	packageName     string
 	netActionTaskID int
 }
 
-type IAgentCreator func(model *Model, deviceType types.DeviceType) (types.IAgent, error)
+type IAgentCreator func(model *Model, deviceType types2.DeviceType) (types2.IAgent, error)
 
 var agentCreators map[string]IAgentCreator = make(map[string]IAgentCreator)
 
@@ -22,7 +22,7 @@ func RegisterAgentCreator(algorithmType string, agentCreator IAgentCreator) {
 	agentCreators[algorithmType] = agentCreator
 }
 
-type IElementCreator func(guiContent string) (types.IElement, error)
+type IElementCreator func(guiContent string) (types2.IElement, error)
 
 var elementCreators map[string]IElementCreator = make(map[string]IElementCreator)
 
@@ -34,7 +34,7 @@ func NewModel(packageName string) *Model {
 
 	return &Model{
 		graph:          NewGraph(),
-		deviceAgentMap: make(map[string]types.IAgent),
+		deviceAgentMap: make(map[string]types2.IAgent),
 		preference:     preference.GetInstance(),
 		packageName:    packageName,
 	}
@@ -49,8 +49,8 @@ func (m *Model) SetGraph(graph *Graph) {
 }
 
 // AddAgent 添加一个新的agent到model层中
-func (m *Model) AddAgent(deviceID string, algorithmType string, deviceType types.DeviceType) types.IAgent {
-	var graphListener types.IAgent
+func (m *Model) AddAgent(deviceID string, algorithmType string, deviceType types2.DeviceType) types2.IAgent {
+	var graphListener types2.IAgent
 	var err error
 	var agentCreator = agentCreators[algorithmType]
 	if agentCreator != nil {
@@ -102,7 +102,7 @@ const DefaultDeviceID = "0000001"
 
 func (m *Model) GetOperate(elemType string, descContent string, pageName string, deviceID string) string {
 
-	var elem types.IElement
+	var elem types2.IElement
 	var err error
 
 	if elementCreator, ok := elementCreators[elemType]; ok {
@@ -117,7 +117,7 @@ func (m *Model) GetOperate(elemType string, descContent string, pageName string,
 	return operate.ToJSON()
 }
 
-func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID string) *types.DeviceOperateWrapper {
+func (m *Model) GetOperateOpt(elem types2.IElement, pageName string, deviceID string) *types2.DeviceOperateWrapper {
 	//methodStartTime := time.Now()
 
 	customAction := m.resolvePageAndGetSpecifiedAction(pageName, elem)
@@ -143,10 +143,10 @@ func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID str
 		log.Debugf("use reuseAgent as the default agent")
 		// todo 可扩展点
 
-		m.AddAgent(DefaultDeviceID, types.Reuse.String(), types.Phone)
+		m.AddAgent(DefaultDeviceID, types2.Reuse.String(), types2.Phone)
 	}
 
-	var agent types.IAgent
+	var agent types2.IAgent
 	if deviceID == "" {
 		agent = m.deviceAgentMap[DefaultDeviceID]
 	} else {
@@ -157,10 +157,10 @@ func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID str
 	}
 
 	if agent == nil {
-		return types.OperateNop
+		return types2.OperateNop
 	}
 
-	var state types.IState
+	var state types2.IState
 	//algorithmType := agent.GetAlgorithmType()
 
 	if elem != nil {
@@ -223,7 +223,7 @@ func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID str
 	if action == nil && !shouldSkipActionsFromModel {
 		//startGeneratingActionTime = time.Now()
 		if agent.GetCurrentStateBlockTimes() > 0 {
-			action = types.RESTARTAction
+			action = types2.RESTARTAction
 			stateID := ""
 			if state != nil {
 				stateID = state.GetId()
@@ -235,10 +235,10 @@ func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID str
 			agent.UpdateStrategy()
 			if action == nil {
 				log.Errorf("get null action!!!!")
-				return types.OperateNop
+				return types2.OperateNop
 			}
-			if action.(*types.StatefulAction).IsModelAct() && state != nil {
-				action.(*types.StatefulAction).Visit(m.graph.GetTimestamp())
+			if action.(*types2.StatefulAction).IsModelAct() && state != nil {
+				action.(*types2.StatefulAction).Visit(m.graph.GetTimestamp())
 				agent.MoveForward(state)
 			}
 		}
@@ -246,10 +246,10 @@ func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID str
 
 	//endGeneratingActionTime := time.Now()
 
-	operate := types.OperateNop
+	operate := types2.OperateNop
 	if action != nil {
-		log.Infof("selected action %s", action.(*types.StatefulAction).String())
-		operate = action.(*types.StatefulAction).ToOperate()
+		log.Infof("selected action %s", action.(*types2.StatefulAction).String())
+		operate = action.(*types2.StatefulAction).ToOperate()
 		if m.preference != nil {
 			m.patchOperate(operate)
 		}
@@ -265,7 +265,7 @@ func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID str
 	return operate
 }
 
-func (m *Model) resolvePageAndGetSpecifiedAction(page string, elem types.IElement) types.IAction {
+func (m *Model) resolvePageAndGetSpecifiedAction(page string, elem types2.IElement) types2.IAction {
 	if m.preference != nil {
 		return m.preference.ResolvePageAndGetSpecifiedAction(page, elem)
 	}
@@ -279,7 +279,7 @@ func (m *Model) skipAllActionsFromModel() bool {
 	return false
 }
 
-func (m *Model) patchOperate(operate *types.DeviceOperateWrapper) {
+func (m *Model) patchOperate(operate *types2.DeviceOperateWrapper) {
 	if m.preference != nil {
 		m.preference.PatchOperate(operate)
 	}

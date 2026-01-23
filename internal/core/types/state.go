@@ -1,7 +1,7 @@
 package types
 
 import (
-	"Trek/internal/fastbot/tool"
+	"Trek/internal/tool"
 	"Trek/log"
 	"fmt"
 	"math/rand"

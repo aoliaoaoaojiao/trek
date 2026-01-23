@@ -2,8 +2,8 @@
 package reuse
 
 import (
-	"Trek/internal/fastbot/core/types"
-	"Trek/internal/fastbot/tool"
+	"Trek/internal/core/types"
+	"Trek/internal/tool"
 )
 
 // 导出desc包中的哈希计算工具函数

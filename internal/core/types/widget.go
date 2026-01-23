@@ -1,7 +1,7 @@
 package types
 
 import (
-	"Trek/internal/fastbot/tool"
+	"Trek/internal/tool"
 	"fmt"
 	"sort"
 	"strings"
@@ -47,6 +47,8 @@ const (
 
 	// FORCE_EDITTEXT_CLICK_TRUE 是否强制为EditText元素添加点击和长按功能
 	FORCE_EDITTEXT_CLICK_TRUE = true
+
+	PARENT_CLICK_CHANGE_CHILDREN = true
 )
 
 // NewWidget 创建新的Widget
@@ -232,7 +234,7 @@ func (w *Widget) initFormElement(element IElement) {
 	w.path = element.GetPath()
 	//w.Index = element.GetIndex()
 	w.Enabled = element.GetEnable()
-	w.Editable = element.IsEditText()
+	w.Editable = element.GetEditable()
 	w.Bounds = element.GetBounds()
 	//w.ContextDesc = element.GetContentDesc()
 	w.ScrollTypeField = element.GetScrollType()

@@ -96,27 +96,31 @@ type IElement interface {
 	SimpleIdentifier() uintptr
 
 	GetParent() IElement
+	GetPath() string
 
 	GetText() string
-
-	GetValidText() string
+	SetText(text string)
 
 	GetClickable() bool
+	SetClickable(clickable bool)
 
 	GetLongClickable() bool
+	SetLongClickable(clickable bool)
 
 	GetCheckBoxable() bool
+	SetCheckBoxable(checkBoxable bool)
 
 	GetEnable() bool
-	//SetEnable(enable bool)
+	SetEnable(enable bool)
 
-	IsEditText() bool
+	GetEditable() bool
+	SetEditable(editable bool)
 
 	GetScrollType() ScrollType
+	//SetScrollType(scrollType ScrollType)
 
 	GetBounds() *Rect
-
-	GetPath() string
+	SetBounds(rect *Rect)
 
 	GetChildren() []IElement
 }

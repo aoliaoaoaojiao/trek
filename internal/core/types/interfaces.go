@@ -93,7 +93,7 @@ type IState interface {
 }
 
 type IElement interface {
-	SimpleIdentifier() uintptr
+	GetIdentifierHash() uintptr
 
 	GetParent() IElement
 	GetPath() string
@@ -117,18 +117,24 @@ type IElement interface {
 	SetEditable(editable bool)
 
 	GetScrollType() ScrollType
-	//SetScrollType(scrollType ScrollType)
+	SetScrollType(scrollType string)
 
 	GetBounds() *Rect
 	SetBounds(rect *Rect)
 
+	GetAttr(key string) interface{}
+	SetAttr(key string, value interface{})
+
 	GetChildren() []IElement
+	SetChildren(childList []IElement)
+	String() string
+
+	DeleteElement(xpath string) bool
+	Query(xpath string) []IElement
 }
 
 // IWidget Widget接口，定义了Widget的基本操作和属性访问方法
 type IWidget interface {
-	// 基础信息获取方法
-	GetElementIdentifier() uintptr
 	GetText() string
 	GetBounds() *Rect
 	GetEnabled() bool

@@ -72,11 +72,17 @@ func NewWidget(parent IWidget, element IElement) *Widget {
 
 // GetParent 获取父Widget
 func (w *Widget) GetParent() IWidget {
+	if w == nil || w.Parent == nil {
+		return nil
+	}
 	return w.Parent
 }
 
 // GetBounds 获取边界
 func (w *Widget) GetBounds() *Rect {
+	if w == nil {
+		return nil
+	}
 	return w.Bounds
 }
 
@@ -94,31 +100,49 @@ func (w *Widget) GetActions() []ActionType {
 
 // GetText 获取文本
 func (w *Widget) GetText() string {
+	if w == nil {
+		return ""
+	}
 	return w.Text
 }
 
 // GetEnabled 获取是否启用
 func (w *Widget) GetEnabled() bool {
+	if w == nil {
+		return false
+	}
 	return w.Enabled
 }
 
 // HasOperate 检查是否有指定操作
 func (w *Widget) HasOperate(opt OperateType) bool {
+	if w == nil {
+		return false
+	}
 	return w.OperateMask&opt != 0
 }
 
 // HasAction 检查是否有动作
 func (w *Widget) HasAction() bool {
+	if w == nil {
+		return false
+	}
 	return len(w.Actions) > 0
 }
 
 // IsEditable 检查是否可编辑
 func (w *Widget) IsEditable() bool {
+	if w == nil {
+		return false
+	}
 	return w.Editable
 }
 
 // Hash 计算哈希值
 func (w *Widget) Hash() uintptr {
+	if w == nil {
+		return 0
+	}
 	if w.Hashcode == 0 {
 		// 基础哈希计算
 		//hashcode1 := tool.HashString(w.elementSimpleIdentifier)
@@ -136,17 +160,26 @@ func (w *Widget) Hash() uintptr {
 }
 
 func (w *Widget) GetElementIdentifier() uintptr {
+	if w == nil {
+		return 0
+	}
 	return w.elementSimpleIdentifier
 }
 
 // String 返回字符串表示
 func (w *Widget) String() string {
+	if w == nil {
+		return ""
+	}
 	return fmt.Sprintf("Widget{text:%s, bounds:%s, enabled:%t, path:%s}",
 		w.Text, w.Bounds.String(), w.Enabled, w.path)
 }
 
 // BuildFullXpath 构建完整XPath
 func (w *Widget) GetPath() string {
+	if w == nil {
+		return ""
+	}
 	return w.path
 }
 
@@ -230,7 +263,7 @@ func (w *Widget) preprocessText() {
 func (w *Widget) initFormElement(element IElement) {
 	// 先设置基本属性
 	w.Text = element.GetText()
-	w.elementSimpleIdentifier = element.SimpleIdentifier()
+	w.elementSimpleIdentifier = element.GetIdentifierHash()
 	w.path = element.GetPath()
 	//w.Index = element.GetIndex()
 	w.Enabled = element.GetEnable()

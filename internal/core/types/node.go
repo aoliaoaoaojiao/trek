@@ -1,11 +1,11 @@
 package types
 
 import (
-	"Trek/log"
 	"fmt"
 	"strconv"
 	"sync/atomic"
 	"time"
+	"trek/log"
 )
 
 // Node 基础节点结构，用于统计访问状态和计数

@@ -1,9 +1,9 @@
 package model
 
 import (
-	types2 "Trek/internal/core/types"
-	"Trek/internal/preference"
-	"Trek/log"
+	types2 "trek/internal/core/types"
+	"trek/internal/preference"
+	"trek/log"
 )
 
 type Model struct {

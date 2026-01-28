@@ -1,17 +1,17 @@
 package reuse
 
 import (
-	protoPkg "Trek/internal/algorithm/reuse/proto"
-	"Trek/internal/core/model"
-	types2 "Trek/internal/core/types"
-	"Trek/internal/tool"
-	"Trek/log"
 	"fmt"
 	"math"
 	"math/rand"
 	"os"
 	"sync"
 	"time"
+	protoPkg "trek/internal/algorithm/reuse/proto"
+	"trek/internal/core/model"
+	types2 "trek/internal/core/types"
+	"trek/internal/tool"
+	"trek/log"
 
 	"google.golang.org/protobuf/proto"
 )

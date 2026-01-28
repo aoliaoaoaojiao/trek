@@ -1,9 +1,9 @@
 package model
 
 import (
-	types2 "Trek/internal/core/types"
-	"Trek/log"
 	"time"
+	types2 "trek/internal/core/types"
+	"trek/log"
 )
 
 type ActionCounter struct {

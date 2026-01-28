@@ -1,13 +1,13 @@
 package types
 
 import (
-	"Trek/internal/tool"
-	"Trek/log"
 	"fmt"
 	"math/rand"
 	"sort"
 	"sync/atomic"
 	"time"
+	"trek/internal/tool"
+	"trek/log"
 )
 
 // 状态处理常量

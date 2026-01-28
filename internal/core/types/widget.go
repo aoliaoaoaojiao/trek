@@ -1,10 +1,10 @@
 package types
 
 import (
-	"Trek/internal/tool"
 	"fmt"
 	"sort"
 	"strings"
+	"trek/internal/tool"
 )
 
 var _ IWidget = (*Widget)(nil)

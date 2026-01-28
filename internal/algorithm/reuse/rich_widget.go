@@ -1,8 +1,8 @@
 package reuse
 
 import (
-	types2 "Trek/internal/core/types"
-	"Trek/log"
+	types2 "trek/internal/core/types"
+	"trek/log"
 )
 
 // RichWidget 使用动作、类名、资源ID、自身（或其子元素）的文本

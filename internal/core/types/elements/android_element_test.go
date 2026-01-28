@@ -1,9 +1,10 @@
 package elements
 
 import (
-	types2 "Trek/internal/core/types"
-	"github.com/beevik/etree"
 	"testing"
+	types2 "trek/internal/core/types"
+
+	"github.com/beevik/etree"
 
 	"github.com/stretchr/testify/assert"
 )

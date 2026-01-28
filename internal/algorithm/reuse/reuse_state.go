@@ -1,8 +1,8 @@
 package reuse
 
 import (
-	types2 "Trek/internal/core/types"
-	"Trek/log"
+	types2 "trek/internal/core/types"
+	"trek/log"
 )
 
 // ReuseState 重用状态类，持有所有Widgets及其关联的动作等

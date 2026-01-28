@@ -1,16 +1,17 @@
 package elements
 
 import (
-	"Trek/internal/core/model"
-	types2 "Trek/internal/core/types"
-	"Trek/internal/tool"
-	"Trek/log"
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/tidwall/gjson"
 	"strconv"
 	"strings"
+	"trek/internal/core/model"
+	types2 "trek/internal/core/types"
+	"trek/internal/tool"
+	"trek/log"
+
+	"github.com/tidwall/gjson"
 
 	"github.com/beevik/etree"
 )

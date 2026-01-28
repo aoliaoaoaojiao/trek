@@ -1,9 +1,9 @@
 package preference
 
 import (
-	types2 "Trek/internal/core/types"
 	"math/rand"
 	"time"
+	types2 "trek/internal/core/types"
 )
 
 type CustomAction struct {

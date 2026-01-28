@@ -1,12 +1,12 @@
 package types
 
 import (
-	"Trek/internal/tool"
-	"Trek/log"
 	"fmt"
 	"sort"
 	"sync/atomic"
 	"time"
+	"trek/internal/tool"
+	"trek/log"
 )
 
 var _ IAction = (*Action)(nil)

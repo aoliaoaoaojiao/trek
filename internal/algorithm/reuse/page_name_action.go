@@ -1,8 +1,8 @@
 package reuse
 
 import (
-	types2 "Trek/internal/core/types"
-	"Trek/log"
+	types2 "trek/internal/core/types"
+	"trek/log"
 )
 
 // PageNameAction 带页面名称的动作

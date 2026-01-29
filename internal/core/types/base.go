@@ -144,12 +144,12 @@ const (
 
 // Point 点结构
 type Point struct {
-	X int `json:"x"`
-	Y int `json:"y"`
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
 }
 
 // NewPoint 创建新的点
-func NewPoint(x, y int) *Point {
+func NewPoint(x, y float64) *Point {
 	return &Point{X: x, Y: y}
 }
 
@@ -177,19 +177,19 @@ func (p *Point) Equal(other *Point) bool {
 
 // String 返回点的字符串表示
 func (p *Point) String() string {
-	return fmt.Sprintf("(%d,%d)", p.X, p.Y)
+	return fmt.Sprintf("(%.0f,%.0f)", p.X, p.Y)
 }
 
 // Rect 矩形结构
 type Rect struct {
-	Top    int `json:"top"`
-	Bottom int `json:"bottom"`
-	Left   int `json:"left"`
-	Right  int `json:"right"`
+	Top    float64 `json:"top"`
+	Bottom float64 `json:"bottom"`
+	Left   float64 `json:"left"`
+	Right  float64 `json:"right"`
 }
 
 // NewRect 创建新的矩形
-func NewRect(left, top, right, bottom int) *Rect {
+func NewRect(left, top, right, bottom float64) *Rect {
 	return &Rect{
 		Left:   left,
 		Top:    top,
@@ -238,9 +238,9 @@ func (r *Rect) Equal(other *Rect) bool {
 		r.Left == other.Left && r.Right == other.Right
 }
 
-// String 返回矩形的字符串表示
+// String 返回矩形的字符串表示，保留小数点后3位
 func (r *Rect) String() string {
-	return fmt.Sprintf("[%d,%d,%d,%d]", r.Left, r.Top, r.Right, r.Bottom)
+	return fmt.Sprintf("[%.3f,%.3f,%.3f,%.3f]", r.Left, r.Top, r.Right, r.Bottom)
 }
 
 // RectZero 零矩形

@@ -294,7 +294,7 @@ func (e *AndroidElement) SetBounds(rect *types2.Rect) {
 		return
 	}
 	// [left,top][right,bottom]
-	e.eNode.CreateAttr("bounds", fmt.Sprintf("[%d,%d][%d,%d]", rect.Left, rect.Top, rect.Right, rect.Bottom))
+	e.eNode.CreateAttr("bounds", fmt.Sprintf("[%.0f,%.0f][%.0f,%.0f]", rect.Left, rect.Top, rect.Right, rect.Bottom))
 }
 
 // GetChildren 获取子元素
@@ -512,10 +512,10 @@ func parseBounds(boundsStr string) *types2.Rect {
 		return types2.NewRect(0, 0, 0, 0)
 	}
 
-	left, _ := strconv.Atoi(lt[0])
-	top, _ := strconv.Atoi(lt[1])
-	right, _ := strconv.Atoi(rb[0])
-	bottom, _ := strconv.Atoi(rb[1])
+	left, _ := strconv.ParseFloat(lt[0], 64)
+	top, _ := strconv.ParseFloat(lt[1], 64)
+	right, _ := strconv.ParseFloat(rb[0], 64)
+	bottom, _ := strconv.ParseFloat(rb[1], 64)
 
 	return types2.NewRect(left, top, right, bottom)
 }

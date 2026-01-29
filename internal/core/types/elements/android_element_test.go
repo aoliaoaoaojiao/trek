@@ -49,8 +49,8 @@ func TestCreateAndroidElementFromXml_Complex(t *testing.T) {
 	assert.Equal(t, 2, len(androidElem.GetChildren()))
 
 	rect := androidElem.GetBounds()
-	assert.Equal(t, 0, rect.Left)
-	assert.Equal(t, 2400, rect.Bottom)
+	assert.Equal(t, float64(0), rect.Left)
+	assert.Equal(t, float64(2400), rect.Bottom)
 
 	// 2. 验证第一个子节点 (Button)
 	btn := androidElem.GetChildren()[0].(*AndroidElement)
@@ -111,24 +111,24 @@ func TestAndroidElement_Bounds(t *testing.T) {
 	elem.SetBounds(originalRect)
 
 	parsedRect := elem.GetBounds()
-	assert.Equal(t, 50, parsedRect.Left)
-	assert.Equal(t, 60, parsedRect.Top)
-	assert.Equal(t, 200, parsedRect.Right)
-	assert.Equal(t, 300, parsedRect.Bottom)
+	assert.Equal(t, float64(50), parsedRect.Left)
+	assert.Equal(t, float64(60), parsedRect.Top)
+	assert.Equal(t, float64(200), parsedRect.Right)
+	assert.Equal(t, float64(300), parsedRect.Bottom)
 
 	// 2. 测试从字符串属性直接解析 (模拟 XML 读取)
 	// 覆盖 parseBounds 函数
 	elem.eNode.CreateAttr("bounds", "[0,0][1080,1920]")
 	parsedRect2 := elem.GetBounds()
-	assert.Equal(t, 1080, parsedRect2.Right)
-	assert.Equal(t, 1920, parsedRect2.Bottom)
+	assert.Equal(t, float64(1080), parsedRect2.Right)
+	assert.Equal(t, float64(1920), parsedRect2.Bottom)
 
 	// 3. 测试非法格式 (健壮性测试)
 	elem.eNode.CreateAttr("bounds", "invalid-format")
 	zeroRect := elem.GetBounds()
 	// parseBounds 遇到错误通常返回 [0,0][0,0]
-	assert.Equal(t, 0, zeroRect.Left)
-	assert.Equal(t, 0, zeroRect.Right)
+	assert.Equal(t, float64(0), zeroRect.Left)
+	assert.Equal(t, float64(0), zeroRect.Right)
 }
 
 // TestAndroidElement_ScrollType 测试滚动类型判定逻辑

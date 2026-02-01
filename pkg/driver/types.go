@@ -25,6 +25,7 @@ type TouchEvent struct {
 	Type TouchEventType
 	// WaitTime 等待时间，单位为毫秒
 	WaitTime int64
+	types.Point
 }
 
 type ITouch interface {
@@ -54,12 +55,14 @@ type ITouch interface {
 	// duration: 缩放持续时间，单位为毫秒
 	// 返回错误信息，如果操作成功则返回nil
 	// 当endDistance > startDistance时为放大，endDistance < startDistance时为缩小
-	Pinch(centerPoint types.Point, startDistance int64, endDistance int64, duration int64) error
+	Pinch(centerPoint types.Point, startDistance float64, endDistance float64, duration int64) error
 
 	// TouchEvent 执行复杂的触摸事件序列
 	// touchList: 触摸事件列表，可以包含多个触摸动作
 	// 返回错误信息，如果操作成功则返回nil
-	TouchEvent(touchList []TouchEvent) error
+	TouchEvent(touchList ...TouchEvent) error
+
+	Close() error
 }
 
 type IPageCapture interface {
@@ -68,6 +71,8 @@ type IPageCapture interface {
 	DumpPageInfo() (string, error)
 	// FindElement 根据路径查询当前页面对应的元素
 	FindElement(path string) (string, error)
+
+	Close() error
 }
 
 // IDriver 设备驱动接口

@@ -1,0 +1,86 @@
+package android_test
+
+import (
+	"fmt"
+	"testing"
+	"trek/internal/core/types"
+	"trek/pkg/driver"
+	touch "trek/pkg/driver/touch/android"
+	"trek/pkg/gadb"
+)
+
+var (
+	device *gadb.Device
+)
+
+func init() {
+	client, err := gadb.NewClient()
+	if err != nil {
+		fmt.Println("连接 ADB 服务失败，请检查系统环境")
+		panic(err)
+	}
+	device, _ = driver.GetAndroidDevice(client, "")
+
+}
+
+func TestMotionTouch_Pinch(t *testing.T) {
+	motionTouch := touch.NewMotionTouch(device)
+
+	centerPoint := types.Point{
+		X: 0.5,
+		Y: 0.5,
+	}
+
+	// 放大
+	motionTouch.Pinch(centerPoint, 0.3, 0.9, 3*1000)
+
+	// 缩小
+	motionTouch.Pinch(centerPoint, 0.9, 0.3, 3*1000)
+
+	centerPoint2 := types.Point{
+		X: 500,
+		Y: 500,
+	}
+
+	// 放大
+	motionTouch.Pinch(centerPoint2, 300, 900, 3*1000)
+
+	// 缩小
+	motionTouch.Pinch(centerPoint2, 900, 300, 3*1000)
+
+}
+
+func TestMotionTouch_Swipe(t *testing.T) {
+	motionTouch := touch.NewMotionTouch(device)
+	statPoint1 := types.Point{
+		X: 0.1,
+		Y: 0.5,
+	}
+
+	endPoint1 := types.Point{
+		X: 0.9,
+		Y: 0.5,
+	}
+
+	motionTouch.Swipe(statPoint1, endPoint1, 10, 2*1000)
+
+	statPoint2 := types.Point{
+		X: 100,
+		Y: 700,
+	}
+
+	endPoint2 := types.Point{
+		X: 100,
+		Y: 200,
+	}
+
+	motionTouch.Swipe(statPoint2, endPoint2, 10, 2*1000)
+}
+
+func TestMotionTouch_Click(t *testing.T) {
+	motionTouch := touch.NewMotionTouch(device)
+	motionTouch.Click(types.Point{
+		X: 200,
+		Y: 700,
+	})
+}

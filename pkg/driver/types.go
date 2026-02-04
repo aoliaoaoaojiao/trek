@@ -65,12 +65,24 @@ type ITouch interface {
 	Close() error
 }
 
-type IPageCapture interface {
-	// DumpPageInfo 获取完整的页面信息
+type IPageSource interface {
+	// DumpPageSource 获取完整的页面信息
 	// 以字符串形式返回完整页面的信息
-	DumpPageInfo() (string, error)
-	// FindElement 根据路径查询当前页面对应的元素
-	FindElement(path string) (string, error)
+	DumpPageSource() (string, error)
+
+	Close() error
+}
+
+type IScreenshot interface {
+	// Screenshot 截图
+	// 返回当前的界面截图
+	Screenshot() ([]byte, error)
+	// SaveScreenshot 保存截图
+	SaveScreenshot(path string) error
+	// Record 录屏
+	Record(path string) ([]byte, error)
+	// StopRecording 停止录屏
+	StopRecording() error
 
 	Close() error
 }
@@ -78,7 +90,7 @@ type IPageCapture interface {
 // IDriver 设备驱动接口
 type IDriver interface {
 	ITouch
-	IPageCapture
+	IPageSource
 
 	// Name 获取设备名称
 	// 返回当前连接设备的标识名称

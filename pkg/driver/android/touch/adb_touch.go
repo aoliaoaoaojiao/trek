@@ -1,10 +1,11 @@
-package android
+package touch
 
 import (
+	"errors"
 	"fmt"
 	types2 "trek/internal/core/types"
 	"trek/pkg/driver"
-	"trek/pkg/gadb"
+	"trek/pkg/driver/android/gadb"
 )
 
 var _ driver.ITouch = (*ADBTouch)(nil)
@@ -124,9 +125,9 @@ func (a *ADBTouch) Swipe(startPoint types2.Point, endPoint types2.Point, step in
 }
 
 func (a *ADBTouch) Pinch(centerPoint types2.Point, startDistance float64, endDistance float64, duration int64) error {
-	panic("adb not pinchable")
+	return errors.New("adb not pinchable")
 }
 
 func (a *ADBTouch) TouchEvent(touchList ...driver.TouchEvent) error {
-	panic("adb not custom touch event")
+	return errors.New("adb not custom touch event")
 }

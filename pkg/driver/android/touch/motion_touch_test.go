@@ -1,25 +1,25 @@
-package android_test
+package touch_test
 
 import (
 	"fmt"
 	"testing"
 	"trek/internal/core/types"
-	"trek/pkg/driver"
-	touch "trek/pkg/driver/touch/android"
-	"trek/pkg/gadb"
+	gadb2 "trek/pkg/driver/android/gadb"
+	"trek/pkg/driver/android/tool"
+	"trek/pkg/driver/android/touch"
 )
 
 var (
-	device *gadb.Device
+	device *gadb2.Device
 )
 
 func init() {
-	client, err := gadb.NewClient()
+	client, err := gadb2.NewClient()
 	if err != nil {
 		fmt.Println("连接 ADB 服务失败，请检查系统环境")
 		panic(err)
 	}
-	device, _ = driver.GetAndroidDevice(client, "")
+	device, _ = tool.GetAndroidDevice(client, "")
 
 }
 

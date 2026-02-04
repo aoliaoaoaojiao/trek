@@ -1,4 +1,4 @@
-package android
+package touch
 
 import (
 	"bytes"
@@ -8,10 +8,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"trek/pkg/driver/android/gadb"
 
 	types2 "trek/internal/core/types"
 	"trek/pkg/driver"
-	"trek/pkg/gadb"
 )
 
 // source: https://github.com/aoliaoaoaojiao/AndroidTouch, build output to debug apk

@@ -1,11 +1,11 @@
-package driver
+package tool
 
 import (
 	"errors"
-	"trek/pkg/gadb"
+	gadb2 "trek/pkg/driver/android/gadb"
 )
 
-func GetAndroidDevice(client gadb.Client, serial string) (*gadb.Device, error) {
+func GetAndroidDevice(client gadb2.Client, serial string) (*gadb2.Device, error) {
 	devices, err := client.DeviceList()
 	if err != nil {
 		return nil, err

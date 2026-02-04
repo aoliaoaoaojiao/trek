@@ -1,9 +1,9 @@
-package android_test
+package touch_test
 
 import (
 	"testing"
 	"trek/internal/core/types"
-	touch "trek/pkg/driver/touch/android"
+	"trek/pkg/driver/android/touch"
 )
 
 func TestADBTouch_Pinch(t *testing.T) {

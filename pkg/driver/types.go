@@ -90,7 +90,10 @@ type IScreenshot interface {
 // IDriver 设备驱动接口
 type IDriver interface {
 	ITouch
-	IPageSource
+	IScreenshot
+
+	RegisterPageSource(name string, source IPageSource)
+	GetPageSource(name string) IPageSource
 
 	// Name 获取设备名称
 	// 返回当前连接设备的标识名称
@@ -99,8 +102,4 @@ type IDriver interface {
 	// GetInfo 获取设备信息
 	// 返回设备的详细信息，包括型号、版本、分辨率等
 	GetInfo() map[string]interface{}
-
-	// Screenshot 截图
-	// 返回当前的界面截图
-	Screenshot() ([]byte, error)
 }

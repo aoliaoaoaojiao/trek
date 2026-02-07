@@ -45,15 +45,25 @@ func TestScrcpy_Start(t *testing.T) {
 
 	pid := muxer.AddVideoTrack(mp4.MP4_CODEC_H264)
 
-	pts := uint64(0)
+	initPts := uint64(0)
 	//dts := uint64(0)
+	isInit := false
+	//start := time.Now()
 
-	start := time.Now()
+	scrcpy.SetVideoFrameHandler(func(frameData []byte, oriPTS uint64, isKeyFrame bool) {
+		//fmt.Println("video frame size:", len(frameData))
 
-	scrcpy.SetVideoFrameHandler(func(bytes []byte) {
-		fmt.Println("video frame size:", len(bytes))
-		codec.SplitFrameWithStartCode(bytes, func(nalu []byte) bool {
-			pts = uint64(time.Now().UnixMilli() - start.UnixMilli())
+		if !isInit {
+			initPts = oriPTS
+			isInit = true
+		}
+
+		codec.SplitFrameWithStartCode(frameData, func(nalu []byte) bool {
+
+			//pts := uint64(time.Now().UnixMilli() - start.UnixMilli())
+
+			pts := (oriPTS - initPts) / 1000
+
 			muxer.Write(pid, nalu, pts, pts)
 			return true
 		})

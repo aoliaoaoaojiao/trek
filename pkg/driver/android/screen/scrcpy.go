@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"math/rand"
@@ -31,7 +32,7 @@ type Scrcpy struct {
 	exitCallBackFunc  context.CancelFunc
 	exitCtx           context.Context
 	scid              int
-	videoFrameHandler func([]byte)
+	videoFrameHandler func([]byte, uint64, bool)
 }
 
 func NewScrcpy(device *gadb.Device) *Scrcpy {
@@ -64,7 +65,8 @@ func NewScrcpy(device *gadb.Device) *Scrcpy {
 	}
 }
 
-func (s *Scrcpy) SetVideoFrameHandler(handler func([]byte)) {
+// SetVideoFrameHandler 设置视频帧处理函数，参数为视频数据、pts(us)和是否为关键帧
+func (s *Scrcpy) SetVideoFrameHandler(handler func(frameData []byte, oriPTS uint64, isKeyFrame bool)) {
 	s.videoFrameHandler = handler
 }
 
@@ -250,7 +252,14 @@ func (s *Scrcpy) writeH264() {
 			}
 
 			// 解析包头
-			packetSize := s.parsePacketHeader(headerBuf)
+			packetSize, pts, isKeyFrame, _, err := s.parsePacketHeader(headerBuf)
+
+			if err != nil {
+				log.Errorf("parse scrcpy packet header err: %v", err)
+				s.exitCallBackFunc()
+				return
+			}
+
 			if packetSize <= 0 {
 				log.Errorf("invalid packet size: %d", packetSize)
 				s.exitCallBackFunc()
@@ -277,29 +286,56 @@ func (s *Scrcpy) writeH264() {
 			}
 
 			// 处理完整的数据包
-			s.processVideoPacket(dataBuf[:packetSize])
+			s.processVideoPacket(dataBuf[:packetSize], pts, isKeyFrame)
 		}
 	}
 }
 
-// 解析包头，返回数据包大小
-func (s *Scrcpy) parsePacketHeader(header []byte) int {
+// 定义和Java端一致的标志位常量（Scrcpy标准定义）
+const (
+	PACKET_FLAG_CONFIG    = uint64(1 << 63) // 配置包标志（最高位）
+	PACKET_FLAG_KEY_FRAME = uint64(1 << 62) // 关键帧标志
+)
+
+// 解析包头，返回：包大小、pts、是否关键帧、是否配置包、错误
+func (s *Scrcpy) parsePacketHeader(header []byte) (packetSize int, pts uint64, isKeyFrame bool, isConfig bool, err error) {
 	// header结构：
-	// 0-7字节：ptsAndFlags (8字节)
+	// 0-7字节：ptsAndFlags (8字节，大端序)
 	// 8-11字节：packetSize (4字节，大端序)
 
-	// 读取4字节的包大小（大端序）
+	// 校验header长度（必须至少12字节）
 	if len(header) < 12 {
-		return -1
+		return -1, 0, false, false, fmt.Errorf("无效的header长度：%d（需至少12字节）", len(header))
 	}
-	packetSize := int(header[8])<<24 | int(header[9])<<16 | int(header[10])<<8 | int(header[11])
-	return packetSize
+
+	// 1. 解析8字节的ptsAndFlags（大端序，Java ByteBuffer默认大端序）
+	ptsAndFlags := binary.BigEndian.Uint64(header[0:8])
+
+	// 2. 判断是否为配置包
+	isConfig = (ptsAndFlags & PACKET_FLAG_CONFIG) != 0
+
+	if isConfig {
+		// 配置包无媒体数据，pts和关键帧无意义
+		pts = 0
+		isKeyFrame = false
+	} else {
+		// 3. 提取原始pts（清除标志位）
+		pts = ptsAndFlags & ^(PACKET_FLAG_CONFIG | PACKET_FLAG_KEY_FRAME)
+		// 4. 判断是否为关键帧
+		isKeyFrame = (ptsAndFlags & PACKET_FLAG_KEY_FRAME) != 0
+	}
+
+	// 5. 解析4字节的包大小（大端序）
+	packetSizeBytes := header[8:12]
+	packetSize = int(binary.BigEndian.Uint32(packetSizeBytes))
+
+	return packetSize, pts, isKeyFrame, isConfig, nil
 }
 
 // 处理视频数据包
-func (s *Scrcpy) processVideoPacket(data []byte) {
+func (s *Scrcpy) processVideoPacket(data []byte, pts uint64, isKeyFrame bool) {
 	if s.videoFrameHandler != nil {
-		s.videoFrameHandler(data)
+		s.videoFrameHandler(data, pts, isKeyFrame)
 	}
 }
 

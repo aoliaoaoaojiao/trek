@@ -73,14 +73,14 @@ type IPageSource interface {
 	Close() error
 }
 
-type IScreenshot interface {
+type IScreenCapture interface {
 	// Screenshot 截图
 	// 返回当前的界面截图
 	Screenshot() ([]byte, error)
 	// SaveScreenshot 保存截图
 	SaveScreenshot(path string) error
 	// Record 录屏
-	Record(path string) ([]byte, error)
+	Record(path string) error
 	// StopRecording 停止录屏
 	StopRecording() error
 
@@ -90,7 +90,7 @@ type IScreenshot interface {
 // IDriver 设备驱动接口
 type IDriver interface {
 	ITouch
-	IScreenshot
+	IScreenCapture
 
 	RegisterPageSource(name string, source IPageSource)
 	GetPageSource(name string) IPageSource

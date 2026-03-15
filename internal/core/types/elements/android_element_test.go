@@ -12,7 +12,7 @@ import (
 // TestCreateAndroidElement_Basic 测试基本的创建逻辑
 func TestCreateAndroidElement_Basic(t *testing.T) {
 	// 1. 测试通过 Tag 创建
-	elem, err := CreateAndroidElement("android.widget.Button")
+	elem, err := CreateAndroidElement("uia.widget.Button")
 
 	assert.NoError(t, err)
 	assert.NotNil(t, elem)
@@ -22,8 +22,8 @@ func TestCreateAndroidElement_Basic(t *testing.T) {
 
 	// 假设我们需要手动设置 class 以进行测试：
 	if androidElem, ok := elem.(*AndroidElement); ok {
-		androidElem.eNode.CreateAttr("class", "android.widget.Button")
-		assert.Equal(t, "android.widget.Button", androidElem.GetClassname())
+		androidElem.eNode.CreateAttr("class", "uia.widget.Button")
+		assert.Equal(t, "uia.widget.Button", androidElem.GetClassname())
 	}
 
 }
@@ -31,9 +31,9 @@ func TestCreateAndroidElement_Basic(t *testing.T) {
 // TestCreateAndroidElementFromXml_Complex 测试复杂的嵌套 XML 解析
 func TestCreateAndroidElementFromXml_Complex(t *testing.T) {
 	xmlContent := `
-	<node index="0" text="" resource-id="root_id" class="android.widget.FrameLayout" package="com.test" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,0][1080,2400]">
-		<node index="0" text="Login" resource-id="btn_login" class="android.widget.Button" package="com.test" content-desc="login_desc" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[100,200][300,400]" />
-		<node index="1" text="Username" resource-id="input_user" class="android.widget.EditText" package="com.test" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="true" password="false" selected="false" bounds="[100,500][800,600]" />
+	<node index="0" text="" resource-id="root_id" class="uia.widget.FrameLayout" package="com.test" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,0][1080,2400]">
+		<node index="0" text="Login" resource-id="btn_login" class="uia.widget.Button" package="com.test" content-desc="login_desc" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[100,200][300,400]" />
+		<node index="1" text="Username" resource-id="input_user" class="uia.widget.EditText" package="com.test" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="true" password="false" selected="false" bounds="[100,500][800,600]" />
 	</node>
 	`
 
@@ -44,7 +44,7 @@ func TestCreateAndroidElementFromXml_Complex(t *testing.T) {
 	androidElem, _ := elem.(*AndroidElement)
 
 	// 1. 验证根节点
-	assert.Equal(t, "android.widget.FrameLayout", androidElem.GetClassname())
+	assert.Equal(t, "uia.widget.FrameLayout", androidElem.GetClassname())
 	assert.Equal(t, "root_id", androidElem.GetResourceID())
 	assert.Equal(t, 2, len(androidElem.GetChildren()))
 
@@ -54,7 +54,7 @@ func TestCreateAndroidElementFromXml_Complex(t *testing.T) {
 
 	// 2. 验证第一个子节点 (Button)
 	btn := androidElem.GetChildren()[0].(*AndroidElement)
-	assert.Equal(t, "android.widget.Button", btn.GetClassname())
+	assert.Equal(t, "uia.widget.Button", btn.GetClassname())
 	assert.Equal(t, "Login", btn.GetText())
 	assert.Equal(t, "login_desc", btn.GetContentDesc())
 	assert.True(t, btn.GetClickable())
@@ -64,7 +64,7 @@ func TestCreateAndroidElementFromXml_Complex(t *testing.T) {
 
 	// 3. 验证第二个子节点 (EditText)
 	input, _ := elem.GetChildren()[1].(*AndroidElement)
-	assert.Equal(t, "android.widget.EditText", input.GetClassname())
+	assert.Equal(t, "uia.widget.EditText", input.GetClassname())
 
 	assert.True(t, input.GetEditable(), "EditText 应该自动被标记为可编辑")
 
@@ -139,22 +139,22 @@ func TestAndroidElement_ScrollType(t *testing.T) {
 		expectedType   types2.ScrollType
 	}{
 		// Case 1: 显式 Scrollable=false，应该返回 NONE
-		{"android.widget.ListView", "false", types2.NONE},
+		{"uia.widget.ListView", "false", types2.NONE},
 
 		// Case 2: 垂直列表
-		{"android.widget.ListView", "true", types2.Vertical},
+		{"uia.widget.ListView", "true", types2.Vertical},
 		{"androidx.recyclerview.widget.RecyclerView", "true", types2.Vertical},
-		{"android.widget.ScrollView", "true", types2.Vertical},
+		{"uia.widget.ScrollView", "true", types2.Vertical},
 
 		// Case 3: 水平列表
-		{"android.widget.HorizontalScrollView", "true", types2.Horizontal},
-		{"android.support.v4.view.ViewPager", "true", types2.Horizontal},
+		{"uia.widget.HorizontalScrollView", "true", types2.Horizontal},
+		{"uia.support.v4.view.ViewPager", "true", types2.Horizontal},
 
 		// Case 4: 未知类名但包含 ScrollView -> ALL
 		{"com.custom.MyScrollView", "true", types2.ALL},
 
 		// Case 5: 普通元素 -> ALL (代码默认逻辑)
-		{"android.widget.Button", "true", types2.ALL},
+		{"uia.widget.Button", "true", types2.ALL},
 	}
 
 	for _, tt := range tests {
@@ -204,12 +204,12 @@ func TestAndroidElement_Operations(t *testing.T) {
 
 const testXml = `
 <hierarchy rotation="0">
-  <node index="0" class="android.widget.FrameLayout" resource-id="root_id">
-    <node index="0" class="android.widget.LinearLayout">
-      <node index="0" class="android.widget.Button" text="Confirm" resource-id="btn_ok" clickable="true" />
-      <node index="1" class="android.widget.EditText" text="Initial Value" resource-id="input_field" editable="true" />
+  <node index="0" class="uia.widget.FrameLayout" resource-id="root_id">
+    <node index="0" class="uia.widget.LinearLayout">
+      <node index="0" class="uia.widget.Button" text="Confirm" resource-id="btn_ok" clickable="true" />
+      <node index="1" class="uia.widget.EditText" text="Initial Value" resource-id="input_field" editable="true" />
     </node>
-    <node index="1" class="android.widget.TextView" text="Footer" resource-id="footer_text" />
+    <node index="1" class="uia.widget.TextView" text="Footer" resource-id="footer_text" />
   </node>
 </hierarchy>
 `

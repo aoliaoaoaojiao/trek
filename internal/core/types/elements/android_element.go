@@ -345,16 +345,16 @@ func (e *AndroidElement) GetScrollType() types2.ScrollType {
 
 	// 根据类名精确判断滚动类型
 	switch e.GetClassname() {
-	case "android.widget.ScrollView",
-		"android.widget.ListView",
-		"android.widget.ExpandableListView",
-		"android.support.v17.leanback.widget.VerticalGridView",
-		"android.support.v7.widget.RecyclerView",
+	case "uia.widget.ScrollView",
+		"uia.widget.ListView",
+		"uia.widget.ExpandableListView",
+		"uia.support.v17.leanback.widget.VerticalGridView",
+		"uia.support.v7.widget.RecyclerView",
 		"androidx.recyclerview.widget.RecyclerView":
 		return types2.Vertical
-	case "android.widget.HorizontalScrollView",
-		"android.support.v17.leanback.widget.HorizontalGridView",
-		"android.support.v4.view.ViewPager":
+	case "uia.widget.HorizontalScrollView",
+		"uia.support.v17.leanback.widget.HorizontalGridView",
+		"uia.support.v4.view.ViewPager":
 		return types2.Horizontal
 	}
 
@@ -467,7 +467,7 @@ func (e *AndroidElement) fromXMLNode(node *etree.Element, parent types2.IElement
 		e.parent = nil
 	}
 
-	e.SetEditable(e.GetClassname() == "android.widget.EditText")
+	e.SetEditable(e.GetClassname() == "uia.widget.EditText")
 
 	if types2.FORCE_EDITTEXT_CLICK_TRUE && e.GetEditable() {
 		e.SetLongClickable(true)

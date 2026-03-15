@@ -105,6 +105,10 @@ func (c Client) DeviceList() (devices []Device, err error) {
 	return
 }
 
+// ForwardList returns all adb forward rules currently registered in the adb
+// server for all connected devices.
+//
+// If you only want rules for one specific device, prefer Device.ForwardList().
 func (c Client) ForwardList() (deviceForward []DeviceForward, err error) {
 	var resp string
 	if resp, err = c.executeCommand("host:list-forward"); err != nil {
@@ -126,6 +130,8 @@ func (c Client) ForwardList() (deviceForward []DeviceForward, err error) {
 	return
 }
 
+// ForwardKillAll removes all adb forward rules from the adb server, across all
+// connected devices.
 func (c Client) ForwardKillAll() (err error) {
 	_, err = c.executeCommand("host:killforward-all", true)
 	return

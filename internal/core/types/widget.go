@@ -311,10 +311,10 @@ func (w *Widget) initFormElement(element IElement) {
 	}
 
 	//// 精确的编辑框判断
-	//w.IsEditableField = (w.Clazz == "android.widget.EditText" ||
-	//	w.Clazz == "android.inputmethodservice.ExtractEditText" ||
-	//	w.Clazz == "android.widget.AutoCompleteTextView" ||
-	//	w.Clazz == "android.widget.MultiAutoCompleteTextView")
+	//w.IsEditableField = (w.Clazz == "uia.widget.EditText" ||
+	//	w.Clazz == "uia.inputmethodservice.ExtractEditText" ||
+	//	w.Clazz == "uia.widget.AutoCompleteTextView" ||
+	//	w.Clazz == "uia.widget.MultiAutoCompleteTextView")
 
 	// 特殊处理：强制为EditText元素添加点击和长按功能（类似C++版本的FORCE_EDITTEXT_CLICK_TRUE）
 	if FORCE_EDITTEXT_CLICK_TRUE && w.Editable {
@@ -327,8 +327,8 @@ func (w *Widget) initFormElement(element IElement) {
 
 	//if w.HasAction() {
 	//	// 特殊的SCROLL_BOTTOM_UP_N动作
-	//	if SCROLL_BOTTOM_UP_N_ENABLE && (w.Clazz == "android.widget.ListView" ||
-	//		w.Clazz == "android.support.v7.widget.RecyclerView" ||
+	//	if SCROLL_BOTTOM_UP_N_ENABLE && (w.Clazz == "uia.widget.ListView" ||
+	//		w.Clazz == "uia.support.v7.widget.RecyclerView" ||
 	//		w.Clazz == "androidx.recyclerview.widget.RecyclerView") {
 	//		w.Actions[SCROLL_BOTTOM_UP_N] = true
 	//	}

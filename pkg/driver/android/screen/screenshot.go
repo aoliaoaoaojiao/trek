@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"os"
 	"sync"
-	"trek/pkg/driver"
 	"trek/pkg/driver/android/gadb"
+	"trek/pkg/driver/common"
 
 	"github.com/google/uuid"
 	"github.com/yapingcat/gomedia/go-codec"
 	"github.com/yapingcat/gomedia/go-mp4"
 )
 
-var _ driver.IScreenCapture = (*ScreenCapture)(nil)
+var _ common.IScreenCapture = (*ScreenCapture)(nil)
 
 type ScreenCapture struct {
 	device *gadb.Device

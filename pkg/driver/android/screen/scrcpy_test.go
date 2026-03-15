@@ -17,13 +17,7 @@ var (
 )
 
 func init() {
-	client, err := gadb2.NewClient()
-	if err != nil {
-		fmt.Println("连接 ADB 服务失败，请检查系统环境")
-		panic(err)
-	}
-	device, _ = tool.GetAndroidDevice(client, "")
-
+	device, _ = tool.GetDevice("")
 }
 
 func TestScrcpy_Start(t *testing.T) {

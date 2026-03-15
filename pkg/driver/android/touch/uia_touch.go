@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"time"
 	types2 "trek/internal/core/types"
-	"trek/pkg/driver"
 	"trek/pkg/driver/android/uia"
+	"trek/pkg/driver/common"
 )
 
-var _ driver.ITouch = (*UIATouch)(nil)
+var _ common.ITouch = (*UIATouch)(nil)
 
 // NewUIATouch 创建UIATouch实例
 func NewUIATouch(client *uia.UiaClient) *UIATouch {
@@ -25,7 +25,7 @@ type UIATouch struct {
 
 func (u *UIATouch) Click(point types2.Point) error {
 	if u.UiaClient == nil {
-		return driver.NoUIAClientErr
+		return common.NoUIAClientErr
 	}
 	if err := u.CheckSessionId(); err != nil {
 		return err
@@ -47,7 +47,7 @@ func (u *UIATouch) Click(point types2.Point) error {
 
 func (u *UIATouch) LongClick(point types2.Point, duration int64) error {
 	if u.UiaClient == nil {
-		return driver.NoUIAClientErr
+		return common.NoUIAClientErr
 	}
 	if err := u.CheckSessionId(); err != nil {
 		return err
@@ -73,7 +73,7 @@ func (u *UIATouch) LongClick(point types2.Point, duration int64) error {
 // Swipe 使用uia滑动，如果设置了持续时间，则step不起作用，请注意，step 100 步，大约0.5s
 func (u *UIATouch) Swipe(startPoint types2.Point, endPoint types2.Point, step int64, duration int64) error {
 	if u.UiaClient == nil {
-		return driver.NoUIAClientErr
+		return common.NoUIAClientErr
 	}
 	if err := u.CheckSessionId(); err != nil {
 		return err
@@ -103,7 +103,7 @@ func (u *UIATouch) Swipe(startPoint types2.Point, endPoint types2.Point, step in
 
 func (u *UIATouch) Pinch(centerPoint types2.Point, startDistance float64, endDistance float64, duration int64) error {
 	if u.UiaClient == nil {
-		return driver.NoUIAClientErr
+		return common.NoUIAClientErr
 	}
 	if err := u.CheckSessionId(); err != nil {
 		return err
@@ -146,17 +146,17 @@ func (u *UIATouch) Pinch(centerPoint types2.Point, startDistance float64, endDis
 	f1DY := (f1EndY - f1StartY) / float64(step)
 
 	// 5. 构造双指触摸事件序列：双指DOWN → 多步同步MOVE → 双指UP
-	var touchEvent1 []driver.TouchEvent
-	var touchEvent2 []driver.TouchEvent
+	var touchEvent1 []common.TouchEvent
+	var touchEvent2 []common.TouchEvent
 	// 第一步：双指同时按下起始位置（连续添加DOWN事件，实现同步按下）
-	touchEvent1 = append(touchEvent1, driver.TouchEvent{
+	touchEvent1 = append(touchEvent1, common.TouchEvent{
 		Point:    types2.Point{X: f0StartX, Y: f0StartY},
-		Type:     driver.DOWN_TOUCH_EVENT,
+		Type:     common.DOWN_TOUCH_EVENT,
 		FingerID: finger0ID,
 	})
-	touchEvent2 = append(touchEvent2, driver.TouchEvent{
+	touchEvent2 = append(touchEvent2, common.TouchEvent{
 		Point:    types2.Point{X: f1StartX, Y: f1StartY},
-		Type:     driver.DOWN_TOUCH_EVENT,
+		Type:     common.DOWN_TOUCH_EVENT,
 		FingerID: finger1ID,
 	})
 
@@ -176,27 +176,27 @@ func (u *UIATouch) Pinch(centerPoint types2.Point, startDistance float64, endDis
 		}
 
 		// 构造双指同步移动事件（连续添加，底层连续发送实现同步）
-		touchEvent1 = append(touchEvent1, driver.TouchEvent{
+		touchEvent1 = append(touchEvent1, common.TouchEvent{
 			Point:    types2.Point{X: f0CurrentX, Y: f0CurrentY},
-			Type:     driver.MOVE_TOUCH_EVENT,
+			Type:     common.MOVE_TOUCH_EVENT,
 			FingerID: finger0ID,
 		})
 
-		touchEvent2 = append(touchEvent2, driver.TouchEvent{
+		touchEvent2 = append(touchEvent2, common.TouchEvent{
 			Point:    types2.Point{X: f1CurrentX, Y: f1CurrentY},
-			Type:     driver.MOVE_TOUCH_EVENT,
+			Type:     common.MOVE_TOUCH_EVENT,
 			FingerID: finger1ID,
 		})
 
 	}
 
 	// 第三步：双指同时松开（连续添加UP事件，实现同步松开）
-	touchEvent1 = append(touchEvent1, driver.TouchEvent{
-		Type:     driver.UP_TOUCH_EVENT,
+	touchEvent1 = append(touchEvent1, common.TouchEvent{
+		Type:     common.UP_TOUCH_EVENT,
 		FingerID: finger0ID,
 	})
-	touchEvent2 = append(touchEvent2, driver.TouchEvent{
-		Type:     driver.UP_TOUCH_EVENT,
+	touchEvent2 = append(touchEvent2, common.TouchEvent{
+		Type:     common.UP_TOUCH_EVENT,
 		FingerID: finger1ID,
 	})
 
@@ -215,7 +215,7 @@ func (u *UIATouch) Pinch(centerPoint types2.Point, startDistance float64, endDis
 // Drag 拖拽操作
 func (u *UIATouch) Drag(startPoint types2.Point, endPoint types2.Point, duration int, elementId, destElId string) error {
 	if u.UiaClient == nil {
-		return driver.NoUIAClientErr
+		return common.NoUIAClientErr
 	}
 	if err := u.CheckSessionId(); err != nil {
 		return err
@@ -245,7 +245,7 @@ func (u *UIATouch) Drag(startPoint types2.Point, endPoint types2.Point, duration
 	return err
 }
 
-func (u *UIATouch) TouchEvent(touchList ...driver.TouchEvent) error {
+func (u *UIATouch) TouchEvent(touchList ...common.TouchEvent) error {
 	for _, touch := range touchList {
 		err := u.TouchAction(touch)
 		if err != nil {
@@ -256,9 +256,9 @@ func (u *UIATouch) TouchEvent(touchList ...driver.TouchEvent) error {
 }
 
 // TouchAction 触摸操作（down/up/move）
-func (u *UIATouch) TouchAction(event driver.TouchEvent) error {
+func (u *UIATouch) TouchAction(event common.TouchEvent) error {
 	if u.UiaClient == nil {
-		return driver.NoUIAClientErr
+		return common.NoUIAClientErr
 	}
 	if err := u.CheckSessionId(); err != nil {
 		return err
@@ -266,11 +266,11 @@ func (u *UIATouch) TouchAction(event driver.TouchEvent) error {
 
 	var path string
 	switch event.Type {
-	case driver.DOWN_TOUCH_EVENT:
+	case common.DOWN_TOUCH_EVENT:
 		path = "/touch/down"
-	case driver.UP_TOUCH_EVENT:
+	case common.UP_TOUCH_EVENT:
 		path = "/touch/up"
-	case driver.MOVE_TOUCH_EVENT:
+	case common.MOVE_TOUCH_EVENT:
 		path = "/touch/move"
 	default:
 		return fmt.Errorf("methodType error: %s", event.Type)

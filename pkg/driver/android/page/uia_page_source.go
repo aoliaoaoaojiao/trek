@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
-	"trek/pkg/driver"
 	"trek/pkg/driver/android/uia"
+	"trek/pkg/driver/common"
 )
 
 const (
@@ -23,7 +23,7 @@ func NewUIAPageSource(client *uia.UiaClient) *UIAPageSource {
 	}
 }
 
-var _ driver.IPageSource = (*UIAPageSource)(nil)
+var _ common.IPageSource = (*UIAPageSource)(nil)
 
 type UIAPageSource struct {
 	findElementInterval int
@@ -44,7 +44,7 @@ func (u *UIAPageSource) SetFindElementConfig(retry, interval int) {
 // DumpPageSource 获取页面源码
 func (u *UIAPageSource) DumpPageSource() (string, error) {
 	if u.UiaClient == nil {
-		return "", driver.NoUIAClientErr
+		return "", common.NoUIAClientErr
 	}
 	if err := u.CheckSessionId(); err != nil {
 		return "", err

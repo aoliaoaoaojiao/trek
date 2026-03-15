@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 	"trek/pkg/driver/android/gadb"
+	"trek/pkg/driver/common"
 
 	types2 "trek/internal/core/types"
-	"trek/pkg/driver"
 )
 
 // source: https://github.com/aoliaoaoaojiao/AndroidTouch, build output to debug apk
@@ -19,7 +19,7 @@ import (
 //go:embed bin/touch.apk
 var touchBytes []byte
 
-var _ driver.ITouch = (*MotionTouch)(nil)
+var _ common.ITouch = (*MotionTouch)(nil)
 
 const touchToolPath = "/data/local/tmp/atouch.jar"
 
@@ -78,14 +78,14 @@ func (m *MotionTouch) Close() error {
 // Click 模拟单指点击：DOWN→UP
 func (m *MotionTouch) Click(point types2.Point) error {
 	// 绑定手指ID为0（单指默认）
-	clickEventDown := driver.TouchEvent{
+	clickEventDown := common.TouchEvent{
 		Point:    point,
-		Type:     driver.DOWN_TOUCH_EVENT,
+		Type:     common.DOWN_TOUCH_EVENT,
 		FingerID: 0,
 	}
-	clickEventUp := driver.TouchEvent{
+	clickEventUp := common.TouchEvent{
 		Point:    point,
-		Type:     driver.UP_TOUCH_EVENT,
+		Type:     common.UP_TOUCH_EVENT,
 		FingerID: 0,
 	}
 	return m.TouchEvent(clickEventDown, clickEventUp)
@@ -93,15 +93,15 @@ func (m *MotionTouch) Click(point types2.Point) error {
 
 // LongClick 模拟单指长按：DOWN→等待duration→UP
 func (m *MotionTouch) LongClick(point types2.Point, duration int64) error {
-	longClickEventDown := driver.TouchEvent{
+	longClickEventDown := common.TouchEvent{
 		Point:    point,
-		Type:     driver.DOWN_TOUCH_EVENT,
+		Type:     common.DOWN_TOUCH_EVENT,
 		WaitTime: duration,
 		FingerID: 0,
 	}
-	longClickEventUp := driver.TouchEvent{
+	longClickEventUp := common.TouchEvent{
 		Point:    point,
-		Type:     driver.UP_TOUCH_EVENT,
+		Type:     common.UP_TOUCH_EVENT,
 		FingerID: 0,
 	}
 	return m.TouchEvent(longClickEventDown, longClickEventUp)
@@ -136,11 +136,11 @@ func (m *MotionTouch) Swipe(startPoint types2.Point, endPoint types2.Point, step
 	stepWait := duration / step
 
 	// 3. 构造触摸事件序列：DOWN → 多步MOVE → UP
-	var touchEvents []driver.TouchEvent
+	var touchEvents []common.TouchEvent
 	// 第一步：按下起点
-	touchEvents = append(touchEvents, driver.TouchEvent{
+	touchEvents = append(touchEvents, common.TouchEvent{
 		Point:    types2.Point{X: startX, Y: startY},
-		Type:     driver.DOWN_TOUCH_EVENT,
+		Type:     common.DOWN_TOUCH_EVENT,
 		FingerID: fingerID,
 	})
 
@@ -155,9 +155,9 @@ func (m *MotionTouch) Swipe(startPoint types2.Point, endPoint types2.Point, step
 			currentY += stepDY
 		}
 		// 构造移动事件，最后一步无需等待（后续直接UP）
-		moveEvent := driver.TouchEvent{
+		moveEvent := common.TouchEvent{
 			Point:    types2.Point{X: currentX, Y: currentY},
-			Type:     driver.MOVE_TOUCH_EVENT,
+			Type:     common.MOVE_TOUCH_EVENT,
 			FingerID: fingerID,
 		}
 		if i != step-1 {
@@ -167,8 +167,8 @@ func (m *MotionTouch) Swipe(startPoint types2.Point, endPoint types2.Point, step
 	}
 
 	// 第三步：松开手指
-	touchEvents = append(touchEvents, driver.TouchEvent{
-		Type:     driver.UP_TOUCH_EVENT,
+	touchEvents = append(touchEvents, common.TouchEvent{
+		Type:     common.UP_TOUCH_EVENT,
 		FingerID: fingerID,
 	})
 
@@ -214,17 +214,17 @@ func (m *MotionTouch) Pinch(centerPoint types2.Point, startDistance float64, end
 	f1DY := (f1EndY - f1StartY) / float64(step)
 
 	// 5. 构造双指触摸事件序列：双指DOWN → 多步同步MOVE → 双指UP
-	var touchEvent1 []driver.TouchEvent
-	var touchEvent2 []driver.TouchEvent
+	var touchEvent1 []common.TouchEvent
+	var touchEvent2 []common.TouchEvent
 	// 第一步：双指同时按下起始位置（连续添加DOWN事件，实现同步按下）
-	touchEvent1 = append(touchEvent1, driver.TouchEvent{
+	touchEvent1 = append(touchEvent1, common.TouchEvent{
 		Point:    types2.Point{X: f0StartX, Y: f0StartY},
-		Type:     driver.DOWN_TOUCH_EVENT,
+		Type:     common.DOWN_TOUCH_EVENT,
 		FingerID: finger0ID,
 	})
-	touchEvent2 = append(touchEvent2, driver.TouchEvent{
+	touchEvent2 = append(touchEvent2, common.TouchEvent{
 		Point:    types2.Point{X: f1StartX, Y: f1StartY},
-		Type:     driver.DOWN_TOUCH_EVENT,
+		Type:     common.DOWN_TOUCH_EVENT,
 		FingerID: finger1ID,
 	})
 
@@ -244,15 +244,15 @@ func (m *MotionTouch) Pinch(centerPoint types2.Point, startDistance float64, end
 		}
 
 		// 构造双指同步移动事件（连续添加，底层连续发送实现同步）
-		touchEvent1 = append(touchEvent1, driver.TouchEvent{
+		touchEvent1 = append(touchEvent1, common.TouchEvent{
 			Point:    types2.Point{X: f0CurrentX, Y: f0CurrentY},
-			Type:     driver.MOVE_TOUCH_EVENT,
+			Type:     common.MOVE_TOUCH_EVENT,
 			FingerID: finger0ID,
 		})
 
-		touchEvent2 = append(touchEvent2, driver.TouchEvent{
+		touchEvent2 = append(touchEvent2, common.TouchEvent{
 			Point:    types2.Point{X: f1CurrentX, Y: f1CurrentY},
-			Type:     driver.MOVE_TOUCH_EVENT,
+			Type:     common.MOVE_TOUCH_EVENT,
 			FingerID: finger1ID,
 		})
 
@@ -265,13 +265,13 @@ func (m *MotionTouch) Pinch(centerPoint types2.Point, startDistance float64, end
 	}
 
 	// 第三步：双指同时松开（连续添加UP事件，实现同步松开）
-	touchEvent1 = append(touchEvent1, driver.TouchEvent{
-		Type:     driver.UP_TOUCH_EVENT,
+	touchEvent1 = append(touchEvent1, common.TouchEvent{
+		Type:     common.UP_TOUCH_EVENT,
 		FingerID: finger0ID,
 		WaitTime: stepWait,
 	})
-	touchEvent2 = append(touchEvent2, driver.TouchEvent{
-		Type:     driver.UP_TOUCH_EVENT,
+	touchEvent2 = append(touchEvent2, common.TouchEvent{
+		Type:     common.UP_TOUCH_EVENT,
 		FingerID: finger1ID,
 		WaitTime: stepWait,
 	})
@@ -324,7 +324,7 @@ func (m *MotionTouch) Pinch(centerPoint types2.Point, startDistance float64, end
 }
 
 // TouchEvent 执行触摸事件序列，自动判断相对/绝对坐标，按顺序执行
-func (m *MotionTouch) TouchEvent(touchList ...driver.TouchEvent) error {
+func (m *MotionTouch) TouchEvent(touchList ...common.TouchEvent) error {
 	for _, touch := range touchList {
 		var err error
 		// 修复bug：正确判断Airtest相对坐标（0≤X≤1 且 0≤Y≤1）
@@ -345,16 +345,16 @@ func (m *MotionTouch) TouchEvent(touchList ...driver.TouchEvent) error {
 }
 
 // touchNormalPoint 发送普通绝对坐标触摸事件
-func (m *MotionTouch) touchNormalPoint(touchEvent driver.TouchEvent) error {
+func (m *MotionTouch) touchNormalPoint(touchEvent common.TouchEvent) error {
 	var cmd string
 	switch touchEvent.Type {
-	case driver.DOWN_TOUCH_EVENT, driver.MOVE_TOUCH_EVENT:
+	case common.DOWN_TOUCH_EVENT, common.MOVE_TOUCH_EVENT:
 		// DOWN/MOVE：需要坐标+手指ID
 		cmd = fmt.Sprintf("touch %s %d %d %d\n",
 			touchEvent.Type, int64(touchEvent.X), int64(touchEvent.Y), touchEvent.FingerID)
 	default:
 		// UP：仅需要手指ID
-		cmd = fmt.Sprintf("touch %s %d\n", driver.UP_TOUCH_EVENT, touchEvent.FingerID)
+		cmd = fmt.Sprintf("touch %s %d\n", common.UP_TOUCH_EVENT, touchEvent.FingerID)
 	}
 	m.lock.Lock()
 	_, err := m.shellLoopConn.Write([]byte(cmd))
@@ -366,16 +366,16 @@ func (m *MotionTouch) touchNormalPoint(touchEvent driver.TouchEvent) error {
 }
 
 // touchAirtestPoint 发送Airtest相对坐标触摸事件（0-1）
-func (m *MotionTouch) touchAirtestPoint(touchEvent driver.TouchEvent) error {
+func (m *MotionTouch) touchAirtestPoint(touchEvent common.TouchEvent) error {
 	var cmd string
 	switch touchEvent.Type {
-	case driver.DOWN_TOUCH_EVENT, driver.MOVE_TOUCH_EVENT:
+	case common.DOWN_TOUCH_EVENT, common.MOVE_TOUCH_EVENT:
 		// DOWN/MOVE：需要坐标+手指ID
 		cmd = fmt.Sprintf("airtest %s %f %f %d\n",
 			touchEvent.Type, touchEvent.X, touchEvent.Y, touchEvent.FingerID)
 	default:
 		// UP：仅需要手指ID
-		cmd = fmt.Sprintf("airtest %s %d\n", driver.UP_TOUCH_EVENT, touchEvent.FingerID)
+		cmd = fmt.Sprintf("airtest %s %d\n", common.UP_TOUCH_EVENT, touchEvent.FingerID)
 	}
 	m.lock.Lock()
 	_, err := m.shellLoopConn.Write([]byte(cmd))

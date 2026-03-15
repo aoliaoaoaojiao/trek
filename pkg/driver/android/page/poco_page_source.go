@@ -3,24 +3,26 @@ package page
 import (
 	"encoding/json"
 	"fmt"
-	"trek/pkg/driver"
-	"trek/pkg/driver/android/gadb"
+	"strings"
+	"sync"
 	"trek/pkg/driver/android/page/poco"
+	"trek/pkg/driver/common"
 
 	"github.com/google/uuid"
 )
 
-var _ driver.IPageSource = (*PocoPageSource)(nil)
+var _ common.IPageSource = (*PocoPageSource)(nil)
 
 type PocoPageSource struct {
-	device *gadb.Device
-	engine poco.Engine
-	conn   poco.PocoConnection
+	engine   poco.Engine
+	conn     poco.PocoConnection
+	source   string
+	isFrozen bool
+	mu       sync.RWMutex
 }
 
-func NewPocoPageSource(device *gadb.Device, engine poco.Engine, port int) (*PocoPageSource, error) {
+func NewPocoPageSource(engine poco.Engine, port int) (*PocoPageSource, error) {
 	p := &PocoPageSource{
-		device: device,
 		engine: engine,
 	}
 
@@ -41,6 +43,12 @@ func NewPocoPageSource(device *gadb.Device, engine poco.Engine, port int) (*Poco
 }
 
 func (p *PocoPageSource) DumpPageSource() (string, error) {
+	p.mu.RLock()
+	if p.isFrozen && p.source != "" {
+		p.mu.RUnlock()
+		return p.source, nil
+	}
+	p.mu.RUnlock()
 
 	method := "Dump"
 	if p.engine == poco.CocosCreator || p.engine == poco.Cocos2dxJs {
@@ -79,7 +87,23 @@ func (p *PocoPageSource) DumpPageSource() (string, error) {
 		return "", fmt.Errorf("序列化 result 失败: %v", err)
 	}
 
-	return string(resultBytes), nil
+	p.mu.Lock()
+	p.source = string(resultBytes)
+	p.mu.Unlock()
+
+	return p.source, nil
+}
+
+func (p *PocoPageSource) FreezeSource() {
+	p.mu.Lock()
+	p.isFrozen = true
+	p.mu.Unlock()
+}
+
+func (p *PocoPageSource) ThawSource() {
+	p.mu.Lock()
+	p.isFrozen = false
+	p.mu.Unlock()
 }
 
 func (p *PocoPageSource) GetScreenSize() (int, int, error) {
@@ -131,4 +155,133 @@ func (p *PocoPageSource) Close() error {
 		p.conn.Disconnect()
 	}
 	return nil
+}
+
+func (p *PocoPageSource) FindElement(selector string, expression string) (*poco.PocoElement, error) {
+	elements, err := p.FindElements(selector, expression)
+	if err != nil {
+		return nil, err
+	}
+	if len(elements) == 0 {
+		return nil, fmt.Errorf("未找到元素: selector=%s, expression=%s", selector, expression)
+	}
+	return elements[0], nil
+}
+
+func (p *PocoPageSource) FindElements(selector string, expression string) ([]*poco.PocoElement, error) {
+	source, err := p.DumpPageSource()
+	if err != nil {
+		return nil, err
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(source), &data); err != nil {
+		return nil, fmt.Errorf("解析页面源码失败: %v", err)
+	}
+
+	xpath, err := p.parseSelector(selector, expression)
+	if err != nil {
+		return nil, err
+	}
+
+	nodes := findNodesByXPath(data, xpath)
+
+	var elements []*poco.PocoElement
+	for _, node := range nodes {
+		elements = append(elements, &poco.PocoElement{
+			Data: node,
+		})
+	}
+
+	if len(elements) == 0 {
+		return nil, fmt.Errorf("未找到元素: selector=%s, expression=%s", selector, expression)
+	}
+
+	return elements, nil
+}
+
+func (p *PocoPageSource) parseSelector(selector string, expression string) (string, error) {
+	switch selector {
+	case "poco":
+		var xpath string
+		steps := strings.Split(expression, ".")
+		for _, step := range steps {
+			if strings.HasPrefix(step, "poco") {
+				xpath += "//*" + parseAttr(step)
+			} else if strings.HasPrefix(step, "child") {
+				xpath += "/*" + parseAttr(step)
+			}
+
+			if strings.Contains(step, "[") {
+				start := strings.Index(step, "[")
+				end := strings.Index(step, "]")
+				index := step[start+1 : end]
+				xpath = fmt.Sprintf("(%s)[%s]", xpath, index)
+			}
+		}
+		return xpath, nil
+	case "xpath":
+		return expression, nil
+	case "cssSelector":
+		return "", fmt.Errorf("cssSelector 暂不支持")
+	default:
+		return "", fmt.Errorf("不支持的 selector: %s", selector)
+	}
+}
+
+func parseAttr(expr string) string {
+	result := "["
+	open := strings.Index(expr, "(")
+	close := strings.LastIndex(expr, ")")
+	if open == -1 || close == -1 {
+		return result + "]"
+	}
+
+	attrExpr := expr[open+1 : close]
+	if strings.HasPrefix(attrExpr, "\"") && strings.HasSuffix(attrExpr, "\"") {
+		attrExpr = "name=" + strings.Trim(attrExpr, "\"")
+	}
+
+	attrs := strings.Split(attrExpr, ",")
+	for i, attr := range attrs {
+		if i > 0 {
+			result += " and "
+		}
+		parts := strings.SplitN(attr, "=", 2)
+		if len(parts) == 2 {
+			field := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(strings.ReplaceAll(parts[1], "\"", ""))
+			result += fmt.Sprintf("@%s=\"%s\"", field, value)
+		}
+	}
+	result += "]"
+	return strings.Replace(result, " and ]", "]", 1)
+}
+
+func findNodesByXPath(data map[string]interface{}, xpath string) []map[string]interface{} {
+	var results []map[string]interface{}
+
+	xpath = strings.TrimPrefix(xpath, "/")
+
+	parts := strings.Split(xpath, "/")
+	if len(parts) == 0 {
+		return results
+	}
+
+	first := parts[0]
+	if first == "*" {
+		if children, ok := data["children"].([]interface{}); ok {
+			for _, child := range children {
+				if childMap, ok := child.(map[string]interface{}); ok {
+					if len(parts) == 1 {
+						results = append(results, childMap)
+					} else {
+						results = append(results, findNodesByXPath(childMap, strings.Join(parts[1:], "/"))...)
+					}
+				}
+			}
+		}
+	}
+
+	return results
 }

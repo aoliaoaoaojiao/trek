@@ -99,18 +99,60 @@ func (d Device) DevicePath() (string, error) {
 	return resp, err
 }
 
+// ForwardLocalAbstract creates an adb forward rule from the host to an Android
+// localabstract socket.
+//
+// Direction:
+//   - localPort: port on the current machine
+//   - remotePort: abstract socket name inside the device
+//
+// Equivalent adb command:
+//
+//	adb -s <serial> forward tcp:<localPort> localabstract:<remotePort>
+//
+// Example:
+//
+//	err := dev.ForwardLocalAbstract(8200, "scrcpy")
+//
+// After success, connecting to localhost:8200 on the host will be forwarded to
+// the device-side localabstract:scrcpy socket.
 func (d Device) ForwardLocalAbstract(localPort int, remotePort string, noRebind ...bool) (err error) {
 	local := fmt.Sprintf("tcp:%d", localPort)
 	remote := fmt.Sprintf("localabstract:%s", remotePort)
 	return d.forward(local, remote, noRebind...)
 }
 
-func (d Device) FrowardTcp(localPort int, remotePort string, noRebind ...bool) (err error) {
+// FrowardTcp creates an adb forward rule from a host TCP port to a device TCP
+// port.
+//
+// Direction:
+//   - localPort: port on the current machine
+//   - remotePort: TCP port on the device
+//
+// Equivalent adb command:
+//
+//	adb -s <serial> forward tcp:<localPort> tcp:<remotePort>
+//
+// Example:
+//
+//	err := dev.FrowardTcp(8200, 6790)
+//
+// After success, requests to localhost:8200 on the host will be forwarded to
+// tcp:6790 on the device.
+func (d Device) FrowardTcp(localPort int, remotePort int, noRebind ...bool) (err error) {
 	local := fmt.Sprintf("tcp:%d", localPort)
-	remote := fmt.Sprintf("tcp:%s", remotePort)
+	remote := fmt.Sprintf("tcp:%d", remotePort)
 	return d.forward(local, remote, noRebind...)
 }
 
+// forward is the common implementation behind ForwardLocalAbstract and
+// FrowardTcp.
+//
+// local and remote must be full adb endpoint strings, for example:
+//   - local:  "tcp:8200"
+//   - remote: "tcp:6790" or "localabstract:scrcpy"
+//
+// If noRebind is true, adb will fail when the local endpoint is already bound.
 func (d Device) forward(local, remote string, noRebind ...bool) (err error) {
 	command := ""
 	if len(noRebind) != 0 && noRebind[0] {
@@ -123,6 +165,11 @@ func (d Device) forward(local, remote string, noRebind ...bool) (err error) {
 	return
 }
 
+// ForwardList returns all adb forward rules that belong to the current device.
+//
+// The returned items use adb endpoint strings directly, for example:
+//   - Local:  "tcp:8200"
+//   - Remote: "localabstract:scrcpy"
 func (d Device) ForwardList() (deviceForwardList []DeviceForward, err error) {
 	var forwardList []DeviceForward
 	if forwardList, err = d.adbClient.ForwardList(); err != nil {
@@ -139,24 +186,52 @@ func (d Device) ForwardList() (deviceForwardList []DeviceForward, err error) {
 	return
 }
 
+// ForwardKill removes a host-to-device forward rule by its host TCP port.
+//
+// Equivalent adb command:
+//
+//	adb -s <serial> forward --remove tcp:<localPort>
 func (d Device) ForwardKill(localPort int) (err error) {
 	local := fmt.Sprintf("tcp:%d", localPort)
 	_, err = d.adbClient.executeCommand(fmt.Sprintf("host-serial:%s:killforward:%s", d.serial, local), true)
 	return
 }
 
+// ReverseLocalAbstract creates an adb reverse rule from the device to a host
+// TCP port.
+//
+// Direction:
+//   - remotePort: abstract socket name on the device
+//   - localPort: host TCP port
+//
+// Equivalent adb command:
+//
+//	adb -s <serial> reverse localabstract:<remotePort> tcp:<localPort>
+//
+// reverse is the opposite of forward: the device connects out, and adb routes
+// it back to the host.
 func (d Device) ReverseLocalAbstract(remotePort string, localPort int, noRebind ...bool) (err error) {
 	local := fmt.Sprintf("tcp:%d", localPort)
 	remote := fmt.Sprintf("localabstract:%s", remotePort)
 	return d.reverse(remote, local, noRebind...)
 }
 
+// ReverseTcp creates an adb reverse rule from a device TCP port to a host TCP
+// port.
+//
+// Equivalent adb command:
+//
+//	adb -s <serial> reverse tcp:<remotePort> tcp:<localPort>
 func (d Device) ReverseTcp(remotePort, localPort int, noRebind ...bool) (err error) {
 	local := fmt.Sprintf("tcp:%d", localPort)
 	remote := fmt.Sprintf("tcp:%d", remotePort)
 	return d.reverse(remote, local, noRebind...)
 }
 
+// reverse is the common implementation behind ReverseLocalAbstract and
+// ReverseTcp.
+//
+// remote is the device-side endpoint and local is the host-side endpoint.
 func (d Device) reverse(remote, local string, noRebind ...bool) (err error) {
 	//_, err = d.adbClient.executeCommand("host:transport:"+d.serial, true)
 	command := ""
@@ -183,6 +258,7 @@ func (d Device) reverse(remote, local string, noRebind ...bool) (err error) {
 	return
 }
 
+// ReverseList returns all reverse rules for the current device.
 func (d Device) ReverseList() (deviceForward []DeviceForward, err error) {
 	var tp transport
 	if tp, err = d.createDeviceTransport(); err != nil {
@@ -216,16 +292,21 @@ func (d Device) ReverseList() (deviceForward []DeviceForward, err error) {
 	return
 }
 
+// ReverseKillLocalAbstract removes a reverse rule whose device-side endpoint is
+// localabstract:<remotePort>.
 func (d Device) ReverseKillLocalAbstract(remotePort string) (err error) {
 	local := fmt.Sprintf("localabstract:%s", remotePort)
 	return d.reverseKill(local)
 }
 
+// ReverseKillTcp removes a reverse rule whose device-side endpoint is
+// tcp:<localPort>.
 func (d Device) ReverseKillTcp(localPort int) (err error) {
 	local := fmt.Sprintf("tcp:%d", localPort)
 	return d.reverseKill(local)
 }
 
+// reverseKill removes one reverse rule by its device-side endpoint string.
 func (d Device) reverseKill(remote string) (err error) {
 	var tp transport
 	if tp, err = d.createDeviceTransport(); err != nil {
@@ -240,6 +321,7 @@ func (d Device) reverseKill(remote string) (err error) {
 	return
 }
 
+// ReverseKillAll removes all reverse rules for the current device.
 func (d Device) ReverseKillAll() (err error) {
 	var tp transport
 	if tp, err = d.createDeviceTransport(); err != nil {

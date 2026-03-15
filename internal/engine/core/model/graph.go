@@ -2,7 +2,7 @@ package model
 
 import (
 	"time"
-	types2 "trek/internal/core/types"
+	"trek/internal/engine/core/types"
 	"trek/log"
 )
 
@@ -13,14 +13,14 @@ type ActionCounter struct {
 
 func NewActionCounter() *ActionCounter {
 	return &ActionCounter{
-		actCount: make([]int64, types2.ActTypeSize),
+		actCount: make([]int64, types.ActTypeSize),
 		total:    0,
 	}
 }
 
-func (a *ActionCounter) CountAction(action *types2.StatefulAction) {
+func (a *ActionCounter) CountAction(action *types.StatefulAction) {
 	actionType := action.GetActionType()
-	if actionType < types2.ActTypeSize {
+	if actionType < types.ActTypeSize {
 		a.actCount[actionType]++
 	}
 	a.total++
@@ -30,24 +30,24 @@ func (a *ActionCounter) GetTotal() int64 {
 	return a.total
 }
 
-func (a *ActionCounter) GetCount(actionType types2.ActionType) int64 {
-	if actionType < types2.ActTypeSize {
+func (a *ActionCounter) GetCount(actionType types.ActionType) int64 {
+	if actionType < types.ActTypeSize {
 		return a.actCount[actionType]
 	}
 	return 0
 }
 
 type Graph struct {
-	types2.Node
-	states           types2.StateSet
+	types.Node
+	states           types.StateSet
 	visitedPages     map[string]struct{}
 	pageDistri       map[string]VisitCountReward
 	totalDistri      int64
-	widgetActions    map[uintptr]types2.StatefulActionSet
-	unvisitedActions types2.StatefulActionSet
-	visitedActions   types2.StatefulActionSet
+	widgetActions    map[uintptr]types.StatefulActionSet
+	unvisitedActions types.StatefulActionSet
+	visitedActions   types.StatefulActionSet
 	actionCounter    ActionCounter
-	listeners        []types2.IGraphListener
+	listeners        []types.IGraphListener
 	timeStamp        time.Time
 }
 
@@ -58,16 +58,16 @@ type VisitCountReward struct {
 
 func NewGraph() *Graph {
 	return &Graph{
-		Node:             *types2.NewNode(),
-		states:           make(types2.StateSet),
+		Node:             *types.NewNode(),
+		states:           make(types.StateSet),
 		visitedPages:     make(map[string]struct{}),
 		pageDistri:       make(map[string]VisitCountReward),
 		totalDistri:      0,
 		actionCounter:    *NewActionCounter(),
-		widgetActions:    make(map[uintptr]types2.StatefulActionSet),
-		unvisitedActions: make(types2.StatefulActionSet),
-		visitedActions:   make(types2.StatefulActionSet),
-		listeners:        make([]types2.IGraphListener, 0),
+		widgetActions:    make(map[uintptr]types.StatefulActionSet),
+		unvisitedActions: make(types.StatefulActionSet),
+		visitedActions:   make(types.StatefulActionSet),
+		listeners:        make([]types.IGraphListener, 0),
 		timeStamp:        time.Now(),
 	}
 }
@@ -80,11 +80,11 @@ func (g *Graph) GetTimestamp() time.Time {
 	return g.timeStamp
 }
 
-func (g *Graph) AddListener(listener types2.IGraphListener) {
+func (g *Graph) AddListener(listener types.IGraphListener) {
 	g.listeners = append(g.listeners, listener)
 }
 
-func (g *Graph) AddState(state types2.IState) types2.IState {
+func (g *Graph) AddState(state types.IState) types.IState {
 	pageNameString := state.GetPageNameString()
 	// 使用哈希值检查状态是否已存在
 	stateHash := state.Hash()
@@ -141,19 +141,19 @@ func (g *Graph) GetActionCounter() *ActionCounter {
 	return &g.actionCounter
 }
 
-func (g *Graph) GetWidgetActions() map[uintptr]types2.StatefulActionSet {
+func (g *Graph) GetWidgetActions() map[uintptr]types.StatefulActionSet {
 	return g.widgetActions
 }
 
-func (g *Graph) GetUnvisitedActions() types2.StatefulActionSet {
+func (g *Graph) GetUnvisitedActions() types.StatefulActionSet {
 	return g.unvisitedActions
 }
 
-func (g *Graph) GetVisitedActions() types2.StatefulActionSet {
+func (g *Graph) GetVisitedActions() types.StatefulActionSet {
 	return g.visitedActions
 }
 
-func (g *Graph) GetStates() types2.StateSet {
+func (g *Graph) GetStates() types.StateSet {
 	return g.states
 }
 
@@ -177,33 +177,33 @@ func (g *Graph) UpdatePageDistri(pageName string, count int, reward float64) {
 	g.pageDistri[pageName] = VisitCountReward{count, reward}
 }
 
-func (g *Graph) AddWidgetAction(widget types2.IWidget, action *types2.StatefulAction) {
+func (g *Graph) AddWidgetAction(widget types.IWidget, action *types.StatefulAction) {
 	if g.widgetActions[widget.Hash()] == nil {
-		g.widgetActions[widget.Hash()] = make(types2.StatefulActionSet)
+		g.widgetActions[widget.Hash()] = make(types.StatefulActionSet)
 	}
 	g.widgetActions[widget.Hash()][action.Hash()] = action
 }
 
-func (g *Graph) AddUnvisitedAction(action *types2.StatefulAction) {
+func (g *Graph) AddUnvisitedAction(action *types.StatefulAction) {
 	if action != nil {
 		g.unvisitedActions[action.Hash()] = action
 	}
 }
 
-func (g *Graph) AddVisitedAction(action *types2.StatefulAction) {
+func (g *Graph) AddVisitedAction(action *types.StatefulAction) {
 	if action != nil {
 		g.visitedActions[action.Hash()] = action
 		delete(g.unvisitedActions, action.Hash())
 	}
 }
 
-func (g *Graph) NotifyNewStateEvents(node types2.IState) {
+func (g *Graph) NotifyNewStateEvents(node types.IState) {
 	for _, listener := range g.listeners {
 		listener.OnAddNode(node)
 	}
 }
 
-func (g *Graph) addActionFromState(node types2.IState) {
+func (g *Graph) addActionFromState(node types.IState) {
 	nodeActions := node.GetActions()
 	log.Debugf("addActionFromState - node has %d actions", len(nodeActions))
 
@@ -214,7 +214,7 @@ func (g *Graph) addActionFromState(node types2.IState) {
 		existingVisitedAction, visitedAdd := g.visitedActions[actionHash]
 
 		unvisitedAdd := false
-		var existingUnvisitedAction *types2.StatefulAction
+		var existingUnvisitedAction *types.StatefulAction
 		if !visitedAdd {
 			existingUnvisitedAction, unvisitedAdd = g.unvisitedActions[actionHash]
 		}

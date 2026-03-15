@@ -1,22 +1,20 @@
 package android
 
 import (
-	"bufio"
 	"fmt"
-	"io"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
-	"trek/internal/core/types"
+	"trek/internal/engine/core/types"
 	"trek/log"
 	"trek/pkg/driver/android/gadb"
 	"trek/pkg/driver/android/page"
 	"trek/pkg/driver/android/page/poco"
 	"trek/pkg/driver/android/screen"
-	"trek/pkg/driver/android/tool"
 	"trek/pkg/driver/android/touch"
 	"trek/pkg/driver/android/uia"
+	"trek/pkg/driver/android/utils"
 	"trek/pkg/driver/common"
 )
 
@@ -81,11 +79,11 @@ func NewAndroidDriver(options ...AndroidDriverOption) (*AndroidDriver, error) {
 }
 
 func NewAndroidDriverWith(deviceSerial string, opts ...AndroidDriverOption) (*AndroidDriver, error) {
-	if err := tool.EnsureADBServer(); err != nil {
+	if err := utils.EnsureADBServer(); err != nil {
 		return nil, fmt.Errorf("uia driver: adb environment unavailable: %v", err)
 	}
 
-	device, err := tool.GetDevice(deviceSerial)
+	device, err := utils.GetDevice(deviceSerial)
 
 	if err != nil {
 		return nil, err
@@ -274,8 +272,8 @@ func (a *AndroidDriver) initUIA() error {
 	}
 
 	if !checkUIARes {
-		tool.UninstallPackage(a.device.Serial(), uiaServerPackage, false)
-		tool.UninstallPackage(a.device.Serial(), uiaServerTestPackage, false)
+		utils.UninstallPackage(a.device.Serial(), uiaServerPackage, false)
+		utils.UninstallPackage(a.device.Serial(), uiaServerTestPackage, false)
 
 		pluginsDir, err := resolveUIAPluginsDir()
 		if err != nil {
@@ -283,12 +281,12 @@ func (a *AndroidDriver) initUIA() error {
 		}
 
 		serverAPKPath := filepath.Join(pluginsDir, uiaServerAPK)
-		if err := tool.InstallAPK(a.device.Serial(), serverAPKPath, true); err != nil {
+		if err := utils.InstallAPK(a.device.Serial(), serverAPKPath, true); err != nil {
 			return fmt.Errorf("install %s failed: %w", serverAPKPath, err)
 		}
 
 		serverTestAPKPath := filepath.Join(pluginsDir, uiaServerTestAPK)
-		if err := tool.InstallAPK(a.device.Serial(), serverTestAPKPath, true); err != nil {
+		if err := utils.InstallAPK(a.device.Serial(), serverTestAPKPath, true); err != nil {
 			return fmt.Errorf("install %s failed: %w", serverTestAPKPath, err)
 		}
 
@@ -327,70 +325,71 @@ func (a *AndroidDriver) startUIAServer(uiaPort int) error {
 	if err := a.device.FrowardTcp(uiaPort, uiaServerPort); err != nil {
 		return fmt.Errorf("forward uia port failed: %w", err)
 	}
+	//
+	//readyCh := make(chan struct{}, 1)
+	//errCh := make(chan error, 1)
 
-	readyCh := make(chan struct{}, 1)
-	errCh := make(chan error, 1)
-
-	go func() {
-		defer func() {
-			if err := a.device.ForwardKill(uiaPort); err != nil {
-				log.Warnf("remove UIA forward failed: %v", err)
-			}
-		}()
-
-		conn, err := a.device.RunShellLoopCommandSock(uiaInstrumentationCmd)
-		if err != nil {
-			select {
-			case errCh <- fmt.Errorf("start uia instrumentation failed: %w", err):
-			default:
-			}
-			return
-		}
-		defer conn.Close()
-
-		reader := bufio.NewReader(conn)
-		readySent := false
-		for {
-			line, err := reader.ReadString('\n')
-			if line != "" {
-				trimmed := strings.TrimSpace(line)
-				if trimmed != "" {
-					log.Info(trimmed)
-					if !readySent && strings.Contains(trimmed, uiaReadyLogMarker) {
-						time.Sleep(uiaStartupReadyDelay)
-						readySent = true
-						select {
-						case readyCh <- struct{}{}:
-						default:
-						}
-					}
-				}
-			}
-
-			if err != nil {
-				if !readySent && err != io.EOF {
-					select {
-					case errCh <- fmt.Errorf("uia instrumentation output failed: %w", err):
-					default:
-					}
-				}
-				return
-			}
-		}
-	}()
-
-	select {
-	case <-readyCh:
-		return nil
-	case err := <-errCh:
-		return err
-	case <-time.After(uiaStartupWaitTimeout):
-		return fmt.Errorf("wait for uia server startup timeout after %s", uiaStartupWaitTimeout)
-	}
+	//go func() {
+	//	defer func() {
+	//		if err := a.device.ForwardKill(uiaPort); err != nil {
+	//			log.Warnf("remove UIA forward failed: %v", err)
+	//		}
+	//	}()
+	//
+	//	conn, err := a.device.RunShellLoopCommandSock(uiaInstrumentationCmd)
+	//	if err != nil {
+	//		select {
+	//		case errCh <- fmt.Errorf("start uia instrumentation failed: %w", err):
+	//		default:
+	//		}
+	//		return
+	//	}
+	//	defer conn.Close()
+	//
+	//	reader := bufio.NewReader(conn)
+	//	readySent := false
+	//	for {
+	//		line, err := reader.ReadString('\n')
+	//		if line != "" {
+	//			trimmed := strings.TrimSpace(line)
+	//			if trimmed != "" {
+	//				log.Info(trimmed)
+	//				if !readySent && strings.Contains(trimmed, uiaReadyLogMarker) {
+	//					time.Sleep(uiaStartupReadyDelay)
+	//					readySent = true
+	//					select {
+	//					case readyCh <- struct{}{}:
+	//					default:
+	//					}
+	//				}
+	//			}
+	//		}
+	//
+	//		if err != nil {
+	//			if !readySent && err != io.EOF {
+	//				select {
+	//				case errCh <- fmt.Errorf("uia instrumentation output failed: %w", err):
+	//				default:
+	//				}
+	//			}
+	//			return
+	//		}
+	//	}
+	//}()
+	//
+	//select {
+	//case <-readyCh:
+	//	return nil
+	//case err := <-errCh:
+	//	return err
+	//case <-time.After(uiaStartupWaitTimeout):
+	//	return fmt.Errorf("wait for uia server startup timeout after %s", uiaStartupWaitTimeout)
+	//}
+	return nil
 }
 
 func resolveUIAPluginsDir() (string, error) {
-	projectRoot, err := tool.RepoRootFromCurrentFile()
+	projectRoot, err := common.GetPluginDirPath()
 	if err != nil {
 		return "", fmt.Errorf("resolve repo root failed: %w", err)
 	}

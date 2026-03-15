@@ -2,10 +2,10 @@ package touch_test
 
 import (
 	"testing"
-	"trek/internal/core/types"
+	"trek/internal/engine/core/types"
 	gadb2 "trek/pkg/driver/android/gadb"
-	"trek/pkg/driver/android/tool"
 	"trek/pkg/driver/android/touch"
+	"trek/pkg/driver/android/utils"
 )
 
 var (
@@ -13,7 +13,7 @@ var (
 )
 
 func init() {
-	device, _ = tool.GetDevice("")
+	device, _ = utils.GetDevice("")
 }
 
 func TestMotionTouch_Pinch(t *testing.T) {

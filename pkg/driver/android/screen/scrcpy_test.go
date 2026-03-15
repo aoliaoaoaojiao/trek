@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 	gadb2 "trek/pkg/driver/android/gadb"
-	"trek/pkg/driver/android/tool"
+	"trek/pkg/driver/android/utils"
 
 	"github.com/yapingcat/gomedia/go-codec"
 	"github.com/yapingcat/gomedia/go-mp4"
@@ -17,7 +17,7 @@ var (
 )
 
 func init() {
-	device, _ = tool.GetDevice("")
+	device, _ = utils.GetDevice("")
 }
 
 func TestScrcpy_Start(t *testing.T) {

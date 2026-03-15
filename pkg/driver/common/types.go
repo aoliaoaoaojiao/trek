@@ -2,7 +2,9 @@
 // 该包定义了与Android设备进行交互的标准接口，包括点击、滑动、触摸等操作
 package common
 
-import "trek/internal/core/types"
+import (
+	"trek/internal/engine/core/types"
+)
 
 // TouchEventType 触摸事件类型定义
 type TouchEventType string

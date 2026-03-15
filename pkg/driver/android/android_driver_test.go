@@ -1,13 +1,22 @@
 package android_test
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
-	"trek/internal/core/types"
+	"trek/internal/engine/core/types"
 	"trek/pkg/driver/android"
+	"trek/pkg/driver/common"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func init() {
+
+	rootPath, _ := common.RepoRootFromCurrentFile()
+
+	common.SetPluginDirPath(filepath.Clean(filepath.Join(filepath.Dir(rootPath), "..", "..")))
+}
 
 func TestGetDevice(t *testing.T) {
 	driver, err := android.NewAndroidDriver()

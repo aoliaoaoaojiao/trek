@@ -22,17 +22,10 @@ type ErrorDetail struct {
 	Message string `json:"message"`
 }
 
-type Capabilities struct {
-	Device             string `json:"device"`
-	BrowserName        string `json:"browserName"`
-	SdkVersion         string `json:"sdkVersion"`
-	CFBundleIdentifier string `json:"CFBundleIdentifier"`
-}
-
 // SessionInfo 会话信息
 type SessionInfo struct {
-	SessionId    string       `json:"sessionId"`
-	Capabilities Capabilities `json:"capabilities"`
+	SessionId    string                 `json:"sessionId"`
+	Capabilities map[string]interface{} `json:"capabilities"`
 }
 
 // WindowSize 窗口大小
@@ -56,7 +49,15 @@ func NewUiaClient(remoteUrl string) (*UiaClient, error) {
 		httpClient: &http.Client{Timeout: 60 * time.Second},
 	}
 
-	err := client.NewSession(nil)
+	err := client.NewSession(map[string]interface{}{
+		"platformName":              "Android",
+		"appium:automationName":     "UiAutomator2",
+		"appium:newCommandTimeout":  1800,
+		"appium:noReset":            true,
+		"appium:shouldTerminateApp": false,
+		"appium:forceAppLaunch":     false,
+		"appium:dontStopAppOnReset": true,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -117,6 +118,8 @@ func (u *UiaClient) Request(method, url string, body []byte, timeout ...time.Dur
 		return nil, err
 	}
 
+	fmt.Println("uia response:", string(respBody))
+
 	var baseResp BaseResp
 	if err := json.Unmarshal(respBody, &baseResp); err != nil {
 		return nil, err
@@ -126,7 +129,7 @@ func (u *UiaClient) Request(method, url string, body []byte, timeout ...time.Dur
 }
 
 // NewSession 创建新会话
-func (u *UiaClient) NewSession(capabilities *Capabilities) error {
+func (u *UiaClient) NewSession(capabilities map[string]interface{}) error {
 	data := map[string]interface{}{
 		"capabilities": capabilities,
 	}

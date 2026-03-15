@@ -1,25 +1,25 @@
 package reuse
 
 import (
-	types2 "trek/internal/core/types"
+	"trek/internal/engine/core/types"
 	"trek/log"
 )
 
 // RichWidget 使用动作、类名、资源ID、自身（或其子元素）的文本
 // 来嵌入和生成哈希码，用于标识widget
 type RichWidget struct {
-	types2.Widget
+	types.Widget
 	WidgetHashcode uintptr
 }
 
 // NewRichWidget 创建新的RichWidget
-func NewRichWidget(parent *RichWidget, element types2.IElement) *RichWidget {
+func NewRichWidget(parent *RichWidget, element types.IElement) *RichWidget {
 	// 首先创建基础Widget
-	var parentWidget *types2.Widget
+	var parentWidget *types.Widget
 	if parent != nil {
 		parentWidget = &parent.Widget
 	}
-	baseWidget := types2.NewWidget(parentWidget, element)
+	baseWidget := types.NewWidget(parentWidget, element)
 
 	rw := &RichWidget{
 		Widget:         *baseWidget,
@@ -59,7 +59,7 @@ func NewRichWidget(parent *RichWidget, element types2.IElement) *RichWidget {
 
 // getValidTextFromWidgetAndChildren 从widget及其子元素获取有效文本
 // 如果父widget不可点击，则获取子元素的有效文本
-func (rw *RichWidget) getValidTextFromWidgetAndChildren(element types2.IElement) string {
+func (rw *RichWidget) getValidTextFromWidgetAndChildren(element types.IElement) string {
 	txt := element.GetText()
 	log.Debugf("Getting valid text from element, current text: %s", txt)
 	if txt == "" {

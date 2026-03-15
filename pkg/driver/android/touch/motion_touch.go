@@ -8,10 +8,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	types2 "trek/internal/engine/core/types"
 	"trek/pkg/driver/android/gadb"
 	"trek/pkg/driver/common"
-
-	types2 "trek/internal/core/types"
 )
 
 // source: https://github.com/aoliaoaoaojiao/AndroidTouch, build output to debug apk
@@ -42,7 +41,7 @@ func NewMotionTouch(device *gadb.Device) *MotionTouch {
 		"CLASSPATH=%s app_process / com.aoliaoaojiao.AndroidTouch.Run v2.2",
 		touchToolPath))
 	if err != nil {
-		panic(fmt.Sprintf("start touch tool failed: %v", err))
+		panic(fmt.Sprintf("start touch utils failed: %v", err))
 	}
 
 	var initWg sync.WaitGroup
@@ -54,11 +53,11 @@ func NewMotionTouch(device *gadb.Device) *MotionTouch {
 		byteDatas := make([]byte, 1024)
 		n, err := conn.Read(byteDatas)
 		if err != nil {
-			fmt.Printf("touch tool read init data failed: %v\n", err)
+			fmt.Printf("touch utils read init data failed: %v\n", err)
 			return
 		}
 		if !strings.Contains(string(byteDatas[:n]), "设备") {
-			fmt.Printf("touch tool init failed, response: %s\n", string(byteDatas[:n]))
+			fmt.Printf("touch utils init failed, response: %s\n", string(byteDatas[:n]))
 			return
 		}
 	}()

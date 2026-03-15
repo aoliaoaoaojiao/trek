@@ -2,8 +2,8 @@
 package reuse
 
 import (
-	"trek/internal/core/types"
-	"trek/internal/tool"
+	"trek/internal/engine/core/types"
+	"trek/internal/engine/tool"
 )
 
 // 导出desc包中的哈希计算工具函数

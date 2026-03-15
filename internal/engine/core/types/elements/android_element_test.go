@@ -2,7 +2,7 @@ package elements
 
 import (
 	"testing"
-	types2 "trek/internal/core/types"
+	"trek/internal/engine/core/types"
 
 	"github.com/beevik/etree"
 
@@ -107,7 +107,7 @@ func TestAndroidElement_Bounds(t *testing.T) {
 	elem.eNode = doc.CreateElement("node")
 
 	// 1. 测试标准坐标设置与获取
-	originalRect := types2.NewRect(50, 60, 200, 300)
+	originalRect := types.NewRect(50, 60, 200, 300)
 	elem.SetBounds(originalRect)
 
 	parsedRect := elem.GetBounds()
@@ -136,25 +136,25 @@ func TestAndroidElement_ScrollType(t *testing.T) {
 	tests := []struct {
 		className      string
 		scrollableAttr string // "true" or "false" or ""
-		expectedType   types2.ScrollType
+		expectedType   types.ScrollType
 	}{
 		// Case 1: 显式 Scrollable=false，应该返回 NONE
-		{"uia.widget.ListView", "false", types2.NONE},
+		{"uia.widget.ListView", "false", types.NONE},
 
 		// Case 2: 垂直列表
-		{"uia.widget.ListView", "true", types2.Vertical},
-		{"androidx.recyclerview.widget.RecyclerView", "true", types2.Vertical},
-		{"uia.widget.ScrollView", "true", types2.Vertical},
+		{"uia.widget.ListView", "true", types.Vertical},
+		{"androidx.recyclerview.widget.RecyclerView", "true", types.Vertical},
+		{"uia.widget.ScrollView", "true", types.Vertical},
 
 		// Case 3: 水平列表
-		{"uia.widget.HorizontalScrollView", "true", types2.Horizontal},
-		{"uia.support.v4.view.ViewPager", "true", types2.Horizontal},
+		{"uia.widget.HorizontalScrollView", "true", types.Horizontal},
+		{"uia.support.v4.view.ViewPager", "true", types.Horizontal},
 
 		// Case 4: 未知类名但包含 ScrollView -> ALL
-		{"com.custom.MyScrollView", "true", types2.ALL},
+		{"com.custom.MyScrollView", "true", types.ALL},
 
 		// Case 5: 普通元素 -> ALL (代码默认逻辑)
-		{"uia.widget.Button", "true", types2.ALL},
+		{"uia.widget.Button", "true", types.ALL},
 	}
 
 	for _, tt := range tests {
@@ -184,7 +184,7 @@ func TestAndroidElement_Operations(t *testing.T) {
 	child2, _ := CreateAndroidElement("child2")
 
 	// 1. 测试 SetChildren / GetChildren
-	children := []types2.IElement{child1, child2}
+	children := []types.IElement{child1, child2}
 	parent.SetChildren(children)
 
 	assert.Equal(t, 2, len(parent.GetChildren()))

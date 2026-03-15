@@ -1,9 +1,9 @@
 package run
 
 import (
-	"trek/internal/core/model"
-	types2 "trek/internal/core/types"
-	"trek/internal/core/types/elements"
+	"trek/internal/engine/core/model"
+	types2 "trek/internal/engine/core/types"
+	"trek/internal/engine/core/types/elements"
 )
 
 const FASTBOT_VERSION = "1.0.0-go"

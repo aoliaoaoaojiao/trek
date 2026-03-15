@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"trek/internal/tool"
+	"trek/internal/engine/tool"
 )
 
 var _ IWidget = (*Widget)(nil)
@@ -145,8 +145,8 @@ func (w *Widget) Hash() uintptr {
 	}
 	if w.Hashcode == 0 {
 		// 基础哈希计算
-		//hashcode1 := tool.HashString(w.elementSimpleIdentifier)
-		//hashcode2 := tool.HashString(w.ResourceID)
+		//hashcode1 := utils.HashString(w.elementSimpleIdentifier)
+		//hashcode2 := utils.HashString(w.ResourceID)
 		hashcode3 := tool.HashInt(int(w.OperateMask))
 		hashcode4 := tool.HashInt(int(w.ScrollTypeField))
 
@@ -254,7 +254,7 @@ func (w *Widget) preprocessText() {
 
 	// 索引哈希处理
 	//if STATE_WITH_INDEX {
-	//	indexHash := tool.HashInt(w.Index)
+	//	indexHash := utils.HashInt(w.Index)
 	//	w.Hashcode ^= ((0x79b9 + (indexHash << 6)) << 1)
 	//}
 }

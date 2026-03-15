@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"trek/internal/core/model"
-	types2 "trek/internal/core/types"
-	"trek/internal/tool"
+	"trek/internal/engine/core/model"
+	"trek/internal/engine/core/types"
+	"trek/internal/engine/tool"
 	"trek/log"
 
 	"github.com/tidwall/gjson"
@@ -16,13 +16,13 @@ import (
 	"github.com/beevik/etree"
 )
 
-var _ types2.IElement = (*AndroidElement)(nil)
+var _ types.IElement = (*AndroidElement)(nil)
 
 func init() {
 	model.RegisterElementCreator(string(ANDROID_ELEMENT), CreateAndroidElementFromXml)
 }
 
-func CreateAndroidElement(tag string) (types2.IElement, error) {
+func CreateAndroidElement(tag string) (types.IElement, error) {
 	doc := etree.NewDocument()
 	tagElem := doc.CreateElement(tag)
 
@@ -36,7 +36,7 @@ func CreateAndroidElement(tag string) (types2.IElement, error) {
 }
 
 // CreateAndroidElementFromXml 从XML创建元素
-func CreateAndroidElementFromXml(xmlContent string) (types2.IElement, error) {
+func CreateAndroidElementFromXml(xmlContent string) (types.IElement, error) {
 
 	doc := etree.NewDocument()
 
@@ -91,16 +91,16 @@ func createAndroidFromXmlDoc(doc *etree.Document) (*AndroidElement, error) {
 // NewAndroidElement 创建新的元素
 func NewAndroidElement() *AndroidElement {
 	return &AndroidElement{
-		children: make([]types2.IElement, 0),
+		children: make([]types.IElement, 0),
 		parent:   nil,
 	}
 }
 
 // AndroidElement 元素结构
 type AndroidElement struct {
-	children []types2.IElement
+	children []types.IElement
 	// todo 不推荐这么写，这应该给接口类型，但是目前代码就这样了，后面有空优化
-	parent types2.IElement
+	parent types.IElement
 
 	path string
 
@@ -276,11 +276,11 @@ func (e *AndroidElement) SetText(text string) {
 }
 
 // GetBounds 获取边界
-func (e *AndroidElement) GetBounds() *types2.Rect {
+func (e *AndroidElement) GetBounds() *types.Rect {
 	if e == nil || e.eNode == nil {
 		return nil
 	}
-	var bounds *types2.Rect
+	var bounds *types.Rect
 
 	if val := e.eNode.SelectAttrValue("bounds", "get bounds attribute failed"); val != "" {
 		bounds = parseBounds(val)
@@ -289,7 +289,7 @@ func (e *AndroidElement) GetBounds() *types2.Rect {
 	return bounds
 }
 
-func (e *AndroidElement) SetBounds(rect *types2.Rect) {
+func (e *AndroidElement) SetBounds(rect *types.Rect) {
 	if e == nil || e.eNode == nil {
 		return
 	}
@@ -298,14 +298,14 @@ func (e *AndroidElement) SetBounds(rect *types2.Rect) {
 }
 
 // GetChildren 获取子元素
-func (e *AndroidElement) GetChildren() []types2.IElement {
+func (e *AndroidElement) GetChildren() []types.IElement {
 	if e == nil || e.eNode == nil {
 		return nil
 	}
 	return e.children
 }
 
-func (e *AndroidElement) SetChildren(childList []types2.IElement) {
+func (e *AndroidElement) SetChildren(childList []types.IElement) {
 	if e == nil || e.eNode == nil {
 		return
 	}
@@ -319,7 +319,7 @@ func (e *AndroidElement) SetChildren(childList []types2.IElement) {
 }
 
 // GetParent 获取父元素
-func (e *AndroidElement) GetParent() types2.IElement {
+func (e *AndroidElement) GetParent() types.IElement {
 	// 1. 防护：如果 e 本身是空指针，避免 e.parent 触发 Panic
 	// 2. 转换：如果 e.parent 存储的具体指针是 nil，显式返回 nil 接口
 	if e == nil || e.parent == nil {
@@ -330,17 +330,17 @@ func (e *AndroidElement) GetParent() types2.IElement {
 }
 
 // GetScrollType 获取滚动类型
-func (e *AndroidElement) GetScrollType() types2.ScrollType {
+func (e *AndroidElement) GetScrollType() types.ScrollType {
 	if e == nil || e.eNode == nil {
-		return types2.NONE
+		return types.NONE
 	}
 	// 如果有值，肯定是被用户自己修改过了，所以优先级最高
 	if val := e.eNode.SelectAttrValue("scrollType", ""); val != "" {
-		return types2.StringToScrollType(val)
+		return types.StringToScrollType(val)
 	}
 
 	if !e.GetScrollable() {
-		return types2.NONE
+		return types.NONE
 	}
 
 	// 根据类名精确判断滚动类型
@@ -351,20 +351,20 @@ func (e *AndroidElement) GetScrollType() types2.ScrollType {
 		"uia.support.v17.leanback.widget.VerticalGridView",
 		"uia.support.v7.widget.RecyclerView",
 		"androidx.recyclerview.widget.RecyclerView":
-		return types2.Vertical
+		return types.Vertical
 	case "uia.widget.HorizontalScrollView",
 		"uia.support.v17.leanback.widget.HorizontalGridView",
 		"uia.support.v4.view.ViewPager":
-		return types2.Horizontal
+		return types.Horizontal
 	}
 
 	// 如果类名包含"ScrollView"，则支持所有方向滚动
 	if strings.Contains(e.GetClassname(), "ScrollView") {
-		return types2.ALL
+		return types.ALL
 	}
 
 	// 默认情况下支持所有方向滚动
-	return types2.ALL
+	return types.ALL
 }
 
 // SetScrollType 设置滚动类型
@@ -453,7 +453,7 @@ func (e *AndroidElement) String() string {
 }
 
 // fromXMLNode 从XML节点创建元素
-func (e *AndroidElement) fromXMLNode(node *etree.Element, parent types2.IElement) {
+func (e *AndroidElement) fromXMLNode(node *etree.Element, parent types.IElement) {
 
 	if node == nil {
 		return
@@ -469,16 +469,16 @@ func (e *AndroidElement) fromXMLNode(node *etree.Element, parent types2.IElement
 
 	e.SetEditable(e.GetClassname() == "uia.widget.EditText")
 
-	if types2.FORCE_EDITTEXT_CLICK_TRUE && e.GetEditable() {
+	if types.FORCE_EDITTEXT_CLICK_TRUE && e.GetEditable() {
 		e.SetLongClickable(true)
 		e.SetClickable(true)
 	}
 
-	if types2.PARENT_CLICK_CHANGE_CHILDREN && e.GetParent() != nil && e.GetParent().GetLongClickable() {
+	if types.PARENT_CLICK_CHANGE_CHILDREN && e.GetParent() != nil && e.GetParent().GetLongClickable() {
 		e.SetLongClickable(true)
 	}
 
-	if types2.PARENT_CLICK_CHANGE_CHILDREN && e.GetParent() != nil && e.GetParent().GetClickable() {
+	if types.PARENT_CLICK_CHANGE_CHILDREN && e.GetParent() != nil && e.GetParent().GetClickable() {
 		e.SetClickable(true)
 	}
 
@@ -495,11 +495,11 @@ func (e *AndroidElement) fromXMLNode(node *etree.Element, parent types2.IElement
 }
 
 // parseBounds 解析边界字符串
-func parseBounds(boundsStr string) *types2.Rect {
+func parseBounds(boundsStr string) *types.Rect {
 	// 边界格式通常是 "[left,top][right,bottom]"
 	parts := strings.Split(boundsStr, "][")
 	if len(parts) != 2 {
-		return types2.NewRect(0, 0, 0, 0)
+		return types.NewRect(0, 0, 0, 0)
 	}
 
 	leftTop := strings.Trim(parts[0], "[]")
@@ -509,7 +509,7 @@ func parseBounds(boundsStr string) *types2.Rect {
 	rb := strings.Split(rightBottom, ",")
 
 	if len(lt) != 2 || len(rb) != 2 {
-		return types2.NewRect(0, 0, 0, 0)
+		return types.NewRect(0, 0, 0, 0)
 	}
 
 	left, _ := strconv.ParseFloat(lt[0], 64)
@@ -517,12 +517,12 @@ func parseBounds(boundsStr string) *types2.Rect {
 	right, _ := strconv.ParseFloat(rb[0], 64)
 	bottom, _ := strconv.ParseFloat(rb[1], 64)
 
-	return types2.NewRect(left, top, right, bottom)
+	return types.NewRect(left, top, right, bottom)
 }
 
 // Query 根据 XPath 表达式查询元素
 // 返回 []*AndroidElement，对这些对象的修改会直接同步到原始树中
-func (e *AndroidElement) Query(xpath string) []types2.IElement {
+func (e *AndroidElement) Query(xpath string) []types.IElement {
 	if e == nil || e.eNode == nil || xpath == "" {
 		return nil
 	}
@@ -540,14 +540,14 @@ func (e *AndroidElement) Query(xpath string) []types2.IElement {
 	}
 
 	// 3. 递归寻找持有这些 eNode 的 AndroidElement 包装对象
-	var results []types2.IElement
+	var results []types.IElement
 	e.findWrappersRecursive(targetMap, &results)
 
 	return results
 }
 
 // findWrappersRecursive 内部递归查找匹配包装器的辅助函数
-func (e *AndroidElement) findWrappersRecursive(targetMap map[*etree.Element]bool, results *[]types2.IElement) {
+func (e *AndroidElement) findWrappersRecursive(targetMap map[*etree.Element]bool, results *[]types.IElement) {
 	if e == nil {
 		return
 	}

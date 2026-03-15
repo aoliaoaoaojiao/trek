@@ -1,4 +1,4 @@
-package tool
+package utils
 
 import (
 	"fmt"
@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"trek/pkg/driver/common"
 )
 
 var (
@@ -175,7 +176,7 @@ func adbExecutableCandidates() []string {
 		filepath.Join(os.Getenv("ANDROID_SDK_ROOT"), "platform-tools", exeName),
 	)
 
-	if projectRoot, err := RepoRootFromCurrentFile(); err == nil {
+	if projectRoot, err := common.RepoRootFromCurrentFile(); err == nil {
 		candidates = append(candidates, filepath.Join(projectRoot, "env", runtime.GOOS, "adb", exeName))
 	}
 
@@ -187,14 +188,4 @@ func adbExecutableName() string {
 		return "adb.exe"
 	}
 	return "adb"
-}
-
-// RepoRootFromCurrentFile 获取当前程序运行路径
-func RepoRootFromCurrentFile() (string, error) {
-	_, currentFile, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", fmt.Errorf("resolve current file path failed")
-	}
-
-	return filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", "..")), nil
 }

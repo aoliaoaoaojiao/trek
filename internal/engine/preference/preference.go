@@ -3,11 +3,11 @@ package preference
 import (
 	"math/rand"
 	"time"
-	types2 "trek/internal/core/types"
+	"trek/internal/engine/core/types"
 )
 
 type CustomAction struct {
-	types2.StatefulAction
+	types.StatefulAction
 	Xpath              string
 	ResourceID         string
 	ContentDescription string
@@ -31,7 +31,7 @@ type CustomEvent struct {
 }
 
 type Preference struct {
-	currentActions          []types2.IAction
+	currentActions          []types.IAction
 	customEvents            []*CustomEvent
 	randomInputText         bool
 	doInputFuzzing          bool
@@ -48,7 +48,7 @@ var instance *Preference
 func init() {
 	rand.Seed(time.Now().UnixNano())
 	instance = &Preference{
-		currentActions:          make([]types2.IAction, 0),
+		currentActions:          make([]types.IAction, 0),
 		customEvents:            make([]*CustomEvent, 0),
 		randomInputText:         false,
 		doInputFuzzing:          true,
@@ -65,18 +65,18 @@ func GetInstance() *Preference {
 	return instance
 }
 
-func (p *Preference) ResolvePageAndGetSpecifiedAction(pageName string, rootXML types2.IElement) types2.IAction {
+func (p *Preference) ResolvePageAndGetSpecifiedAction(pageName string, rootXML types.IElement) types.IAction {
 	if rootXML != nil {
 		p.resolvePage(pageName, rootXML)
 	}
 
-	var returnAction types2.IAction = nil
+	var returnAction types.IAction = nil
 	if len(p.currentActions) == 0 {
 		for _, customEvent := range p.customEvents {
 			eventRate := rand.Float64()
 			if eventRate < customEvent.Prob && customEvent.Times > 0 && customEvent.PageName == pageName {
 				p.currentActions = nil
-				p.currentActions = make([]types2.IAction, len(customEvent.Actions))
+				p.currentActions = make([]types.IAction, len(customEvent.Actions))
 				for i, action := range customEvent.Actions {
 					p.currentActions[i] = action
 				}
@@ -101,11 +101,11 @@ func (p *Preference) ResolvePageAndGetSpecifiedAction(pageName string, rootXML t
 	return returnAction
 }
 
-func (p *Preference) resolvePage(pageName string, rootXML types2.IElement) {
+func (p *Preference) resolvePage(pageName string, rootXML types.IElement) {
 	p.cachePageTexts(rootXML)
 }
 
-func (p *Preference) cachePageTexts(rootXML types2.IElement) {
+func (p *Preference) cachePageTexts(rootXML types.IElement) {
 	if rootXML == nil {
 		return
 	}
@@ -118,7 +118,7 @@ func (p *Preference) cachePageTexts(rootXML types2.IElement) {
 	}
 }
 
-func (p *Preference) patchActionBounds(action *CustomAction, rootXML types2.IElement) bool {
+func (p *Preference) patchActionBounds(action *CustomAction, rootXML types.IElement) bool {
 	return true
 }
 
@@ -126,12 +126,12 @@ func (p *Preference) SkipAllActionsFromModel() bool {
 	return p.skipAllActionsFromModel
 }
 
-func (p *Preference) PatchOperate(operate *types2.DeviceOperateWrapper) {
+func (p *Preference) PatchOperate(operate *types.DeviceOperateWrapper) {
 	if !p.doInputFuzzing {
 		return
 	}
 
-	if operate.Editable && operate.Text == "" && (operate.Act == types2.CLICK || operate.Act == types2.LONG_CLICK) {
+	if operate.Editable && operate.Text == "" && (operate.Act == types.CLICK || operate.Act == types.LONG_CLICK) {
 		if p.randomInputText && len(p.inputTexts) > 0 {
 			randIdx := rand.Intn(len(p.inputTexts))
 			operate.Text = p.inputTexts[randIdx]

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"trek/logger"
 	"trek/pkg/driver/android/gadb"
 	"trek/pkg/driver/common"
 
@@ -31,68 +32,67 @@ type ScreenCapture struct {
 }
 
 func NewScreenCapture(device *gadb.Device) *ScreenCapture {
-	return &ScreenCapture{
-		device: device,
-	}
+	return &ScreenCapture{device: device}
 }
 
 func (s *ScreenCapture) Screenshot() ([]byte, error) {
 	uuid := uuid.NewString()
 	imgPath := fmt.Sprintf("/sdcard/%s.png", uuid)
+	logger.Debugf("Starting device screenshot, serial=%s remotePath=%s", s.device.Serial(), imgPath)
 
-	// 使用 screencap 命令
 	_, err := s.device.RunShellCommand(fmt.Sprintf("screencap -p %s", imgPath))
 	if err != nil {
-		return nil, fmt.Errorf("截图失败: %v", err)
+		return nil, fmt.Errorf("鎴浘澶辫触: %v", err)
 	}
 
 	dest := bytes.Buffer{}
 	err = s.device.Pull(imgPath, &dest)
 	if err != nil {
-		return nil, fmt.Errorf("拉取截图失败: %v", err)
+		return nil, fmt.Errorf("鎷夊彇鎴浘澶辫触: %v", err)
 	}
 
-	// 清理设备上的临时文件
 	_, _ = s.device.RunShellCommand(fmt.Sprintf("rm %s", imgPath))
-
+	logger.Debugf("Device screenshot completed, serial=%s size=%d", s.device.Serial(), dest.Len())
 	return dest.Bytes(), nil
 }
 
 func (s *ScreenCapture) SaveScreenshot(path string) error {
+	logger.Debugf("Starting screenshot save, serial=%s path=%s", s.device.Serial(), path)
 	data, err := s.Screenshot()
 	if err != nil {
-		return fmt.Errorf("截图失败: %v", err)
+		return fmt.Errorf("鎴浘澶辫触: %v", err)
 	}
 
 	err = os.WriteFile(path, data, 0666)
 	if err != nil {
-		return fmt.Errorf("保存截图失败: %v", err)
+		return fmt.Errorf("淇濆瓨鎴浘澶辫触: %v", err)
 	}
 
+	logger.Debugf("Screenshot save completed, serial=%s path=%s size=%d", s.device.Serial(), path, len(data))
 	return nil
 }
 
 func (s *ScreenCapture) Record(path string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	logger.Debugf("Starting screen recording initialization, serial=%s path=%s", s.device.Serial(), path)
 
 	if s.isRecording {
-		return fmt.Errorf("已经正在录制中")
+		return fmt.Errorf("宸茬粡姝ｅ湪褰曞埗涓?")
 	}
 
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0666)
 	if err != nil {
-		return fmt.Errorf("创建文件失败: %v", err)
+		return fmt.Errorf("鍒涘缓鏂囦欢澶辫触: %v", err)
 	}
 
 	muxer, err := mp4.CreateMp4Muxer(file)
 	if err != nil {
 		file.Close()
-		return fmt.Errorf("创建 MP4 Muxer 失败: %v", err)
+		return fmt.Errorf("鍒涘缓 MP4 Muxer 澶辫触: %v", err)
 	}
 
 	trackID := muxer.AddVideoTrack(mp4.MP4_CODEC_H264)
-
 	ctx, cancel := context.WithCancel(context.Background())
 
 	s.file = file
@@ -126,20 +126,21 @@ func (s *ScreenCapture) Record(path string) error {
 	if err := scrcpy.Start(1000); err != nil {
 		file.Close()
 		s.isRecording = false
-		return fmt.Errorf("启动 scrcpy 失败: %v", err)
+		return fmt.Errorf("鍚姩 scrcpy 澶辫触: %v", err)
 	}
 
 	s.scrcpy = scrcpy
-
+	logger.Debugf("Screen recording started, serial=%s path=%s trackID=%d", s.device.Serial(), path, s.trackID)
 	return nil
 }
 
 func (s *ScreenCapture) StopRecording() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	logger.Debugf("Starting screen recording stop, serial=%s", s.device.Serial())
 
 	if !s.isRecording {
-		return fmt.Errorf("当前没有在录制")
+		return fmt.Errorf("褰撳墠娌℃湁鍦ㄥ綍鍒?")
 	}
 
 	if s.cancelFunc != nil {
@@ -147,16 +148,14 @@ func (s *ScreenCapture) StopRecording() error {
 	}
 
 	var errs []error
-
 	if s.muxer != nil {
 		if err := s.muxer.WriteTrailer(); err != nil {
-			errs = append(errs, fmt.Errorf("写入 MP4 trailer 失败: %v", err))
+			errs = append(errs, fmt.Errorf("鍐欏叆 MP4 trailer 澶辫触: %v", err))
 		}
 	}
-
 	if s.file != nil {
 		if err := s.file.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("关闭文件失败: %v", err))
+			errs = append(errs, fmt.Errorf("鍏抽棴鏂囦欢澶辫触: %v", err))
 		}
 	}
 
@@ -169,9 +168,10 @@ func (s *ScreenCapture) StopRecording() error {
 	s.isInit = false
 
 	if len(errs) > 0 {
-		return fmt.Errorf("停止录制时发生错误: %v", errs)
+		return fmt.Errorf("鍋滄褰曞埗鏃跺彂鐢熼敊璇? %v", errs)
 	}
 
+	logger.Debugf("Screen recording stopped, serial=%s", s.device.Serial())
 	return nil
 }
 

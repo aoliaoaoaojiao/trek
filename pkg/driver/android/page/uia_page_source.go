@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+	"trek/logger"
 	"trek/pkg/driver/android/uia"
 	"trek/pkg/driver/common"
 )
@@ -48,6 +49,7 @@ func (u *UIAPageSource) DumpPageSource() (string, error) {
 	if err := u.CheckSessionId(); err != nil {
 		return "", err
 	}
+	logger.Debugf("Starting UIA page source dump, sessionId=%s", u.SessionId)
 
 	resp, err := u.Request(http.MethodGet, u.SessionURL("/source"), nil, 60*time.Second)
 	if err != nil {
@@ -56,10 +58,10 @@ func (u *UIAPageSource) DumpPageSource() (string, error) {
 
 	var pageSource string
 	if err := json.Unmarshal(resp.Value, &pageSource); err != nil {
-		// 如果不是字符串，直接返回原始值
 		return string(resp.Value), nil
 	}
 
+	logger.Debugf("UIA page source dump completed, sessionId=%s size=%d", u.SessionId, len(pageSource))
 	return pageSource, nil
 }
 

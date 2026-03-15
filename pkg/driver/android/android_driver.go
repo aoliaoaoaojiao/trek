@@ -89,15 +89,17 @@ func NewAndroidDriver(options ...AndroidDriverOption) (*AndroidDriver, error) {
 }
 
 func NewAndroidDriverWith(deviceSerial string, opts ...AndroidDriverOption) (*AndroidDriver, error) {
+	logger.Infof("Starting AndroidDriver initialization, deviceSerial=%s", deviceSerial)
 	if err := utils.EnsureADBServer(); err != nil {
 		return nil, fmt.Errorf("uia driver: adb environment unavailable: %v", err)
 	}
+	logger.Info("ADB server check passed")
 
 	device, err := utils.GetDevice(deviceSerial)
-
 	if err != nil {
 		return nil, err
 	}
+	logger.Infof("Selected device, serial=%s model=%s product=%s", device.Serial(), device.Model(), device.Product())
 
 	androidDriver := &AndroidDriver{
 		device:        device,
@@ -110,61 +112,47 @@ func NewAndroidDriverWith(deviceSerial string, opts ...AndroidDriverOption) (*An
 	if err != nil {
 		return nil, err
 	}
+	logger.Infof("UIA initialization completed, serial=%s", device.Serial())
 
 	for _, opt := range opts {
 		opt(androidDriver)
 	}
+	logger.Infof("Driver options applied, isUIATouch=%t pocoPort=%d pocoEngine=%s", androidDriver.isUIATouch, androidDriver.pocoPort, androidDriver.pocoEngine)
 
 	if androidDriver.pocoPort > 0 {
+		logger.Infof("Starting Poco page source initialization, remotePort=%d engine=%s", androidDriver.pocoPort, androidDriver.pocoEngine)
 		err = androidDriver.initPoco()
 		if err != nil {
 			return nil, err
 		}
+		logger.Infof("Poco page source initialization completed, localPort=%d remotePort=%d", androidDriver.frowardPocoPort, androidDriver.pocoPort)
 	}
 
 	if androidDriver.isUIATouch {
 		if androidDriver.uiaClient != nil {
 			androidDriver.touch = touch.NewUIATouch(androidDriver.uiaClient)
+			logger.Info("Switched to UIA touch mode")
 		} else {
 			logger.Warn("UIA Touch Mode is not available, ADB Touch Mode will be used")
 		}
 	}
 
+	logger.Infof("AndroidDriver initialization completed, serial=%s", device.Serial())
 	return androidDriver, nil
 }
 
-// Click 执行点击操作
-// point: 点击位置的坐标点
-// 返回错误信息，如果操作成功则返回nil
 func (a *AndroidDriver) Click(point types.Point) error {
 	return a.touch.Click(point)
 }
 
-// LongClick 执行长按操作
-// point: 长按位置的坐标点
-// duration: 长按持续时间，单位为毫秒
-// 返回错误信息，如果操作成功则返回nil
 func (a *AndroidDriver) LongClick(point types.Point, duration int64) error {
 	return a.touch.LongClick(point, duration)
 }
 
-// Swipe 执行滑动操作
-// startPoint: 滑动起始位置
-// endPoint: 滑动结束位置
-// step: 滑动步数，数值越大滑动越平滑
-// duration: 滑动持续时间，单位为毫秒
-// 返回错误信息，如果操作成功则返回nil
 func (a *AndroidDriver) Swipe(startPoint types.Point, endPoint types.Point, step int64, duration int64) error {
 	return a.touch.Swipe(startPoint, endPoint, step, duration)
 }
 
-// Pinch 执行缩放手势操作
-// centerPoint: 缩放手势的中心点
-// startDistance: 起始距离（两指间的距离）
-// endDistance: 结束距离（两指间的距离）
-// duration: 缩放持续时间，单位为毫秒
-// 返回错误信息，如果操作成功则返回nil
-// 当endDistance > startDistance时为放大，endDistance < startDistance时为缩小
 func (a *AndroidDriver) Pinch(centerPoint types.Point, startDistance float64, endDistance float64, duration int64) error {
 	return a.touch.Pinch(centerPoint, startDistance, endDistance, duration)
 }
@@ -176,51 +164,73 @@ func (a *AndroidDriver) TouchEvent(touchList ...common.TouchEvent) error {
 func (a *AndroidDriver) Close() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	logger.Infof("Starting AndroidDriver shutdown, serial=%s", a.Name())
 
 	if a.touch != nil {
-		a.touch.Close()
+		if err := a.touch.Close(); err != nil {
+			logger.Warnf("Failed to close touch resource: %v", err)
+		} else {
+			logger.Info("Touch resource closed")
+		}
 	}
 	if a.screenCapture != nil {
-		a.screenCapture.Close()
+		if err := a.screenCapture.Close(); err != nil {
+			logger.Warnf("Failed to close screen capture resource: %v", err)
+		} else {
+			logger.Info("Screen capture resource closed")
+		}
 	}
-	for _, ps := range a.pageSources {
-		ps.Close()
+	for pageType, ps := range a.pageSources {
+		if err := ps.Close(); err != nil {
+			logger.Warnf("Failed to close page source, type=%s err=%v", pageType, err)
+		} else {
+			logger.Infof("Page source closed, type=%s", pageType)
+		}
 	}
 	if a.uiaServerConn != nil {
 		_ = a.uiaServerConn.Close()
 		a.uiaServerConn = nil
+		logger.Info("UIA instrumentation connection closed")
 	}
 	if a.uiaPort > 0 && a.device != nil {
 		if err := a.device.ForwardKill(a.uiaPort); err != nil {
 			logger.Warnf("remove UIA forward failed: %v", err)
+		} else {
+			logger.Infof("UIA port forwarding removed, localPort=%d", a.uiaPort)
 		}
 		a.uiaPort = 0
 	}
-
 	if a.frowardPocoPort > 0 && a.device != nil {
 		if err := a.device.ForwardKill(a.frowardPocoPort); err != nil {
 			logger.Warnf("remove POCO forward failed: %v", err)
+		} else {
+			logger.Infof("Poco port forwarding removed, localPort=%d", a.frowardPocoPort)
 		}
 		a.frowardPocoPort = 0
 	}
 
 	a.pageSources = make(map[PageType]common.IPageSource)
+	logger.Infof("AndroidDriver shutdown completed, serial=%s", a.Name())
 	return nil
 }
 
 func (a *AndroidDriver) Screenshot() ([]byte, error) {
+	logger.Debugf("Taking screenshot, serial=%s", a.Name())
 	return a.screenCapture.Screenshot()
 }
 
 func (a *AndroidDriver) SaveScreenshot(path string) error {
+	logger.Debugf("Saving screenshot, serial=%s path=%s", a.Name(), path)
 	return a.screenCapture.SaveScreenshot(path)
 }
 
 func (a *AndroidDriver) Record(path string) error {
+	logger.Debugf("Starting screen recording, serial=%s path=%s", a.Name(), path)
 	return a.screenCapture.Record(path)
 }
 
 func (a *AndroidDriver) StopRecording() error {
+	logger.Debugf("Stopping screen recording, serial=%s", a.Name())
 	return a.screenCapture.StopRecording()
 }
 
@@ -229,8 +239,10 @@ func (a *AndroidDriver) GetPageSource(pageSourceType string) common.IPageSource 
 	defer a.mu.RUnlock()
 
 	if ps, ok := a.pageSources[PageType(pageSourceType)]; ok {
+		logger.Debugf("Page source found, serial=%s type=%s", a.Name(), pageSourceType)
 		return ps
 	}
+	logger.Debugf("Page source not found, serial=%s type=%s", a.Name(), pageSourceType)
 	return nil
 }
 
@@ -240,7 +252,7 @@ func (a *AndroidDriver) GetUIAClient(remoteUrl string) (*uia.UiaClient, error) {
 		return nil, err
 	}
 	if client == nil {
-		return nil, fmt.Errorf("创建 UIA 客户端失败")
+		return nil, fmt.Errorf("failed to create UIA client")
 	}
 	return client, nil
 }
@@ -282,18 +294,17 @@ func (a *AndroidDriver) Name() string {
 
 func (a *AndroidDriver) GetInfo() map[string]interface{} {
 	info := make(map[string]interface{})
-
 	if a.device != nil {
 		info["device"] = a.device.Serial()
 		info["model"] = a.device.Model()
 		info["product"] = a.device.Product()
 	}
-
 	return info
 }
 
 func (a *AndroidDriver) initPoco() error {
 	a.frowardPocoPort = common.GetRandomPort()
+	logger.Infof("Starting Poco port forwarding, localPort=%d remotePort=%d", a.frowardPocoPort, a.pocoPort)
 	err := a.device.FrowardTcp(a.frowardPocoPort, a.pocoPort)
 	if err != nil {
 		return err
@@ -303,6 +314,7 @@ func (a *AndroidDriver) initPoco() error {
 		return err
 	}
 	a.pageSources[PageTypePoco] = pocoPage
+	logger.Infof("Poco page source registered, type=%s localPort=%d", PageTypePoco, a.frowardPocoPort)
 	return nil
 }
 
@@ -315,12 +327,14 @@ func (a *AndroidDriver) checkUiaApkVersion() (bool, error) {
 }
 
 func (a *AndroidDriver) initUIA() error {
+	logger.Infof("Starting UIA initialization, serial=%s", a.Name())
 	checkUIARes, err := a.checkUiaApkVersion()
 	if err != nil {
 		return err
 	}
 
 	if !checkUIARes {
+		logger.Info("UIA APK version mismatch detected, reinstalling packages")
 		utils.UninstallPackage(a.device.Serial(), uiaServerPackage, false)
 		utils.UninstallPackage(a.device.Serial(), uiaServerTestPackage, false)
 
@@ -351,35 +365,40 @@ func (a *AndroidDriver) initUIA() error {
 				return fmt.Errorf("execute command failed: %s: %w", command, err)
 			}
 		}
+		logger.Info("UIA APK installation and permission setup completed")
 	}
 
 	uiaPort := common.GetRandomPort()
+	logger.Infof("Preparing to start UIA server, localPort=%d remotePort=%d", uiaPort, uiaServerPort)
 
 	if err := a.startUIAServer(uiaPort); err != nil {
 		return err
 	}
 
 	a.uiaClient, err = uia.NewUiaClient(fmt.Sprintf("http://localhost:%d", uiaPort))
-
 	if err != nil {
 		return err
 	}
+	logger.Infof("UIA client created, baseUrl=%s", a.uiaClient.RemoteUrl)
 
 	a.pageSources[PageTypeUIA] = page.NewUIAPageSource(a.uiaClient)
-
+	logger.Infof("UIA page source registered, type=%s", PageTypeUIA)
 	return nil
 }
 
 func (a *AndroidDriver) startUIAServer(uiaPort int) error {
+	logger.Infof("Starting UIA instrumentation, localPort=%d remotePort=%d", uiaPort, uiaServerPort)
 	if err := a.device.FrowardTcp(uiaPort, uiaServerPort); err != nil {
 		return fmt.Errorf("forward uia port failed: %w", err)
 	}
+	logger.Infof("UIA port forwarding established, localPort=%d", uiaPort)
 
 	conn, err := a.device.RunShellLoopCommandSock(uiaInstrumentationCmd)
 	if err != nil {
 		_ = a.device.ForwardKill(uiaPort)
 		return fmt.Errorf("start uia instrumentation failed: %w", err)
 	}
+	logger.Info("UIA instrumentation command started, waiting for readiness")
 
 	a.uiaServerConn = conn
 	a.uiaPort = uiaPort
@@ -433,6 +452,7 @@ func (a *AndroidDriver) startUIAServer(uiaPort int) error {
 				a.uiaPort = 0
 				return err
 			}
+			logger.Infof("UIA server is ready by log marker and HTTP probe, localPort=%d", uiaPort)
 			return nil
 		case err := <-errCh:
 			_ = conn.Close()
@@ -442,6 +462,7 @@ func (a *AndroidDriver) startUIAServer(uiaPort int) error {
 			return err
 		case <-ticker.C:
 			if err := checkUIAServerHTTPReady(uiaPort); err == nil {
+				logger.Infof("UIA server is ready by HTTP probe, localPort=%d", uiaPort)
 				return nil
 			}
 			if time.Now().After(deadline) {
@@ -494,6 +515,5 @@ func resolveUIAPluginsDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve repo root failed: %w", err)
 	}
-
 	return filepath.Join(projectRoot, "plugins", "uia"), nil
 }

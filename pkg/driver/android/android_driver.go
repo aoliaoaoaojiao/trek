@@ -14,12 +14,12 @@ import (
 	"trek/logger"
 	"trek/pkg/driver/android/gadb"
 	"trek/pkg/driver/android/page"
-	"trek/pkg/driver/android/page/poco"
 	"trek/pkg/driver/android/screen"
 	"trek/pkg/driver/android/touch"
 	"trek/pkg/driver/android/uia"
 	"trek/pkg/driver/android/utils"
 	"trek/pkg/driver/common"
+	"trek/pkg/driver/common/page/poco"
 )
 
 var _ common.IDriver = (*AndroidDriver)(nil)
@@ -49,25 +49,29 @@ type AndroidDriver struct {
 	screenCapture common.IScreenCapture
 	pageSources   map[PageType]common.IPageSource
 	mu            sync.RWMutex
+
 	uiaClient     *uia.UiaClient
 	uiaServerConn net.Conn
 	uiaPort       int
 	isUIATouch    bool
+
+	pocoPort        int
+	frowardPocoPort int
+	pocoEngine      poco.Engine
 }
 
 type AndroidDriverOption func(*AndroidDriver)
 
-func WithPoco(engine poco.Engine, port int) AndroidDriverOption {
+func WithPoco(engine poco.Engine, pocoPort int) AndroidDriverOption {
 	return func(d *AndroidDriver) {
-		if port > 0 && engine != "" {
-			if ps, err := page.NewPocoPageSource(engine, port); err == nil {
-				d.pageSources[PageTypePoco] = ps
-			}
+		if pocoPort > 0 && engine != "" {
+			d.pocoEngine = engine
+			d.pocoPort = pocoPort
 		}
 	}
 }
 
-func WithTouch(touchType TouchType, opts ...interface{}) AndroidDriverOption {
+func WithTouch(touchType TouchType) AndroidDriverOption {
 	return func(d *AndroidDriver) {
 		switch touchType {
 		case TouchTypeADB:
@@ -109,6 +113,13 @@ func NewAndroidDriverWith(deviceSerial string, opts ...AndroidDriverOption) (*An
 
 	for _, opt := range opts {
 		opt(androidDriver)
+	}
+
+	if androidDriver.pocoPort > 0 {
+		err = androidDriver.initPoco()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if androidDriver.isUIATouch {
@@ -185,6 +196,14 @@ func (a *AndroidDriver) Close() error {
 		}
 		a.uiaPort = 0
 	}
+
+	if a.frowardPocoPort > 0 && a.device != nil {
+		if err := a.device.ForwardKill(a.frowardPocoPort); err != nil {
+			logger.Warnf("remove POCO forward failed: %v", err)
+		}
+		a.frowardPocoPort = 0
+	}
+
 	a.pageSources = make(map[PageType]common.IPageSource)
 	return nil
 }
@@ -242,7 +261,7 @@ func (a *AndroidDriver) NewUIAPageSource(remoteUrl string) (common.IPageSource, 
 }
 
 func (a *AndroidDriver) NewPocoPageSource(engine poco.Engine, port int) (common.IPageSource, error) {
-	pocoPageSource, err := page.NewPocoPageSource(engine, port)
+	pocoPageSource, err := poco.NewPocoPageSourceWith(engine, port)
 	if err != nil {
 		return nil, err
 	}
@@ -271,6 +290,20 @@ func (a *AndroidDriver) GetInfo() map[string]interface{} {
 	}
 
 	return info
+}
+
+func (a *AndroidDriver) initPoco() error {
+	a.frowardPocoPort = common.GetRandomPort()
+	err := a.device.FrowardTcp(a.frowardPocoPort, a.pocoPort)
+	if err != nil {
+		return err
+	}
+	pocoPage, err := poco.NewPocoPageSourceWith(a.pocoEngine, a.frowardPocoPort)
+	if err != nil {
+		return err
+	}
+	a.pageSources[PageTypePoco] = pocoPage
+	return nil
 }
 
 func (a *AndroidDriver) checkUiaApkVersion() (bool, error) {

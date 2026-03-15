@@ -1,11 +1,10 @@
-package page
+package poco
 
 import (
 	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
-	"trek/pkg/driver/android/page/poco"
 	"trek/pkg/driver/common"
 
 	"github.com/google/uuid"
@@ -14,23 +13,27 @@ import (
 var _ common.IPageSource = (*PocoPageSource)(nil)
 
 type PocoPageSource struct {
-	engine   poco.Engine
-	conn     poco.PocoConnection
+	engine   Engine
+	conn     PocoConnection
 	source   string
 	isFrozen bool
 	mu       sync.RWMutex
 }
 
-func NewPocoPageSource(engine poco.Engine, port int) (*PocoPageSource, error) {
+func NewPocoPageSource(engine Engine) (*PocoPageSource, error) {
+	return NewPocoPageSourceWith(engine, engine.GetDefaultPort())
+}
+
+func NewPocoPageSourceWith(engine Engine, port int) (*PocoPageSource, error) {
 	p := &PocoPageSource{
 		engine: engine,
 	}
 
-	var conn poco.PocoConnection
+	var conn PocoConnection
 	if engine.IsWebSocket() {
-		conn = poco.NewWebSocketClient(port)
+		conn = NewWebSocketClient(port)
 	} else {
-		conn = poco.NewSocketClient(port)
+		conn = NewSocketClient(port)
 	}
 
 	if err := conn.Connect(); err != nil {
@@ -51,7 +54,7 @@ func (p *PocoPageSource) DumpPageSource() (string, error) {
 	p.mu.RUnlock()
 
 	method := "Dump"
-	if p.engine == poco.CocosCreator || p.engine == poco.Cocos2dxJs {
+	if p.engine == CocosCreator || p.engine == Cocos2dxJs {
 		method = "dump"
 	}
 
@@ -107,7 +110,7 @@ func (p *PocoPageSource) ThawSource() {
 }
 
 func (p *PocoPageSource) GetScreenSize() (int, int, error) {
-	if p.engine != poco.Unity3d && p.engine != poco.Cocos2dxLua {
+	if p.engine != Unity3d && p.engine != Cocos2dxLua {
 		return 0, 0, fmt.Errorf("当前引擎不支持获取屏幕尺寸")
 	}
 
@@ -157,7 +160,7 @@ func (p *PocoPageSource) Close() error {
 	return nil
 }
 
-func (p *PocoPageSource) FindElement(selector string, expression string) (*poco.PocoElement, error) {
+func (p *PocoPageSource) FindElement(selector string, expression string) (*PocoElement, error) {
 	elements, err := p.FindElements(selector, expression)
 	if err != nil {
 		return nil, err
@@ -168,7 +171,7 @@ func (p *PocoPageSource) FindElement(selector string, expression string) (*poco.
 	return elements[0], nil
 }
 
-func (p *PocoPageSource) FindElements(selector string, expression string) ([]*poco.PocoElement, error) {
+func (p *PocoPageSource) FindElements(selector string, expression string) ([]*PocoElement, error) {
 	source, err := p.DumpPageSource()
 	if err != nil {
 		return nil, err
@@ -186,9 +189,9 @@ func (p *PocoPageSource) FindElements(selector string, expression string) ([]*po
 
 	nodes := findNodesByXPath(data, xpath)
 
-	var elements []*poco.PocoElement
+	var elements []*PocoElement
 	for _, node := range nodes {
-		elements = append(elements, &poco.PocoElement{
+		elements = append(elements, &PocoElement{
 			Data: node,
 		})
 	}

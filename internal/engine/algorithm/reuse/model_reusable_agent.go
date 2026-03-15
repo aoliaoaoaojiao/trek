@@ -11,7 +11,7 @@ import (
 	"trek/internal/engine/core/model"
 	"trek/internal/engine/core/types"
 	"trek/internal/engine/tool"
-	"trek/log"
+	"trek/logger"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -85,10 +85,10 @@ var createReuseAgent = func(m *model.Model, deviceType types.DeviceType) (types.
 			select {
 			case <-ticker.C:
 				if err := reuseAgent.SaveReuseModel(); err != nil {
-					log.Errorf("Failed to auto-save reuse model: %v", err)
+					logger.Errorf("Failed to auto-save reuse model: %v", err)
 				}
 			case <-reuseAgent.stopChan:
-				log.Info("Stopping reuse model auto-save routine")
+				logger.Info("Stopping reuse model auto-save routine")
 				return
 			}
 		}
@@ -196,7 +196,7 @@ func (a *ModelReusableAgent) UpdateStrategy() {
 			}
 		}
 	} else {
-		log.Debugf("get action value failed!")
+		logger.Debugf("get action value failed!")
 	}
 
 	a.previousActions = append(a.previousActions, a.newAction)
@@ -385,35 +385,35 @@ func (a *ModelReusableAgent) SelectNewAction() types.IAction {
 
 	action = a.selectUnperformedActionNotInReuseModel()
 	if action != nil {
-		log.Infof("select action not in reuse model")
+		logger.Infof("select action not in reuse model")
 		return action
 	}
 
 	action = a.selectUnperformedActionInReuseModel()
 	if action != nil {
-		log.Infof("select action in reuse model")
+		logger.Infof("select action in reuse model")
 		return action
 	}
 
 	action = a.newState.RandomPickUnvisitedAction()
 	if action != nil {
-		log.Infof("select action in unvisited action")
+		logger.Infof("select action in unvisited action")
 		return action
 	}
 
 	action = a.selectActionByQValue()
 	if action != nil {
-		log.Infof("select action by qvalue")
+		logger.Infof("select action by qvalue")
 		return action
 	}
 
 	action = a.selectNewActionEpsilonGreedyRandomly()
 	if action != nil {
-		log.Infof("select action by EpsilonGreedyRandom")
+		logger.Infof("select action by EpsilonGreedyRandom")
 		return action
 	}
 
-	log.Errorf("null action happened , handle null action")
+	logger.Errorf("null action happened , handle null action")
 	nullAction := a.handleNullAction()
 	if nullAction != nil {
 		return nullAction
@@ -450,39 +450,39 @@ func (a *ModelReusableAgent) computeRewardOfLatestAction() float64 {
 	rewardValue := 0.0
 
 	if a.newState == nil {
-		log.Error("computeReward: newState is null")
+		logger.Error("computeReward: newState is null")
 		return rewardValue
 	}
 
 	a.computeAlphaValue()
 	graphRef := a.model.GetGraph()
 	visitedPages := graphRef.GetVisitedPages()
-	log.Debugf("computeReward: visitedPages count %d", len(visitedPages))
+	logger.Debugf("computeReward: visitedPages count %d", len(visitedPages))
 
 	if len(a.previousActions) > 0 {
 		lastSelectedAction := a.previousActions[len(a.previousActions)-1].(*types.StatefulAction)
-		log.Debugf("computeReward: lastSelectedAction %s %d", lastSelectedAction.GetId(), int(lastSelectedAction.GetVisitedCount()))
+		logger.Debugf("computeReward: lastSelectedAction %s %d", lastSelectedAction.GetId(), int(lastSelectedAction.GetVisitedCount()))
 
 		rewardValue = a.probabilityOfVisitingNewActivities(lastSelectedAction, visitedPages)
-		log.Debugf("computeReward: probabilityOfVisitingNewActivities %f", rewardValue)
+		logger.Debugf("computeReward: probabilityOfVisitingNewActivities %f", rewardValue)
 
 		if math.Abs(rewardValue-0.0) < 0.0001 {
 			rewardValue = 1.0
-			log.Debugf("computeReward: New action detected, setting reward to 1.0")
+			logger.Debugf("computeReward: New action detected, setting reward to 1.0")
 
 		}
 
 		rewardValue = rewardValue / math.Sqrt(float64(lastSelectedAction.GetVisitedCount())+1.0)
-		log.Debugf("computeReward: reward after visit count adjustment %f", rewardValue)
+		logger.Debugf("computeReward: reward after visit count adjustment %f", rewardValue)
 
 		rewardValue = rewardValue + a.getStateActionExpectationValue(a.newState, visitedPages)/math.Sqrt(float64(a.newState.GetVisitedCount())+1.0)
-		log.Debugf("computeReward: final reward after state expectation %f", rewardValue)
+		logger.Debugf("computeReward: final reward after state expectation %f", rewardValue)
 
-		log.Debugf("total visited count %d", len(visitedPages))
+		logger.Debugf("total visited count %d", len(visitedPages))
 	}
 
-	log.Infof("total visited ViewController count is %d", len(visitedPages))
-	log.Debugf("reuse-cov-opti action reward=%f", rewardValue)
+	logger.Infof("total visited ViewController count is %d", len(visitedPages))
+	logger.Debugf("reuse-cov-opti action reward=%f", rewardValue)
 
 	a.rewardCache = append(a.rewardCache, rewardValue)
 
@@ -572,7 +572,7 @@ func (a *ModelReusableAgent) updateReuseModel() {
 
 	entryMap := a.reuseModel[hash]
 	if entryMap == nil {
-		log.Debugf("can not find action in reuse map")
+		logger.Debugf("can not find action in reuse map")
 		entryMap = make(PageVisitCount)
 		a.reuseModel[hash] = entryMap
 	} else {
@@ -581,7 +581,7 @@ func (a *ModelReusableAgent) updateReuseModel() {
 	}
 
 	a.reuseQValue[hash] = modelAction.GetQValue()
-	log.Debugf("Updated Q-value for action %s: %.6f",
+	logger.Debugf("Updated Q-value for action %s: %.6f",
 		modelAction.GetId(),
 		modelAction.GetQValue())
 }
@@ -610,7 +610,7 @@ func (a *ModelReusableAgent) selectUnperformedActionNotInReuseModel() types.IAct
 	}
 
 	if totalWeight <= 0 {
-		log.Errorf("total weights is 0")
+		logger.Errorf("total weights is 0")
 		return nil
 	}
 
@@ -623,7 +623,7 @@ func (a *ModelReusableAgent) selectUnperformedActionNotInReuseModel() types.IAct
 		randI -= priority
 	}
 
-	log.Errorf("rand a null action")
+	logger.Errorf("rand a null action")
 	return nil
 }
 
@@ -636,7 +636,7 @@ func (a *ModelReusableAgent) selectUnperformedActionInReuseModel() types.IAction
 
 		if _, exists := a.reuseModel[actionHash]; exists {
 			if action.GetVisitedCount() > 0 {
-				log.Debugf("action has been visited")
+				logger.Debugf("action has been visited")
 				continue
 			}
 
@@ -681,7 +681,7 @@ func (a *ModelReusableAgent) selectActionByQValue() types.IAction {
 			if _, exists := a.reuseModel[actionHash]; exists {
 				qv += a.probabilityOfVisitingNewActivities(action, visitedActivities)
 			} else {
-				log.Debugf("qvalue pick return a action: %s", action.String())
+				logger.Debugf("qvalue pick return a action: %s", action.String())
 				return action
 			}
 		}
@@ -706,7 +706,7 @@ func (a *ModelReusableAgent) selectActionByQValue() types.IAction {
 
 func (a *ModelReusableAgent) selectNewActionEpsilonGreedyRandomly() types.IAction {
 	if a.eGreedy() {
-		log.Debugf("Try to select the max value action")
+		logger.Debugf("Try to select the max value action")
 		action := a.newState.GreedyPickAction(types.EnableValidValuePriorityFilter)
 		if action != nil {
 
@@ -715,7 +715,7 @@ func (a *ModelReusableAgent) selectNewActionEpsilonGreedyRandomly() types.IActio
 		}
 		return action
 	}
-	log.Debugf("Try to randomly select a value action.")
+	logger.Debugf("Try to randomly select a value action.")
 	action := a.newStateRandomPickAction(types.EnableValidValuePriorityFilter)
 	if action != nil {
 
@@ -736,7 +736,7 @@ func (a *ModelReusableAgent) eGreedy() bool {
 }
 
 func (a *ModelReusableAgent) LoadReuseModel() {
-	log.Infof("begin load model: %s", a.modelSavePath)
+	logger.Infof("begin load model: %s", a.modelSavePath)
 
 	a.reuseModelLock.Lock()
 	defer a.reuseModelLock.Unlock()
@@ -744,7 +744,7 @@ func (a *ModelReusableAgent) LoadReuseModel() {
 	// 读取文件
 	data, err := os.ReadFile(a.modelSavePath)
 	if err != nil {
-		log.Errorf("Failed to read reuse model file: %v", err)
+		logger.Errorf("Failed to read reuse model file: %v", err)
 		return
 	}
 
@@ -752,7 +752,7 @@ func (a *ModelReusableAgent) LoadReuseModel() {
 	fullModel := &protoPkg.ReuseModel{}
 	err = proto.Unmarshal(data, fullModel)
 	if err != nil {
-		log.Errorf("Failed to unmarshal reuse model: %v", err)
+		logger.Errorf("Failed to unmarshal reuse model: %v", err)
 		return
 	}
 
@@ -775,14 +775,14 @@ func (a *ModelReusableAgent) LoadReuseModel() {
 		}
 	}
 
-	log.Infof("Successfully loaded reuse model from %s", a.modelSavePath)
+	logger.Infof("Successfully loaded reuse model from %s", a.modelSavePath)
 }
 
 func (a *ModelReusableAgent) SaveReuseModel() error {
 
 	outputFilePath := a.modelSavePath
 
-	log.Infof("save model to path: %s", outputFilePath)
+	logger.Infof("save model to path: %s", outputFilePath)
 
 	a.reuseModelLock.Lock()
 	defer a.reuseModelLock.Unlock()
@@ -821,17 +821,17 @@ func (a *ModelReusableAgent) SaveReuseModel() error {
 	// 序列化为protobuf格式
 	data, err := proto.Marshal(fullModel)
 	if err != nil {
-		log.Errorf("Failed to marshal reuse model: %v", err)
+		logger.Errorf("Failed to marshal reuse model: %v", err)
 		return err
 	}
 
 	// 写入文件
 	if err := os.WriteFile(outputFilePath, data, 0644); err != nil {
-		log.Errorf("Failed to save reuse model to file: %v", err)
+		logger.Errorf("Failed to save reuse model to file: %v", err)
 		return err
 	}
 
-	log.Infof("Successfully saved reuse model to %s", outputFilePath)
+	logger.Infof("Successfully saved reuse model to %s", outputFilePath)
 	return nil
 }
 

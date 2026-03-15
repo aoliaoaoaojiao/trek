@@ -9,7 +9,7 @@ import (
 	"trek/internal/engine/core/model"
 	"trek/internal/engine/core/types"
 	"trek/internal/engine/tool"
-	"trek/log"
+	"trek/logger"
 
 	"github.com/tidwall/gjson"
 
@@ -41,10 +41,10 @@ func CreateAndroidElementFromXml(xmlContent string) (types.IElement, error) {
 	doc := etree.NewDocument()
 
 	if err := doc.ReadFromString(xmlContent); err != nil {
-		log.Errorf("parse xml error: %v", err)
+		logger.Errorf("parse xml error: %v", err)
 		return nil, err
 	}
-	log.Debugf("The content of XML is: %s", xmlContent)
+	logger.Debugf("The content of XML is: %s", xmlContent)
 
 	elem, err := createAndroidFromXmlDoc(doc)
 	if err != nil {
@@ -417,7 +417,7 @@ func (e *AndroidElement) addChild(child *AndroidElement) {
 //			}
 //		}
 //	} else {
-//		log.Errorf("element is a root elements")
+//		logger.Errorf("element is a root elements")
 //	}
 //}
 

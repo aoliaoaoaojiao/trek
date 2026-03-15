@@ -2,7 +2,6 @@ package page
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 	"trek/pkg/driver/android/uia"
@@ -50,8 +49,7 @@ func (u *UIAPageSource) DumpPageSource() (string, error) {
 		return "", err
 	}
 
-	url := fmt.Sprintf("%s/session/%s/source", u.RemoteUrl, u.SessionId)
-	resp, err := u.Request(http.MethodGet, url, nil, 60*time.Second)
+	resp, err := u.Request(http.MethodGet, u.SessionURL("/source"), nil, 60*time.Second)
 	if err != nil {
 		return "", err
 	}

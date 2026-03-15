@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 	"trek/internal/engine/tool"
-	"trek/log"
+	"trek/logger"
 )
 
 // 状态处理常量
@@ -52,7 +52,7 @@ func NewState() *State {
 
 // NewStateWithPage 创建带活动名称的状态
 func NewStateWithPage(pageName string) *State {
-	log.Debugf("create state for page: %s", pageName)
+	logger.Debugf("create state for page: %s", pageName)
 
 	return &State{
 		Node:             *NewNode(),
@@ -197,7 +197,7 @@ func (s *State) ResolveAt(action *StatefulAction, t time.Time) *StatefulAction {
 
 	total := len(targetWidgets)
 	index := int(action.GetVisitedCount()) % total
-	log.Debugf("resolve a merged widget %d/%d for action %s", index, total, action.GetId())
+	logger.Debugf("resolve a merged widget %d/%d for action %s", index, total, action.GetId())
 
 	action.SetTarget(targetWidgets[index])
 
@@ -334,7 +334,7 @@ func (s *State) CountActionPriority(filter IStatefulActionFilter, includeBack bo
 		if included {
 			fp := filter.GetPriority(action)
 			if fp <= 0 {
-				log.Debugf("Error: Action should has a positive priority, but we get %d", fp)
+				logger.Debugf("Error: Action should has a positive priority, but we get %d", fp)
 				continue
 			}
 			totalP += int(fp)
@@ -443,7 +443,7 @@ func (s *State) pickAction(filter IStatefulActionFilter, includeBack bool, index
 		}
 	}
 
-	log.Debugf("ERROR: action filter is unstable")
+	logger.Debugf("ERROR: action filter is unstable")
 	return nil
 }
 
@@ -463,7 +463,7 @@ func Create(elem IElement, pageName string) *State {
 	mergedWidgets := make(WidgetSet)
 	mergedWidgetCount := state.MergeWidgetAndStoreMergedOnes(mergedWidgets)
 	if mergedWidgetCount != 0 {
-		log.Debugf("build state merged %d widget", mergedWidgetCount)
+		logger.Debugf("build state merged %d widget", mergedWidgetCount)
 		state.Widgets = make(WidgetList, 0, len(mergedWidgets))
 		for _, widget := range mergedWidgets {
 			state.Widgets = append(state.Widgets, widget)
@@ -478,7 +478,7 @@ func Create(elem IElement, pageName string) *State {
 	actionHashSet := make(map[uintptr]bool)
 	for _, widget := range state.Widgets {
 		if widget.GetBounds() == nil {
-			log.Errorf("NULL Bounds happened")
+			logger.Errorf("NULL Bounds happened")
 			continue
 		}
 		if widget.GetBounds().IsEmpty() {

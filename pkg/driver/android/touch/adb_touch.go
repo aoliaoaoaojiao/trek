@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	types2 "trek/internal/engine/core/types"
-	"trek/log"
+	"trek/logger"
 	"trek/pkg/driver/android/gadb"
 	"trek/pkg/driver/common"
 )
@@ -58,7 +58,7 @@ func (a *ADBTouch) Swipe(startPoint types2.Point, endPoint types2.Point, step in
 		return common.NoADBDeviceErr
 	}
 
-	log.Warn("adb touch settings do not support steps")
+	logger.Warn("adb touch settings do not support steps")
 	if duration <= 0 {
 		return fmt.Errorf("duration must be greater than 0, current: %d", duration)
 	}

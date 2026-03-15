@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"sync/atomic"
 	"time"
-	"trek/log"
+	"trek/logger"
 )
 
 // Node 基础节点结构，用于统计访问状态和计数
@@ -25,7 +25,7 @@ func NewNode() *Node {
 // Visit 更新访问计数
 func (n *Node) Visit(timestamp time.Time) {
 	atomic.AddInt32(&n.VisitedCount, 1)
-	log.Debugf("visit id:%s times %d", n.GetId(), n.VisitedCount)
+	logger.Debugf("visit id:%s times %d", n.GetId(), n.VisitedCount)
 }
 
 // IsVisited 测试节点是否已被访问

@@ -2,7 +2,7 @@ package reuse
 
 import (
 	"trek/internal/engine/core/types"
-	"trek/log"
+	"trek/logger"
 )
 
 // RichWidget 使用动作、类名、资源ID、自身（或其子元素）的文本
@@ -49,7 +49,7 @@ func NewRichWidget(parent *RichWidget, element types.IElement) *RichWidget {
 		rw.WidgetHashcode ^= (0x79b9 + (textHash << 1))
 	}
 
-	log.Debugf("RichWidget created with hashcode:%d, identifier:%s, text:%s",
+	logger.Debugf("RichWidget created with hashcode:%d, identifier:%s, text:%s",
 		rw.WidgetHashcode, rw.GetElementIdentifier(), elementText)
 
 	//rw.Widget.Hashcode = rw.Hashcode
@@ -61,12 +61,12 @@ func NewRichWidget(parent *RichWidget, element types.IElement) *RichWidget {
 // 如果父widget不可点击，则获取子元素的有效文本
 func (rw *RichWidget) getValidTextFromWidgetAndChildren(element types.IElement) string {
 	txt := element.GetText()
-	log.Debugf("Getting valid text from element, current text: %s", txt)
+	logger.Debugf("Getting valid text from element, current text: %s", txt)
 	if txt == "" {
 		for _, child := range element.GetChildren() {
 			txt = rw.getValidTextFromWidgetAndChildren(child)
 			if txt != "" {
-				log.Debugf("Found valid text in child: %s", txt)
+				logger.Debugf("Found valid text in child: %s", txt)
 				return txt
 			}
 		}

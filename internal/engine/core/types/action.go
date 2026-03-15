@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 	"trek/internal/engine/tool"
-	"trek/log"
+	"trek/logger"
 )
 
 var _ IAction = (*Action)(nil)
@@ -193,7 +193,7 @@ func NewStatefulAction(state *State, targetWidget IWidget, actionType ActionType
 
 	asa.Hashcode = 0x9e3779b9 + (hashcode << 2) ^ (((stateHash << 4) ^ (targetHash << 3)) << 1)
 
-	log.Debugf("page state action created hashcode:%d stateHash:%d targetHash:%d", asa.Hashcode, stateHash, targetHash)
+	logger.Debugf("page state action created hashcode:%d stateHash:%d targetHash:%d", asa.Hashcode, stateHash, targetHash)
 
 	return asa
 }

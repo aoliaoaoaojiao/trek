@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"trek/log"
+	"trek/logger"
 	"trek/pkg/driver/android/gadb"
 )
 
@@ -157,7 +157,7 @@ func (s *Scrcpy) runBinary(maxSize int) error {
 					// 处理读取错误
 					if err == io.EOF {
 						// 正常结束
-						log.Debug("scrcpy output stream ended")
+						logger.Debug("scrcpy output stream ended")
 						return
 					}
 					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -166,19 +166,19 @@ func (s *Scrcpy) runBinary(maxSize int) error {
 						continue
 					}
 					// 其他错误，记录并退出
-					log.Errorf("get scrcpy binary output error: %v", err)
+					logger.Errorf("get scrcpy binary output error: %v", err)
 					s.exitCallBackFunc()
 					return
 				}
 				// 输出调试信息
 				if n > 0 {
 					//fmt.Println(string(byteDatas[:n]))
-					log.Debug(string(byteDatas[:n]))
+					logger.Debug(string(byteDatas[:n]))
 				}
 			}
 		}
 	}()
-	log.Debugf("start scrcpy server!")
+	logger.Debugf("start scrcpy server!")
 	isRelease.Wait()
 	if err2 != nil {
 		return err2
@@ -191,7 +191,7 @@ func (s *Scrcpy) startServer() {
 		var err error
 		s.videoSocket, err = s.scrcpyLn.Accept()
 		if err != nil {
-			log.Errorf("get scrcpy video socket err: %v", err)
+			logger.Errorf("get scrcpy video socket err: %v", err)
 			return
 		}
 		// 解析和转发video socket
@@ -206,13 +206,13 @@ func (s *Scrcpy) videoParse() {
 	buffer := make([]byte, 64)
 	_, err := s.videoSocket.Read(buffer)
 	if err != nil {
-		log.Errorf("get scrcpy device info err: %v", err)
+		logger.Errorf("get scrcpy device info err: %v", err)
 		s.exitCallBackFunc()
 	}
 	//buffer = make([]byte, 12)
 	//_, err = s.videoSocket.Read(buffer)
 	//if err != nil {
-	//	log.Errorf("get scrcpy device width and height info err: %v", err)
+	//	logger.Errorf("get scrcpy device width and height info err: %v", err)
 	//	s.exitCallBackFunc()
 	//}
 
@@ -232,21 +232,21 @@ func (s *Scrcpy) writeH264() {
 		case <-s.exitCtx.Done():
 			return
 		default:
-			//log.Debug("read scrcpy video packet")
+			//logger.Debug("read scrcpy video packet")
 			// 读取包头（12字节）
 			n, err := io.ReadFull(s.videoSocket, headerBuf)
 			if err != nil {
 				if err == io.EOF {
-					log.Info("scrcpy video stream ended")
+					logger.Info("scrcpy video stream ended")
 				} else {
-					log.Errorf("read scrcpy packet header err: %v", err)
+					logger.Errorf("read scrcpy packet header err: %v", err)
 				}
 				s.exitCallBackFunc()
 				return
 			}
 
 			if n != 12 {
-				log.Errorf("incomplete packet header, got %d bytes, expected 12", n)
+				logger.Errorf("incomplete packet header, got %d bytes, expected 12", n)
 				s.exitCallBackFunc()
 				return
 			}
@@ -255,13 +255,13 @@ func (s *Scrcpy) writeH264() {
 			packetSize, pts, isKeyFrame, _, err := s.parsePacketHeader(headerBuf)
 
 			if err != nil {
-				log.Errorf("parse scrcpy packet header err: %v", err)
+				logger.Errorf("parse scrcpy packet header err: %v", err)
 				s.exitCallBackFunc()
 				return
 			}
 
 			if packetSize <= 0 {
-				log.Errorf("invalid packet size: %d", packetSize)
+				logger.Errorf("invalid packet size: %d", packetSize)
 				s.exitCallBackFunc()
 				return
 			}
@@ -274,13 +274,13 @@ func (s *Scrcpy) writeH264() {
 
 			n, err = io.ReadFull(s.videoSocket, dataBuf[:packetSize])
 			if err != nil {
-				log.Errorf("read scrcpy packet data err: %v", err)
+				logger.Errorf("read scrcpy packet data err: %v", err)
 				s.exitCallBackFunc()
 				return
 			}
 
 			if n != packetSize {
-				log.Errorf("incomplete packet data, got %d bytes, expected %d", n, packetSize)
+				logger.Errorf("incomplete packet data, got %d bytes, expected %d", n, packetSize)
 				s.exitCallBackFunc()
 				return
 			}

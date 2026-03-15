@@ -1,13 +1,17 @@
 package android
 
 import (
+	"bufio"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 	"trek/internal/engine/core/types"
-	"trek/log"
+	"trek/logger"
 	"trek/pkg/driver/android/gadb"
 	"trek/pkg/driver/android/page"
 	"trek/pkg/driver/android/page/poco"
@@ -46,6 +50,8 @@ type AndroidDriver struct {
 	pageSources   map[PageType]common.IPageSource
 	mu            sync.RWMutex
 	uiaClient     *uia.UiaClient
+	uiaServerConn net.Conn
+	uiaPort       int
 	isUIATouch    bool
 }
 
@@ -109,7 +115,7 @@ func NewAndroidDriverWith(deviceSerial string, opts ...AndroidDriverOption) (*An
 		if androidDriver.uiaClient != nil {
 			androidDriver.touch = touch.NewUIATouch(androidDriver.uiaClient)
 		} else {
-			log.Warn("UIA Touch Mode is not available, ADB Touch Mode will be used")
+			logger.Warn("UIA Touch Mode is not available, ADB Touch Mode will be used")
 		}
 	}
 
@@ -168,6 +174,16 @@ func (a *AndroidDriver) Close() error {
 	}
 	for _, ps := range a.pageSources {
 		ps.Close()
+	}
+	if a.uiaServerConn != nil {
+		_ = a.uiaServerConn.Close()
+		a.uiaServerConn = nil
+	}
+	if a.uiaPort > 0 && a.device != nil {
+		if err := a.device.ForwardKill(a.uiaPort); err != nil {
+			logger.Warnf("remove UIA forward failed: %v", err)
+		}
+		a.uiaPort = 0
 	}
 	a.pageSources = make(map[PageType]common.IPageSource)
 	return nil
@@ -325,67 +341,119 @@ func (a *AndroidDriver) startUIAServer(uiaPort int) error {
 	if err := a.device.FrowardTcp(uiaPort, uiaServerPort); err != nil {
 		return fmt.Errorf("forward uia port failed: %w", err)
 	}
-	//
-	//readyCh := make(chan struct{}, 1)
-	//errCh := make(chan error, 1)
 
-	//go func() {
-	//	defer func() {
-	//		if err := a.device.ForwardKill(uiaPort); err != nil {
-	//			log.Warnf("remove UIA forward failed: %v", err)
-	//		}
-	//	}()
-	//
-	//	conn, err := a.device.RunShellLoopCommandSock(uiaInstrumentationCmd)
-	//	if err != nil {
-	//		select {
-	//		case errCh <- fmt.Errorf("start uia instrumentation failed: %w", err):
-	//		default:
-	//		}
-	//		return
-	//	}
-	//	defer conn.Close()
-	//
-	//	reader := bufio.NewReader(conn)
-	//	readySent := false
-	//	for {
-	//		line, err := reader.ReadString('\n')
-	//		if line != "" {
-	//			trimmed := strings.TrimSpace(line)
-	//			if trimmed != "" {
-	//				log.Info(trimmed)
-	//				if !readySent && strings.Contains(trimmed, uiaReadyLogMarker) {
-	//					time.Sleep(uiaStartupReadyDelay)
-	//					readySent = true
-	//					select {
-	//					case readyCh <- struct{}{}:
-	//					default:
-	//					}
-	//				}
-	//			}
-	//		}
-	//
-	//		if err != nil {
-	//			if !readySent && err != io.EOF {
-	//				select {
-	//				case errCh <- fmt.Errorf("uia instrumentation output failed: %w", err):
-	//				default:
-	//				}
-	//			}
-	//			return
-	//		}
-	//	}
-	//}()
-	//
-	//select {
-	//case <-readyCh:
-	//	return nil
-	//case err := <-errCh:
-	//	return err
-	//case <-time.After(uiaStartupWaitTimeout):
-	//	return fmt.Errorf("wait for uia server startup timeout after %s", uiaStartupWaitTimeout)
-	//}
-	return nil
+	conn, err := a.device.RunShellLoopCommandSock(uiaInstrumentationCmd)
+	if err != nil {
+		_ = a.device.ForwardKill(uiaPort)
+		return fmt.Errorf("start uia instrumentation failed: %w", err)
+	}
+
+	a.uiaServerConn = conn
+	a.uiaPort = uiaPort
+
+	readyCh := make(chan struct{}, 1)
+	errCh := make(chan error, 1)
+
+	go func() {
+		reader := bufio.NewReader(conn)
+		readySent := false
+		for {
+			line, readErr := reader.ReadString('\n')
+			if line != "" {
+				trimmed := strings.TrimSpace(line)
+				if trimmed != "" {
+					logger.Info(trimmed)
+					if !readySent && strings.Contains(trimmed, uiaReadyLogMarker) {
+						time.Sleep(uiaStartupReadyDelay)
+						readySent = true
+						select {
+						case readyCh <- struct{}{}:
+						default:
+						}
+					}
+				}
+			}
+
+			if readErr != nil {
+				if !readySent && readErr != io.EOF {
+					select {
+					case errCh <- fmt.Errorf("uia instrumentation output failed: %w", readErr):
+					default:
+					}
+				}
+				return
+			}
+		}
+	}()
+
+	deadline := time.Now().Add(uiaStartupWaitTimeout)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-readyCh:
+			if err := waitForUIAServerHTTPReady(uiaPort, 10*time.Second); err != nil {
+				_ = conn.Close()
+				a.uiaServerConn = nil
+				_ = a.device.ForwardKill(uiaPort)
+				a.uiaPort = 0
+				return err
+			}
+			return nil
+		case err := <-errCh:
+			_ = conn.Close()
+			a.uiaServerConn = nil
+			_ = a.device.ForwardKill(uiaPort)
+			a.uiaPort = 0
+			return err
+		case <-ticker.C:
+			if err := checkUIAServerHTTPReady(uiaPort); err == nil {
+				return nil
+			}
+			if time.Now().After(deadline) {
+				_ = conn.Close()
+				a.uiaServerConn = nil
+				_ = a.device.ForwardKill(uiaPort)
+				a.uiaPort = 0
+				return fmt.Errorf("wait for uia server startup timeout after %s", uiaStartupWaitTimeout)
+			}
+		}
+	}
+}
+
+func waitForUIAServerHTTPReady(uiaPort int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		if err := checkUIAServerHTTPReady(uiaPort); err == nil {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("wait for uia http ready timeout after %s", timeout)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+func checkUIAServerHTTPReady(uiaPort int) error {
+	client := &http.Client{Timeout: 2 * time.Second}
+	urls := []string{
+		fmt.Sprintf("http://localhost:%d/status", uiaPort),
+		fmt.Sprintf("http://localhost:%d/wd/hub/status", uiaPort),
+	}
+
+	for _, url := range urls {
+		resp, err := client.Get(url)
+		if err != nil {
+			continue
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusBadRequest {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("uia http endpoint is not ready")
 }
 
 func resolveUIAPluginsDir() (string, error) {

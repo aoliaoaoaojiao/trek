@@ -2,7 +2,7 @@ package reuse
 
 import (
 	"trek/internal/engine/core/types"
-	"trek/log"
+	"trek/logger"
 )
 
 // PageNameAction 带页面名称的动作
@@ -37,7 +37,7 @@ func NewPageNameAction(pageName string, widget types.IWidget, actionType types.A
 	pageAction.Hashcode = 0x9e3779b9 + (pageNameHashCode << 2) ^
 		(((actionTypeHashCode << 6) ^ (targetHash << 1)) << 1)
 
-	log.Debugf("pageName name action created pageName:%s hashcode:%d activityHash:%d targetHash:%d",
+	logger.Debugf("pageName name action created pageName:%s hashcode:%d activityHash:%d targetHash:%d",
 		pageName, pageAction.Hashcode, pageNameHashCode, targetHash)
 
 	return pageAction

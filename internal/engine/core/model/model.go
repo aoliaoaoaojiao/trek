@@ -3,7 +3,7 @@ package model
 import (
 	"trek/internal/engine/core/types"
 	"trek/internal/engine/preference"
-	"trek/log"
+	"trek/logger"
 )
 
 type Model struct {
@@ -122,7 +122,7 @@ func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID str
 
 	customAction := m.resolvePageAndGetSpecifiedAction(pageName, elem)
 	if customAction != nil {
-		log.Debugf("try get custom action from preference")
+		logger.Debugf("try get custom action from preference")
 	}
 
 	visitedPages := m.graph.GetVisitedPages()
@@ -140,7 +140,7 @@ func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID str
 	}
 
 	if len(m.deviceAgentMap) == 0 {
-		log.Debugf("use reuseAgent as the default agent")
+		logger.Debugf("use reuseAgent as the default agent")
 		// todo 可扩展点
 
 		m.AddAgent(DefaultDeviceID, types.Reuse.String(), types.Phone)
@@ -228,13 +228,13 @@ func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID str
 			if state != nil {
 				stateID = state.GetId()
 			}
-			log.Infof("Ran into a block state %s", stateID)
+			logger.Infof("Ran into a block state %s", stateID)
 
 		} else {
 			action = agent.ResolveNewAction()
 			agent.UpdateStrategy()
 			if action == nil {
-				log.Errorf("get null action!!!!")
+				logger.Errorf("get null action!!!!")
 				return types.OperateNop
 			}
 			if action.(*types.StatefulAction).IsModelAct() && state != nil {
@@ -248,7 +248,7 @@ func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID str
 
 	operate := types.OperateNop
 	if action != nil {
-		log.Infof("selected action %s", action.(*types.StatefulAction).String())
+		logger.Infof("selected action %s", action.(*types.StatefulAction).String())
 		operate = action.(*types.StatefulAction).ToOperate()
 		if m.preference != nil {
 			m.patchOperate(operate)

@@ -85,6 +85,7 @@ func TestPinch(t *testing.T) {
 			driver, err := android.NewAndroidDriver(
 				android.WithTouch(tt.touchType),
 			)
+			defer driver.Close()
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -2,7 +2,7 @@ package reuse
 
 import (
 	"trek/internal/engine/core/types"
-	"trek/log"
+	"trek/logger"
 )
 
 // ReuseState 重用状态类，持有所有Widgets及其关联的动作等
@@ -28,7 +28,7 @@ func NewReuseState(pageName string) *ReuseState {
 func Create(pageName string, element types.IElement) *ReuseState {
 
 	statePointer := NewReuseState(pageName)
-	log.Debugf("Creating ReuseState for page: %s", pageName)
+	logger.Debugf("Creating ReuseState for page: %s", pageName)
 	statePointer.buildState(element)
 
 	return statePointer
@@ -49,7 +49,7 @@ func (rs *ReuseState) buildStateFromElement(parentWidget *RichWidget, element ty
 	// 使用RichWidget构建状态
 	widget := NewRichWidget(parentWidget, element)
 	rs.Widgets = append(rs.Widgets, &widget.Widget)
-	log.Debugf("Added RichWidget to state, total widgets now: %d", len(rs.Widgets))
+	logger.Debugf("Added RichWidget to state, total widgets now: %d", len(rs.Widgets))
 
 	for _, childElement := range element.GetChildren() {
 		rs.buildFromElement(widget, childElement)
@@ -67,7 +67,7 @@ func (rs *ReuseState) buildFromElement(parentWidget *RichWidget, elem types.IEle
 
 	widget := types.NewWidget(parentWidgetPtr, elem)
 	rs.Widgets = append(rs.Widgets, widget)
-	log.Debugf("Added Widget to state, total widgets now: %d", len(rs.Widgets))
+	logger.Debugf("Added Widget to state, total widgets now: %d", len(rs.Widgets))
 
 	for _, childElement := range elem.GetChildren() {
 		rs.buildFromElement(parentWidget, childElement)
@@ -102,7 +102,7 @@ func (rs *ReuseState) buildHashForState() {
 func (rs *ReuseState) buildActionForState() {
 	for _, widget := range rs.Widgets {
 		if widget.GetBounds() == nil {
-			log.Errorf("NULL Bounds happened")
+			logger.Errorf("NULL Bounds happened")
 			continue
 		}
 
@@ -110,7 +110,7 @@ func (rs *ReuseState) buildActionForState() {
 		for _, action := range actions {
 			pageNameAction := NewPageNameAction(rs.PageName, widget, action)
 			rs.Actions = append(rs.Actions, &pageNameAction.StatefulAction)
-			log.Debugf("Added action to state, total actions now: %d", len(rs.Actions))
+			logger.Debugf("Added action to state, total actions now: %d", len(rs.Actions))
 		}
 	}
 
@@ -118,7 +118,7 @@ func (rs *ReuseState) buildActionForState() {
 	backAction := NewPageNameAction(rs.PageName, nil, types.BACK)
 	rs.BackAction = &backAction.StatefulAction
 	rs.Actions = append(rs.Actions, rs.BackAction)
-	log.Debugf("Added back action to state, total actions now: %d", len(rs.Actions))
+	logger.Debugf("Added back action to state, total actions now: %d", len(rs.Actions))
 }
 
 // mergeWidgetsInState 合并状态中的Widgets
@@ -127,7 +127,7 @@ func (rs *ReuseState) mergeWidgetsInState() {
 	mergedCount := rs.MergeWidgetAndStoreMergedOnes(mergedWidgets)
 
 	if mergedCount != 0 {
-		log.Debugf("build state merged %d widget", mergedCount)
+		logger.Debugf("build state merged %d widget", mergedCount)
 		rs.Widgets = make(types.WidgetList, 0, len(mergedWidgets))
 		for _, widget := range mergedWidgets {
 			rs.Widgets = append(rs.Widgets, widget)

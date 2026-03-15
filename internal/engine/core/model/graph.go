@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 	"trek/internal/engine/core/types"
-	"trek/log"
+	"trek/logger"
 )
 
 type ActionCounter struct {
@@ -95,14 +95,14 @@ func (g *Graph) AddState(state types.IState) types.IState {
 		newStateId := int32(len(g.states))
 		state.SetId(newStateId)
 		g.states[stateHash] = state
-		log.Debugf("adding new state with ID: %d, pageNameString: %s, total states: %d", newStateId, pageNameString, len(g.states))
+		logger.Debugf("adding new state with ID: %d, pageNameString: %s, total states: %d", newStateId, pageNameString, len(g.states))
 	} else {
 		// 如果状态已存在，复用已有状态
 		if !existingState.HasDetail() {
 			existingState.FillDetails(state)
 		}
 		state = existingState
-		log.Debugf("reusing existing state with ID: %d, pageNameString: %s", state.GetId(), pageNameString)
+		logger.Debugf("reusing existing state with ID: %d, pageNameString: %s", state.GetId(), pageNameString)
 	}
 
 	// 通知新状态事件
@@ -205,7 +205,7 @@ func (g *Graph) NotifyNewStateEvents(node types.IState) {
 
 func (g *Graph) addActionFromState(node types.IState) {
 	nodeActions := node.GetActions()
-	log.Debugf("addActionFromState - node has %d actions", len(nodeActions))
+	logger.Debugf("addActionFromState - node has %d actions", len(nodeActions))
 
 	for _, action := range nodeActions {
 		// 检查动作是否已访问
@@ -219,7 +219,7 @@ func (g *Graph) addActionFromState(node types.IState) {
 			existingUnvisitedAction, unvisitedAdd = g.unvisitedActions[actionHash]
 		}
 
-		log.Debugf("action %s - visited:%t unvisited:%t", action.String(), visitedAdd, unvisitedAdd)
+		logger.Debugf("action %s - visited:%t unvisited:%t", action.String(), visitedAdd, unvisitedAdd)
 
 		if visitedAdd || unvisitedAdd {
 			// 如果动作已存在，复用ID
@@ -230,13 +230,13 @@ func (g *Graph) addActionFromState(node types.IState) {
 				existingId = existingUnvisitedAction.GetIdi()
 			}
 			action.SetId(existingId)
-			log.Debugf("reusing existing action ID: %d", existingId)
+			logger.Debugf("reusing existing action ID: %d", existingId)
 		} else {
 			// 如果是新动作，分配新ID并计数
 			newId := int32(g.actionCounter.GetTotal())
 			action.SetId(newId)
 			g.actionCounter.CountAction(action)
-			log.Debugf("assigning new action ID: %d, total count now: %d", newId, g.actionCounter.GetTotal())
+			logger.Debugf("assigning new action ID: %d, total count now: %d", newId, g.actionCounter.GetTotal())
 		}
 
 		if !visitedAdd && action.IsVisited() {
@@ -247,5 +247,5 @@ func (g *Graph) addActionFromState(node types.IState) {
 			g.unvisitedActions[actionHash] = action
 		}
 	}
-	log.Debugf("unvisited action: %d, visited action %d", len(g.unvisitedActions), len(g.visitedActions))
+	logger.Debugf("unvisited action: %d, visited action %d", len(g.unvisitedActions), len(g.visitedActions))
 }

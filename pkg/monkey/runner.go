@@ -3,6 +3,8 @@ package monkey
 import (
 	"context"
 	"fmt"
+	"math"
+	"math/rand"
 	"strings"
 	"time"
 	"trek/internal/engine/core/types"
@@ -11,15 +13,16 @@ import (
 )
 
 const (
-	defaultMaxSteps                     = 300
-	defaultMaxDuration                  = 10 * time.Minute
-	defaultStepInterval                 = 300 * time.Millisecond
-	defaultMaxConsecutiveFailures       = 8
-	defaultLongClickDuration            = 800 * time.Millisecond
-	defaultScrollDuration               = 350 * time.Millisecond
-	defaultScrollSteps            int64 = 20
-	defaultScrollRepeat                 = 3
-	defaultPageSourceType               = "uia"
+	defaultMaxSteps                      = 300
+	defaultMaxDuration                   = 10 * time.Minute
+	defaultStepInterval                  = 300 * time.Millisecond
+	defaultMaxConsecutiveFailures        = 8
+	defaultFailureRecoveryInterval       = 3
+	defaultLongClickDuration             = 800 * time.Millisecond
+	defaultScrollDuration                = 350 * time.Millisecond
+	defaultScrollSteps             int64 = 20
+	defaultScrollRepeat                  = 3
+	defaultPageSourceType                = "uia"
 )
 
 // StopReason 表示 Monkey 运行停止原因。
@@ -44,22 +47,26 @@ type PageNameResolver func(xml string) string
 
 // Config 是 Smart Monkey Runner 配置。
 type Config struct {
-	PackageName            string
-	AutoStartOnRun         *bool
-	MaxSteps               int
-	MaxDuration            time.Duration
-	StepInterval           time.Duration
-	MaxConsecutiveFailures int
-	PageSourceType         string
-	CaptureScreenshot      bool
-	LongClickDuration      time.Duration
-	ScrollDuration         time.Duration
-	ScrollSteps            int64
-	ScrollRepeat           int
-	StopOnCrash            bool
-	StopOnANR              bool
-	KeepStepRecords        bool
-	PageNameResolver       PageNameResolver
+	PackageName             string
+	AutoStartOnRun          *bool
+	ActionThrottleEnabled   *bool
+	RandomizeThrottle       bool
+	EnableFailureRecovery   *bool
+	FailureRecoveryInterval int
+	MaxSteps                int
+	MaxDuration             time.Duration
+	StepInterval            time.Duration
+	MaxConsecutiveFailures  int
+	PageSourceType          string
+	CaptureScreenshot       bool
+	LongClickDuration       time.Duration
+	ScrollDuration          time.Duration
+	ScrollSteps             int64
+	ScrollRepeat            int
+	StopOnCrash             bool
+	StopOnANR               bool
+	KeepStepRecords         bool
+	PageNameResolver        PageNameResolver
 }
 
 // StepRecord 是每一步执行记录。
@@ -94,11 +101,23 @@ type Decider interface {
 	NextActionWithInput(pageName string, input session.ActionInput) (*types.ActionCommand, error)
 }
 
+// WeightedCandidate 表示一个带权重的候选动作。
+type WeightedCandidate struct {
+	Command *types.ActionCommand
+	Weight  float64
+}
+
+// WeightedDecider 是可选接口，用于返回多候选动作并由 Runner 按权重采样。
+type WeightedDecider interface {
+	NextWeightedActionsWithInput(pageName string, input session.ActionInput) ([]WeightedCandidate, error)
+}
+
 // Runner 执行 Smart Monkey 真机闭环。
 type Runner struct {
 	decider Decider
 	driver  common.IDriver
 	cfg     Config
+	rng     *rand.Rand
 }
 
 // NewRunner 创建 Monkey Runner。
@@ -111,7 +130,12 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 	}
 
 	cfg = normalizeConfig(cfg)
-	return &Runner{decider: decider, driver: driver, cfg: cfg}, nil
+	return &Runner{
+		decider: decider,
+		driver:  driver,
+		cfg:     cfg,
+		rng:     rand.New(rand.NewSource(time.Now().UnixNano())),
+	}, nil
 }
 
 // Run 启动闭环执行，返回运行报告。
@@ -170,7 +194,8 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 				report.StopReason = StopMaxConsecutiveFailures
 				return report, nil
 			}
-			r.sleepStep(ctx)
+			r.tryRecover(report.ConsecutiveFailures)
+			r.sleepStep(ctx, r.cfg.StepInterval)
 			continue
 		}
 
@@ -196,7 +221,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			screenshot, _ = r.driver.Screenshot()
 		}
 
-		cmd, err := r.decider.NextActionWithInput(pageName, session.ActionInput{
+		cmd, err := r.nextCommand(pageName, session.ActionInput{
 			XMLDescOfGuiTree: xml,
 			Screenshot:       screenshot,
 		})
@@ -207,7 +232,8 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 				report.StopReason = StopMaxConsecutiveFailures
 				return report, nil
 			}
-			r.sleepStep(ctx)
+			r.tryRecover(report.ConsecutiveFailures)
+			r.sleepStep(ctx, r.cfg.StepInterval)
 			continue
 		}
 		if cmd == nil {
@@ -217,7 +243,8 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 				report.StopReason = StopMaxConsecutiveFailures
 				return report, nil
 			}
-			r.sleepStep(ctx)
+			r.tryRecover(report.ConsecutiveFailures)
+			r.sleepStep(ctx, r.cfg.StepInterval)
 			continue
 		}
 
@@ -232,14 +259,15 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 				report.StopReason = StopMaxConsecutiveFailures
 				return report, nil
 			}
-			r.sleepStep(ctx)
+			r.tryRecover(report.ConsecutiveFailures)
+			r.sleepStep(ctx, r.cfg.StepInterval)
 			continue
 		}
 
 		report.StepsSucceeded++
 		report.ConsecutiveFailures = 0
 		r.appendRecord(report, record, stepStart)
-		r.sleepStep(ctx)
+		r.sleepStep(ctx, r.resolveStepDelay(cmd))
 	}
 
 	report.StopReason = StopCompleted
@@ -344,16 +372,104 @@ func (r *Runner) appendRecord(report *Report, record StepRecord, stepStart time.
 	report.Records = append(report.Records, record)
 }
 
-func (r *Runner) sleepStep(ctx context.Context) {
-	if r.cfg.StepInterval <= 0 {
+func (r *Runner) sleepStep(ctx context.Context, d time.Duration) {
+	if d <= 0 {
 		return
 	}
-	timer := time.NewTimer(r.cfg.StepInterval)
+	timer := time.NewTimer(d)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
 	case <-timer.C:
 	}
+}
+
+func (r *Runner) resolveStepDelay(cmd *types.ActionCommand) time.Duration {
+	delay := r.cfg.StepInterval
+	if cmd == nil || !isActionThrottleEnabled(r.cfg) {
+		return delay
+	}
+
+	if cmd.WaitTime > 0 {
+		waitDelay := time.Duration(cmd.WaitTime) * time.Millisecond
+		if waitDelay > delay {
+			delay = waitDelay
+		}
+	}
+	if cmd.Throttle > 0 {
+		throttleMs := int64(math.Ceil(float64(cmd.Throttle)))
+		throttleDelay := time.Duration(throttleMs) * time.Millisecond
+		if throttleDelay > delay {
+			delay = throttleDelay
+		}
+	}
+
+	if r.cfg.RandomizeThrottle && delay > 1*time.Millisecond && r.rng != nil {
+		n := r.rng.Int63n(delay.Milliseconds()) + 1
+		delay = time.Duration(n) * time.Millisecond
+	}
+	return delay
+}
+
+func (r *Runner) tryRecover(consecutiveFailures int) {
+	if !isFailureRecoveryEnabled(r.cfg) {
+		return
+	}
+	if strings.TrimSpace(r.cfg.PackageName) == "" {
+		return
+	}
+	if consecutiveFailures <= 0 || consecutiveFailures%r.cfg.FailureRecoveryInterval != 0 {
+		return
+	}
+	_ = r.driver.ActivateApp(r.cfg.PackageName)
+}
+
+func (r *Runner) nextCommand(pageName string, input session.ActionInput) (*types.ActionCommand, error) {
+	if wd, ok := r.decider.(WeightedDecider); ok {
+		candidates, err := wd.NextWeightedActionsWithInput(pageName, input)
+		if err != nil {
+			return nil, err
+		}
+		return r.pickWeightedCandidate(candidates), nil
+	}
+	return r.decider.NextActionWithInput(pageName, input)
+}
+
+func (r *Runner) pickWeightedCandidate(candidates []WeightedCandidate) *types.ActionCommand {
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	// 第一层：统计正权重候选总和。
+	total := 0.0
+	for _, c := range candidates {
+		if c.Command != nil && c.Weight > 0 {
+			total += c.Weight
+		}
+	}
+
+	// 第二层：有正权重则按权重随机抽样。
+	if total > 0 && r.rng != nil {
+		target := r.rng.Float64() * total
+		acc := 0.0
+		for _, c := range candidates {
+			if c.Command == nil || c.Weight <= 0 {
+				continue
+			}
+			acc += c.Weight
+			if acc >= target {
+				return c.Command
+			}
+		}
+	}
+
+	// 兜底：返回第一个非空动作。
+	for _, c := range candidates {
+		if c.Command != nil {
+			return c.Command
+		}
+	}
+	return nil
 }
 
 func normalizeConfig(cfg Config) Config {
@@ -370,6 +486,9 @@ func normalizeConfig(cfg Config) Config {
 	}
 	if cfg.MaxConsecutiveFailures <= 0 {
 		cfg.MaxConsecutiveFailures = defaultMaxConsecutiveFailures
+	}
+	if cfg.FailureRecoveryInterval <= 0 {
+		cfg.FailureRecoveryInterval = defaultFailureRecoveryInterval
 	}
 	if strings.TrimSpace(cfg.PageSourceType) == "" {
 		cfg.PageSourceType = defaultPageSourceType
@@ -426,6 +545,20 @@ func isAutoStartOnRunEnabled(cfg Config) bool {
 		return true
 	}
 	return *cfg.AutoStartOnRun
+}
+
+func isActionThrottleEnabled(cfg Config) bool {
+	if cfg.ActionThrottleEnabled == nil {
+		return true
+	}
+	return *cfg.ActionThrottleEnabled
+}
+
+func isFailureRecoveryEnabled(cfg Config) bool {
+	if cfg.EnableFailureRecovery == nil {
+		return true
+	}
+	return *cfg.EnableFailureRecovery
 }
 
 func (r *Runner) detectCrashBySystem() bool {

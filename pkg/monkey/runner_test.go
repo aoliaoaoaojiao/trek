@@ -3,7 +3,9 @@ package monkey
 import (
 	"context"
 	"errors"
+	"math/rand"
 	"testing"
+	"time"
 	"trek/internal/engine/core/types"
 	"trek/pkg/driver/common"
 	"trek/pkg/session"
@@ -23,6 +25,27 @@ func (f *fakeDecider) NextActionWithInput(pageName string, input session.ActionI
 	return cmd, nil
 }
 
+type failingDecider struct{}
+
+func (f *failingDecider) NextActionWithInput(pageName string, input session.ActionInput) (*types.ActionCommand, error) {
+	return nil, errors.New("decide failed")
+}
+
+type weightedDecider struct {
+	candidates []WeightedCandidate
+}
+
+func (w *weightedDecider) NextActionWithInput(pageName string, input session.ActionInput) (*types.ActionCommand, error) {
+	if len(w.candidates) == 0 {
+		return nil, nil
+	}
+	return w.candidates[0].Command, nil
+}
+
+func (w *weightedDecider) NextWeightedActionsWithInput(pageName string, input session.ActionInput) ([]WeightedCandidate, error) {
+	return w.candidates, nil
+}
+
 type fakePageSource struct {
 	xml string
 }
@@ -31,15 +54,16 @@ func (f *fakePageSource) DumpPageSource() (string, error) { return f.xml, nil }
 func (f *fakePageSource) Close() error                    { return nil }
 
 type fakeDriver struct {
-	pageSource  common.IPageSource
-	clickCount  int
-	startCount  int
-	clearCnt    int
-	envCheckCnt int
-	crash       bool
-	anr         bool
-	envResult   *common.EnvironmentCheckResult
-	envErr      error
+	pageSource    common.IPageSource
+	clickCount    int
+	startCount    int
+	activateCount int
+	clearCnt      int
+	envCheckCnt   int
+	crash         bool
+	anr           bool
+	envResult     *common.EnvironmentCheckResult
+	envErr        error
 }
 
 func (f *fakeDriver) Click(point types.Point) error                     { f.clickCount++; return nil }
@@ -69,7 +93,7 @@ func (f *fakeDriver) GetInfo() map[string]interface{} {
 func (f *fakeDriver) Back() error                                     { return nil }
 func (f *fakeDriver) StartApp(packageName string) error               { f.startCount++; return nil }
 func (f *fakeDriver) RestartApp(packageName string, clean bool) error { return nil }
-func (f *fakeDriver) ActivateApp(packageName string) error            { return nil }
+func (f *fakeDriver) ActivateApp(packageName string) error            { f.activateCount++; return nil }
 func (f *fakeDriver) InputText(text string, clear bool) error         { return nil }
 func (f *fakeDriver) CheckCrash(packageName string) (bool, error)     { return f.crash, nil }
 func (f *fakeDriver) CheckANR(packageName string) (bool, error)       { return f.anr, nil }
@@ -284,5 +308,95 @@ func TestRunnerPreflightUIASessionUnavailable(t *testing.T) {
 	}
 	if report.Preflight == nil || report.Preflight.UIAReady {
 		t.Fatalf("预期记录 UIA 会话未就绪")
+	}
+}
+
+func TestResolveStepDelayPrefersActionThrottle(t *testing.T) {
+	runner, err := NewRunner(&fakeDecider{}, &fakeDriver{pageSource: &fakePageSource{xml: `<node/>`}}, Config{StepInterval: 100 * time.Millisecond})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	cmd := &types.ActionCommand{Throttle: 500, WaitTime: 200}
+	d := runner.resolveStepDelay(cmd)
+	if d != 500*time.Millisecond {
+		t.Fatalf("预期取动作节流 500ms，实际: %s", d)
+	}
+}
+
+func TestTryRecoverOnConsecutiveFailures(t *testing.T) {
+	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node/>`}}
+	runner, err := NewRunner(&failingDecider{}, driver, Config{
+		PackageName:             "com.example.app",
+		MaxSteps:                4,
+		StepInterval:            0,
+		MaxConsecutiveFailures:  10,
+		FailureRecoveryInterval: 2,
+		StopOnCrash:             true,
+		StopOnANR:               true,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, runErr := runner.Run(context.Background())
+	if runErr != nil {
+		t.Fatalf("运行 monkey 失败: %v", runErr)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("预期执行完成，实际: %s", report.StopReason)
+	}
+	if driver.activateCount < 2 {
+		t.Fatalf("预期在连续失败时触发恢复动作，实际次数: %d", driver.activateCount)
+	}
+}
+
+func TestPickWeightedCandidate(t *testing.T) {
+	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node/>`}}
+	c1 := &types.ActionCommand{Act: types.BACK}
+	c2 := &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0, 0, 10, 10)}
+	decider := &weightedDecider{
+		candidates: []WeightedCandidate{
+			{Command: c1, Weight: 0},
+			{Command: c2, Weight: 10},
+		},
+	}
+
+	runner, err := NewRunner(decider, driver, Config{StepInterval: 0, MaxSteps: 1, StopOnCrash: true, StopOnANR: true})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+	runner.rng = rand.New(rand.NewSource(1))
+
+	cmd, cmdErr := runner.nextCommand("MainActivity", session.ActionInput{XMLDescOfGuiTree: "<node/>"})
+	if cmdErr != nil {
+		t.Fatalf("获取加权动作失败: %v", cmdErr)
+	}
+	if cmd == nil || cmd.Act != types.CLICK {
+		t.Fatalf("预期按权重选中 CLICK，实际: %+v", cmd)
+	}
+}
+
+func TestPickWeightedCandidateFallbackFirstNonNil(t *testing.T) {
+	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node/>`}}
+	c1 := &types.ActionCommand{Act: types.BACK}
+	decider := &weightedDecider{
+		candidates: []WeightedCandidate{
+			{Command: nil, Weight: 10},
+			{Command: c1, Weight: 0},
+		},
+	}
+
+	runner, err := NewRunner(decider, driver, Config{StepInterval: 0, MaxSteps: 1, StopOnCrash: true, StopOnANR: true})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	cmd, cmdErr := runner.nextCommand("MainActivity", session.ActionInput{XMLDescOfGuiTree: "<node/>"})
+	if cmdErr != nil {
+		t.Fatalf("获取加权动作失败: %v", cmdErr)
+	}
+	if cmd == nil || cmd.Act != types.BACK {
+		t.Fatalf("预期兜底返回 BACK，实际: %+v", cmd)
 	}
 }

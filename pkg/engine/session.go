@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"trek/internal/engine/core/types"
-	"trek/internal/engine/run"
+	engineruntime "trek/internal/engine/runtime"
 )
 
 // Config 描述一次单线程引擎会话的初始化参数。
@@ -35,56 +35,54 @@ func NewSession(config Config) *Session {
 
 // Reset 重置内部模型并重新初始化 agent，适合一次新任务开始前调用。
 func (s *Session) Reset() {
-	run.ResetModel()
-	run.InitAgent(s.config.Algorithm, s.config.PackageName, s.config.DeviceType)
+	engineruntime.ResetModel()
+	engineruntime.InitAgent(s.config.Algorithm, s.config.PackageName, s.config.DeviceType)
 }
 
 // LoadPreferenceFile 加载偏好配置文件。
 func (s *Session) LoadPreferenceFile(path string) error {
-	model := run.GetModel()
+	model := engineruntime.GetModel()
 	if model == nil {
 		s.Reset()
-		model = run.GetModel()
+		model = engineruntime.GetModel()
 	}
-	if model == nil || model.GetPreference() == nil {
+	if model == nil || model.GetConfigManager() == nil {
 		return fmt.Errorf("偏好配置实例不可用")
 	}
-	return model.GetPreference().LoadMixResMapping(path)
+	return model.GetConfigManager().LoadMixResMapping(path)
 }
 
-// NextActionJSON 根据页面名称和 Android XML 计算下一步操作 JSON。
+// NextActionJSON 根据页面名称和 Android XML 计算下一步操作 JSON（兼容接口）。
 func (s *Session) NextActionJSON(pageName string, xmlDescOfGuiTree string) (string, error) {
+	operate, err := s.NextAction(pageName, xmlDescOfGuiTree)
+	if err != nil {
+		return "", err
+	}
+	return operate.ToJSON(), nil
+}
+
+// NextAction 返回结构化的下一步操作（主路径，不经过 JSON 回转）。
+func (s *Session) NextAction(pageName string, xmlDescOfGuiTree string) (*types.DeviceOperateWrapper, error) {
 	if strings.TrimSpace(pageName) == "" {
-		return "", fmt.Errorf("pageName 不能为空")
+		return nil, fmt.Errorf("pageName 不能为空")
 	}
 	if strings.TrimSpace(xmlDescOfGuiTree) == "" {
-		return "", fmt.Errorf("xmlDescOfGuiTree 不能为空")
+		return nil, fmt.Errorf("xmlDescOfGuiTree 不能为空")
 	}
 
-	actionJSON := run.GetAction(pageName, xmlDescOfGuiTree)
-	if actionJSON == "" {
-		return "", fmt.Errorf("未生成有效动作")
+	operate := engineruntime.GetActionOpt(pageName, xmlDescOfGuiTree)
+	if operate == nil {
+		return nil, fmt.Errorf("未生成有效动作")
 	}
-	return actionJSON, nil
-}
-
-// NextAction 返回结构化的下一步操作。
-func (s *Session) NextAction(pageName string, xmlDescOfGuiTree string) (*types.DeviceOperateWrapper, error) {
-	actionJSON, err := s.NextActionJSON(pageName, xmlDescOfGuiTree)
-	if err != nil {
-		return nil, err
-	}
-
-	operate := types.NewDeviceOperateWrapperFromJSON(actionJSON)
 	return operate, nil
 }
 
 // CheckPointInBlackRects 判断点位是否落在黑名单矩形内。
 func (s *Session) CheckPointInBlackRects(pageName string, point types.Point) bool {
-	return run.CheckPointIsInBlackRects(pageName, float32(point.X), float32(point.Y))
+	return engineruntime.CheckPointIsInBlackRects(pageName, float32(point.X), float32(point.Y))
 }
 
 // NativeVersion 返回当前原生引擎版本。
 func (s *Session) NativeVersion() string {
-	return run.GetNativeVersion()
+	return engineruntime.GetNativeVersion()
 }

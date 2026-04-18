@@ -22,7 +22,12 @@ import (
 	"trek/pkg/driver/common/page/poco"
 )
 
-var _ common.IDriver = (*AndroidDriver)(nil)
+var (
+	_ common.IDriver      = (*AndroidDriver)(nil)
+	_ common.IAppControl  = (*AndroidDriver)(nil)
+	_ common.ITextInput   = (*AndroidDriver)(nil)
+	_ common.IHealthCheck = (*AndroidDriver)(nil)
+)
 
 type TouchType string
 
@@ -159,6 +164,148 @@ func (a *AndroidDriver) Pinch(centerPoint types.Point, startDistance float64, en
 
 func (a *AndroidDriver) TouchEvent(touchList ...common.TouchEvent) error {
 	return a.touch.TouchEvent(touchList...)
+}
+
+// Back 执行系统返回键。
+func (a *AndroidDriver) Back() error {
+	if a.device == nil {
+		return fmt.Errorf("device is nil")
+	}
+	_, err := a.device.RunShellCommand("input", "keyevent", "4")
+	return err
+}
+
+// StartApp 启动指定包名应用。
+func (a *AndroidDriver) StartApp(packageName string) error {
+	if strings.TrimSpace(packageName) == "" {
+		return fmt.Errorf("packageName is empty")
+	}
+	if a.device == nil {
+		return fmt.Errorf("device is nil")
+	}
+	_, err := a.device.RunShellCommand("monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1")
+	return err
+}
+
+// RestartApp 重启应用，clean=true 时先清理应用数据。
+func (a *AndroidDriver) RestartApp(packageName string, clean bool) error {
+	if strings.TrimSpace(packageName) == "" {
+		return fmt.Errorf("packageName is empty")
+	}
+	if a.device == nil {
+		return fmt.Errorf("device is nil")
+	}
+	if _, err := a.device.RunShellCommand("am", "force-stop", packageName); err != nil {
+		return err
+	}
+	if clean {
+		if _, err := a.device.RunShellCommand("pm", "clear", packageName); err != nil {
+			return err
+		}
+	}
+	return a.StartApp(packageName)
+}
+
+// ActivateApp 激活应用，当前行为与 StartApp 一致。
+func (a *AndroidDriver) ActivateApp(packageName string) error {
+	return a.StartApp(packageName)
+}
+
+// InputText 通过 UIA 会话向当前焦点输入文本。
+func (a *AndroidDriver) InputText(text string, clear bool) error {
+	if a.uiaClient == nil {
+		return fmt.Errorf("uia client is nil")
+	}
+	return a.uiaClient.SendKeys(text, clear)
+}
+
+// ClearLogcat 清空 logcat 缓冲，避免历史日志干扰本轮检测。
+func (a *AndroidDriver) ClearLogcat() error {
+	if a.device == nil {
+		return fmt.Errorf("device is nil")
+	}
+	_, err := a.device.RunShellCommand("logcat", "-c")
+	return err
+}
+
+// CheckCrash 通过系统日志/状态检测是否出现 crash。
+func (a *AndroidDriver) CheckCrash(packageName string) (bool, error) {
+	if a.device == nil {
+		return false, fmt.Errorf("device is nil")
+	}
+
+	logcatOut, err := a.device.RunShellCommand("logcat", "-d", "-t", "200")
+	if err != nil {
+		return false, err
+	}
+	logLower := strings.ToLower(logcatOut)
+	pkgLower := strings.ToLower(strings.TrimSpace(packageName))
+	if strings.Contains(logLower, "fatal exception") {
+		if pkgLower == "" || strings.Contains(logLower, pkgLower) {
+			return true, nil
+		}
+	}
+	if pkgLower != "" && strings.Contains(logLower, "process "+pkgLower+" has died") {
+		return true, nil
+	}
+	if strings.Contains(logLower, "am_crash") {
+		if pkgLower == "" || strings.Contains(logLower, pkgLower) {
+			return true, nil
+		}
+	}
+
+	dumpsysOut, err := a.device.RunShellCommand("dumpsys", "activity")
+	if err != nil {
+		return false, err
+	}
+	dumpLower := strings.ToLower(dumpsysOut)
+	if strings.Contains(dumpLower, "crash") {
+		if pkgLower == "" || strings.Contains(dumpLower, pkgLower) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// CheckANR 通过系统日志/状态检测是否出现 ANR。
+func (a *AndroidDriver) CheckANR(packageName string) (bool, error) {
+	if a.device == nil {
+		return false, fmt.Errorf("device is nil")
+	}
+
+	logcatOut, err := a.device.RunShellCommand("logcat", "-d", "-t", "200")
+	if err != nil {
+		return false, err
+	}
+	logLower := strings.ToLower(logcatOut)
+	pkgLower := strings.ToLower(strings.TrimSpace(packageName))
+	if strings.Contains(logLower, "am_anr") {
+		if pkgLower == "" || strings.Contains(logLower, pkgLower) {
+			return true, nil
+		}
+	}
+	if strings.Contains(logLower, "anr in ") {
+		if pkgLower == "" || strings.Contains(logLower, pkgLower) {
+			return true, nil
+		}
+	}
+	if strings.Contains(logLower, "isn't responding") || strings.Contains(logLower, "not responding") {
+		if pkgLower == "" || strings.Contains(logLower, pkgLower) {
+			return true, nil
+		}
+	}
+
+	dumpsysOut, err := a.device.RunShellCommand("dumpsys", "activity", "processes")
+	if err != nil {
+		return false, err
+	}
+	dumpLower := strings.ToLower(dumpsysOut)
+	if strings.Contains(dumpLower, "notresponding=true") {
+		if pkgLower == "" || strings.Contains(dumpLower, pkgLower) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (a *AndroidDriver) Close() error {

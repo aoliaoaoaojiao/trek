@@ -5,13 +5,14 @@ import (
 	"sort"
 	"sync/atomic"
 	"time"
-	"trek/internal/engine/tool"
+	"trek/internal/engine/core/tool"
 	"trek/logger"
 )
 
 var _ IAction = (*Action)(nil)
 
-// Action 基础Action类
+// Action 鍩虹Action绫?
+
 type Action struct {
 	Node
 	PriorityNodeImpl
@@ -20,7 +21,7 @@ type Action struct {
 	QValue     float64
 }
 
-// NewAction 创建指定类型的Action
+// NewAction 鍒涘缓鎸囧畾绫诲瀷鐨凙ction
 func NewAction(actionType ActionType) *Action {
 	return &Action{
 		Node:             *NewNode(),
@@ -31,22 +32,24 @@ func NewAction(actionType ActionType) *Action {
 	}
 }
 
-// GetEnabled 获取是否启用
+// GetEnabled 鑾峰彇鏄惁鍚敤
 func (a *Action) GetEnabled() bool {
 	return true
 }
 
-// GetActionType 获取动作类型
+// GetActionType 鑾峰彇鍔ㄤ綔绫诲瀷
 func (a *Action) GetActionType() ActionType {
 	return a.ActionType
 }
 
-// SetPriority 设置优先级
+// SetPriority 璁剧疆浼樺厛绾?
+
 func (a *Action) SetPriority(priority int32) {
 	a.PriorityNodeImpl.SetPriority(priority)
 }
 
-// GetPriorityByActionType 根据动作类型获取优先级
+// GetPriorityByActionType 鏍规嵁鍔ㄤ綔绫诲瀷鑾峰彇浼樺厛绾?
+
 func (a *Action) GetPriorityByActionType() int32 {
 	switch a.ActionType {
 	case CLICK:
@@ -58,27 +61,30 @@ func (a *Action) GetPriorityByActionType() int32 {
 	}
 }
 
-// IsBack 是否为返回动作
+// IsBack 鏄惁涓鸿繑鍥炲姩浣?
+
 func (a *Action) IsBack() bool {
 	return a.ActionType == BACK
 }
 
-// IsClick 是否为点击动作
+// IsClick 鏄惁涓虹偣鍑诲姩浣?
+
 func (a *Action) IsClick() bool {
 	return a.ActionType == CLICK
 }
 
-// IsNop 是否为无操作
+// IsNop 鏄惁涓烘棤鎿嶄綔
 func (a *Action) IsNop() bool {
 	return a.ActionType == NOP
 }
 
-// IsValid 是否有效
+// IsValid 鏄惁鏈夋晥
 func (a *Action) IsValid() bool {
 	return true
 }
 
-// ToOperate 转换为操作
+// ToOperate 杞崲涓烘搷浣?
+
 func (a *Action) ToOperate() *DeviceOperateWrapper {
 	opt := NewDeviceOperateWrapper()
 	opt.Act = a.ActionType
@@ -90,27 +96,30 @@ func (a *Action) ToOperate() *DeviceOperateWrapper {
 	return opt
 }
 
-// Hash 计算哈希值
+// Hash 璁＄畻鍝堝笇鍊?
+
 func (a *Action) Hash() uintptr {
 	return a.Hashcode
 }
 
-// IsModelAct 是否为模型动作
+// IsModelAct 鏄惁涓烘ā鍨嬪姩浣?
+
 func (a *Action) IsModelAct() bool {
 	return a.ActionType >= BACK && a.ActionType <= SCROLL_BOTTOM_UP_N
 }
 
-// RequireTarget 是否需要目标
+// RequireTarget 鏄惁闇€瑕佺洰鏍?
+
 func (a *Action) RequireTarget() bool {
 	return a.ActionType >= CLICK && a.ActionType <= SCROLL_BOTTOM_UP_N
 }
 
-// CanStartTestApp 是否可以启动测试应用
+// CanStartTestApp 鏄惁鍙互鍚姩娴嬭瘯搴旂敤
 func (a *Action) CanStartTestApp() bool {
 	return a.ActionType == START || a.ActionType == RESTART || a.ActionType == CLEAN_RESTART
 }
 
-// Equal 判断是否相等
+// Equal 鍒ゆ柇鏄惁鐩哥瓑
 func (a *Action) Equal(other *Action) bool {
 	if other == nil {
 		return false
@@ -118,64 +127,69 @@ func (a *Action) Equal(other *Action) bool {
 	return a.ActionType == other.ActionType
 }
 
-// SetQValue 设置Q值
+// SetQValue 璁剧疆Q鍊?
+
 func (a *Action) SetQValue(value float64) {
 	a.QValue = value
 }
 
-// GetQValue 获取Q值
+// GetQValue 鑾峰彇Q鍊?
+
 func (a *Action) GetQValue() float64 {
 	return a.QValue
 }
 
-// GetId 获取ID
+// GetId 鑾峰彇ID
 func (a *Action) GetId() string {
 	return "g0a" + a.Node.GetId()
 }
 
-// Visit 更新访问计数
+// Visit 鏇存柊璁块棶璁℃暟
 func (a *Action) Visit(timestamp time.Time) {
 	atomic.AddInt32(&a.Node.VisitedCount, 1)
 
 }
 
-// String 返回字符串表示
+// String 杩斿洖瀛楃涓茶〃绀?
+
 func (a *Action) String() string {
 	return fmt.Sprintf("{id: %s, act: %s, value: %.2f}",
 		a.GetId(), a.ActionType.String(), a.QValue)
 }
 
-// 全局Action实例
+// 鍏ㄥ眬Action瀹炰緥
 var (
 	NOPAction      = NewAction(NOP)
 	ACTIVATEAction = NewAction(ACTIVATE)
 	RESTARTAction  = NewAction(RESTART)
 )
 
-// getThrottle 获取节流值
+// getThrottle 鑾峰彇鑺傛祦鍊?
+
 func getThrottle() int {
 	return 100
 }
 
-// StatefulAction 嵌入动作与整个活动状态、目标Widget和要执行的动作
+// StatefulAction 宓屽叆鍔ㄤ綔涓庢暣涓椿鍔ㄧ姸鎬併€佺洰鏍嘩idget鍜岃鎵ц鐨勫姩浣?
+
 type StatefulAction struct {
 	Action
-	// 表示动作的起始状态节点，构建状态转移图的关键连接点
+	// 琛ㄧず鍔ㄤ綔鐨勮捣濮嬬姸鎬佽妭鐐癸紝鏋勫缓鐘舵€佽浆绉诲浘鐨勫叧閿繛鎺ョ偣
 	State    *State
 	Target   IWidget
 	Hashcode uintptr
 }
 
-// NewStatefulAction 创建新的NewStatefulAction
+// NewStatefulAction 鍒涘缓鏂扮殑NewStatefulAction
 func NewStatefulAction(state *State, targetWidget IWidget, actionType ActionType) *StatefulAction {
 	asa := &StatefulAction{
 		Action:   *NewAction(actionType),
 		State:    state,
 		Target:   targetWidget,
-		Hashcode: 0, // 初始化为0，将在下面计算
+		Hashcode: 0, // 鍒濆鍖栦负0锛屽皢鍦ㄤ笅闈㈣绠?
 	}
 
-	// 计算哈希码
+	// 璁＄畻鍝堝笇鐮?
 	hashcode := tool.HashInt(int(asa.GetActionType()))
 	var stateHash uintptr
 	if asa.State != nil {
@@ -198,17 +212,18 @@ func NewStatefulAction(state *State, targetWidget IWidget, actionType ActionType
 	return asa
 }
 
-// GetState 获取状态
+// GetState 鑾峰彇鐘舵€?
+
 func (asa *StatefulAction) GetState() *State {
 	return asa.State
 }
 
-// GetTarget 获取目标
+// GetTarget 鑾峰彇鐩爣
 func (asa *StatefulAction) GetTarget() IWidget {
 	return asa.Target
 }
 
-// GetEnabled 获取是否启用
+// GetEnabled 鑾峰彇鏄惁鍚敤
 func (asa *StatefulAction) GetEnabled() bool {
 	if asa.Target == nil {
 		return true
@@ -216,7 +231,7 @@ func (asa *StatefulAction) GetEnabled() bool {
 	return asa.Target.GetEnabled()
 }
 
-// IsValid 是否有效
+// IsValid 鏄惁鏈夋晥
 func (asa *StatefulAction) IsValid() bool {
 	if asa.Target == nil {
 		return true
@@ -224,12 +239,13 @@ func (asa *StatefulAction) IsValid() bool {
 	return !asa.Target.GetBounds().IsEmpty()
 }
 
-// SetTarget 设置目标
+// SetTarget 璁剧疆鐩爣
 func (asa *StatefulAction) SetTarget(widget IWidget) {
 	asa.Target = widget
 }
 
-// ToOperate 转换为操作
+// ToOperate 杞崲涓烘搷浣?
+
 func (asa *StatefulAction) ToOperate() *DeviceOperateWrapper {
 	opt := asa.Action.ToOperate()
 	if asa.State != nil {
@@ -243,7 +259,7 @@ func (asa *StatefulAction) ToOperate() *DeviceOperateWrapper {
 	return opt
 }
 
-// IsTargetEmpty 目标是否为空
+// IsTargetEmpty 鐩爣鏄惁涓虹┖
 func (asa *StatefulAction) IsTargetEmpty() bool {
 	if asa.Target == nil {
 		return true
@@ -252,7 +268,7 @@ func (asa *StatefulAction) IsTargetEmpty() bool {
 	return rect.IsEmpty()
 }
 
-// IsEmpty 判断是否为空
+// IsEmpty 鍒ゆ柇鏄惁涓虹┖
 func (asa *StatefulAction) IsEmpty() bool {
 	if asa.Target == nil {
 		return true
@@ -261,12 +277,13 @@ func (asa *StatefulAction) IsEmpty() bool {
 	return rect.IsEmpty()
 }
 
-// Hash 计算哈希值
+// Hash 璁＄畻鍝堝笇鍊?
+
 func (asa *StatefulAction) Hash() uintptr {
 	return asa.Hashcode
 }
 
-// Equal 判断是否相等
+// Equal 鍒ゆ柇鏄惁鐩哥瓑
 func (asa *StatefulAction) Equal(other *StatefulAction) bool {
 	if other == nil {
 		return false
@@ -274,12 +291,13 @@ func (asa *StatefulAction) Equal(other *StatefulAction) bool {
 	return asa.Hash() == other.Hash()
 }
 
-// Less 比较大小
+// Less 姣旇緝澶у皬
 func (asa *StatefulAction) Less(other *StatefulAction) bool {
 	return asa.Hash() < other.Hash()
 }
 
-// String 返回字符串表示
+// String 杩斿洖瀛楃涓茶〃绀?
+
 func (asa *StatefulAction) String() string {
 	stateID := ""
 	if asa.State != nil {
@@ -295,7 +313,7 @@ func (asa *StatefulAction) String() string {
 		asa.Action.String(), stateID, targetStr)
 }
 
-// NetActionParam 网络动作参数
+// NetActionParam 缃戠粶鍔ㄤ綔鍙傛暟
 type NetActionParam struct {
 	Throttle        int    `json:"throttle"`
 	NetActionTaskID int    `json:"net_action_taskid"`
@@ -305,27 +323,29 @@ type NetActionParam struct {
 	DeviceID        string `json:"device_id"`
 }
 
-// StatefulActionList PageNameStateAction指针切片
+// StatefulActionList PageNameStateAction鎸囬拡鍒囩墖
 type StatefulActionList []*StatefulAction
 
-// StatefulActionSet PageNameStateAction指针集合
+// StatefulActionSet PageNameStateAction鎸囬拡闆嗗悎
 type StatefulActionSet map[uintptr]*StatefulAction
 
-// Add 添加到集合
+// Add 娣诲姞鍒伴泦鍚?
+
 func (s StatefulActionSet) Add(action *StatefulAction) {
 	if action != nil {
 		s[action.Hash()] = action
 	}
 }
 
-// Remove 从集合中移除
+// Remove 浠庨泦鍚堜腑绉婚櫎
 func (s StatefulActionSet) Remove(action *StatefulAction) {
 	if action != nil {
 		delete(s, action.Hash())
 	}
 }
 
-// Contains 检查是否包含
+// Contains 妫€鏌ユ槸鍚﹀寘鍚?
+
 func (s StatefulActionSet) Contains(action *StatefulAction) bool {
 	if action == nil {
 		return false
@@ -334,7 +354,8 @@ func (s StatefulActionSet) Contains(action *StatefulAction) bool {
 	return exists
 }
 
-// ToSlice 转换为切片
+// ToSlice 杞崲涓哄垏鐗?
+
 func (s StatefulActionSet) ToSlice() StatefulActionList {
 	result := make(StatefulActionList, 0, len(s))
 	for _, action := range s {
@@ -343,14 +364,15 @@ func (s StatefulActionSet) ToSlice() StatefulActionList {
 	return result
 }
 
-// SortByPriority 按优先级排序
+// SortByPriority 鎸変紭鍏堢骇鎺掑簭
 func (actions StatefulActionList) SortByPriority() {
 	sort.Slice(actions, func(i, j int) bool {
 		return actions[i].GetPriority() < actions[j].GetPriority()
 	})
 }
 
-// FilterByQValue 按Q值过滤
+// FilterByQValue 鎸塓鍊艰繃婊?
+
 func (actions StatefulActionList) FilterByQValue(minQValue float64) StatefulActionList {
 	result := make(StatefulActionList, 0)
 	for _, action := range actions {
@@ -361,7 +383,7 @@ func (actions StatefulActionList) FilterByQValue(minQValue float64) StatefulActi
 	return result
 }
 
-// GetMaxQValueAction 获取最大Q值的动作
+// GetMaxQValueAction 鑾峰彇鏈€澶鍊肩殑鍔ㄤ綔
 func (actions StatefulActionList) GetMaxQValueAction() *StatefulAction {
 	if len(actions) == 0 {
 		return nil
@@ -380,7 +402,7 @@ func (actions StatefulActionList) GetMaxQValueAction() *StatefulAction {
 	return maxAction
 }
 
-// GetRandomUnvisitedAction 获取随机未访问的动作
+// GetRandomUnvisitedAction 鑾峰彇闅忔満鏈闂殑鍔ㄤ綔
 func (actions StatefulActionList) GetRandomUnvisitedAction() *StatefulAction {
 	unvisited := make(StatefulActionList, 0)
 	for _, action := range actions {

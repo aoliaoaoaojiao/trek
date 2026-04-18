@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 	"trek/internal/engine/core/model"
+	"trek/internal/engine/core/tool"
 	"trek/internal/engine/core/types"
-	"trek/internal/engine/tool"
 	"trek/logger"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -69,7 +69,7 @@ type ModelReusableAgent struct {
 }
 
 func (a *ModelReusableAgent) Stop() {
-	a.SaveReuseModel() // 在停止前保存模型
+	a.SaveReuseModel() // 閸︺劌浠犲銏犲娣囨繂鐡ㄥΟ鈥崇€?
 	a.stopOnce.Do(func() {
 		close(a.stopChan)
 	})
@@ -80,9 +80,9 @@ var createReuseAgent = func(m *model.Model, deviceType types.DeviceType) (types.
 
 	reuseAgent.LoadReuseModel()
 
-	// 启动定时保存模型的goroutine
+	// 閸氼垰濮╃€规碍妞傛穱婵嗙摠濡€崇€烽惃鍒routine
 	go func() {
-		ticker := time.NewTicker(10 * time.Minute) // 每10分钟保存一次
+		ticker := time.NewTicker(10 * time.Minute) // 濮?0閸掑棝鎸撴穱婵嗙摠娑撯偓濞?
 		defer ticker.Stop()
 
 		for {
@@ -221,7 +221,7 @@ func (a *ModelReusableAgent) MoveForward(nextState types.IState) {
 	a.currentAction = a.newAction
 	a.newAction = nil
 
-	//var lastStateHash, currentStateHash, newStateHash uintptr
+	//
 	//if a.lastState != nil {
 	//	lastStateHash = a.lastState.Hash()
 	//}

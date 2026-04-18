@@ -14,6 +14,12 @@ type Config struct {
 	DeviceType  types.DeviceType
 }
 
+// ActionInput 描述 NextAction 的扩展输入，支持 XML 与截图双通道。
+type ActionInput struct {
+	XMLDescOfGuiTree string
+	Screenshot       []byte
+}
+
 // Session 为调用方提供稳定的单线程入口，屏蔽内部全局模型细节。
 type Session struct {
 	config Config
@@ -33,7 +39,7 @@ func NewSession(config Config) *Session {
 	return session
 }
 
-// Reset 重置内部模型并重新初始化 agent，适合一次新任务开始前调用。
+// Reset 重置内部模型并重新初始化 agent，适合新任务开始前调用。
 func (s *Session) Reset() {
 	engineruntime.ResetModel()
 	engineruntime.InitAgent(s.config.Algorithm, s.config.PackageName, s.config.DeviceType)
@@ -67,20 +73,44 @@ func (s *Session) NextActionJSON(pageName string, xmlDescOfGuiTree string) (stri
 	return operate.ToJSON(), nil
 }
 
-// NextAction 返回结构化的下一步操作（主路径，不经过 JSON 回转）。
+// NextActionJSONWithInput 根据扩展输入计算下一步操作 JSON。
+func (s *Session) NextActionJSONWithInput(pageName string, input ActionInput) (string, error) {
+	operate, err := s.NextActionWithInput(pageName, input)
+	if err != nil {
+		return "", err
+	}
+	return operate.ToJSON(), nil
+}
+
+// NextAction 返回结构化的下一步操作（主路径）。
 func (s *Session) NextAction(pageName string, xmlDescOfGuiTree string) (*types.DeviceOperateWrapper, error) {
+	return s.NextActionWithInput(pageName, ActionInput{XMLDescOfGuiTree: xmlDescOfGuiTree})
+}
+
+// NextActionWithInput 基于 XML/截图扩展输入返回下一步操作。
+func (s *Session) NextActionWithInput(pageName string, input ActionInput) (*types.DeviceOperateWrapper, error) {
 	if strings.TrimSpace(pageName) == "" {
 		return nil, fmt.Errorf("pageName 不能为空")
 	}
-	if strings.TrimSpace(xmlDescOfGuiTree) == "" {
-		return nil, fmt.Errorf("xmlDescOfGuiTree 不能为空")
+	if strings.TrimSpace(input.XMLDescOfGuiTree) == "" && len(input.Screenshot) == 0 {
+		return nil, fmt.Errorf("xmlDescOfGuiTree 和 screenshot 不能同时为空")
 	}
 
-	operate := engineruntime.GetActionOpt(pageName, xmlDescOfGuiTree)
+	operate := engineruntime.GetActionOptWithInput(pageName, input.XMLDescOfGuiTree, input.Screenshot)
 	if operate == nil {
 		return nil, fmt.Errorf("未生成有效动作")
 	}
 	return operate, nil
+}
+
+// SetObservationMode 设置感知模式（xml-only / image-only / hybrid）。
+func (s *Session) SetObservationMode(mode string) error {
+	return engineruntime.SetObservationMode(mode)
+}
+
+// GetObservationMode 返回当前感知模式。
+func (s *Session) GetObservationMode() string {
+	return engineruntime.GetObservationMode()
 }
 
 // CheckPointInBlackRects 判断点位是否落在黑名单矩形内。

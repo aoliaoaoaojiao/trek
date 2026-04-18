@@ -78,7 +78,7 @@ func GetLogger() *zap.Logger {
 // GetSugar 获取Sugared日志记录器
 func GetSugar() *zap.SugaredLogger {
 	if sugar == nil {
-		InitLogger("log ")
+		InitLogger("log")
 	}
 	return sugar
 }

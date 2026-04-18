@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"trek/internal/engine/tool"
+	"trek/internal/engine/core/tool"
 )
 
 var _ IWidget = (*Widget)(nil)
 
-// Widget Widget结构，使用Widget内部文本来嵌入和识别Widget
+// Widget Widget缁撴瀯锛屼娇鐢╓idget鍐呴儴鏂囨湰鏉ュ祵鍏ュ拰璇嗗埆Widget
 type Widget struct {
 	Hashcode uintptr
 	Parent   IWidget
@@ -24,53 +24,54 @@ type Widget struct {
 	ContextDesc string
 	Actions     map[ActionType]bool
 
-	ScrollTypeField ScrollType // 滚动类型
+	ScrollTypeField ScrollType // 婊氬姩绫诲瀷
 	//ClassName       string
 	//ResourceID      string
 	elementSimpleIdentifier uintptr
 }
 
-// 状态处理常量
+// 鐘舵€佸鐞嗗父閲?
+
 const (
-	// STATE_WITH_TEXT 如果应该基于文本生成哈希
+	// STATE_WITH_TEXT 濡傛灉搴旇鍩轰簬鏂囨湰鐢熸垚鍝堝笇
 	STATE_WITH_TEXT = false
 
-	// STATE_TEXT_MAX_LEN 参与抽象的文本的最长长度，通常是3的倍数
-	// 超过2个中文字符将不参与抽象，字符长度将被截断
+	// STATE_TEXT_MAX_LEN 鍙備笌鎶借薄鐨勬枃鏈殑鏈€闀块暱搴︼紝閫氬父鏄?鐨勫€嶆暟
+	// 瓒呰繃2涓腑鏂囧瓧绗﹀皢涓嶅弬涓庢娊璞★紝瀛楃闀垮害灏嗚鎴柇
 	STATE_TEXT_MAX_LEN = 6 // 2*3
 
-	// STATE_WITH_INDEX 如果应该基于索引生成哈希
+	// STATE_WITH_INDEX 濡傛灉搴旇鍩轰簬绱㈠紩鐢熸垚鍝堝笇
 	STATE_WITH_INDEX = false
 
-	// SCROLL_BOTTOM_UP_N_ENABLE 是否启用SCROLL_BOTTOM_UP_N动作
+	// SCROLL_BOTTOM_UP_N_ENABLE 鏄惁鍚敤SCROLL_BOTTOM_UP_N鍔ㄤ綔
 	SCROLL_BOTTOM_UP_N_ENABLE = false
 
-	// FORCE_EDITTEXT_CLICK_TRUE 是否强制为EditText元素添加点击和长按功能
+	// FORCE_EDITTEXT_CLICK_TRUE 鏄惁寮哄埗涓篍ditText鍏冪礌娣诲姞鐐瑰嚮鍜岄暱鎸夊姛鑳?
 	FORCE_EDITTEXT_CLICK_TRUE = true
 
 	PARENT_CLICK_CHANGE_CHILDREN = true
 )
 
-// NewWidget 创建新的Widget
+// NewWidget 鍒涘缓鏂扮殑Widget
 func NewWidget(parent IWidget, element IElement) *Widget {
 	widget := &Widget{
 		Parent:          parent,
 		Actions:         make(map[ActionType]bool),
 		OperateMask:     None,
 		Bounds:          NewRect(0, 0, 0, 0),
-		ScrollTypeField: NONE, // 初始化滚动类型
+		ScrollTypeField: NONE, // 鍒濆鍖栨粴鍔ㄧ被鍨?
 	}
 
 	if element != nil {
 		widget.initFormElement(element)
-		// 文本预处理
+		// 鏂囨湰棰勫鐞?
 		widget.preprocessText()
 	}
 
 	return widget
 }
 
-// GetParent 获取父Widget
+// GetParent 鑾峰彇鐖禬idget
 func (w *Widget) GetParent() IWidget {
 	if w == nil || w.Parent == nil {
 		return nil
@@ -78,7 +79,7 @@ func (w *Widget) GetParent() IWidget {
 	return w.Parent
 }
 
-// GetBounds 获取边界
+// GetBounds 鑾峰彇杈圭晫
 func (w *Widget) GetBounds() *Rect {
 	if w == nil {
 		return nil
@@ -86,7 +87,7 @@ func (w *Widget) GetBounds() *Rect {
 	return w.Bounds
 }
 
-// GetActions 获取动作集合
+// GetActions 鑾峰彇鍔ㄤ綔闆嗗悎
 func (w *Widget) GetActions() []ActionType {
 	actions := make([]ActionType, 0, len(w.Actions))
 	for action := range w.Actions {
@@ -98,7 +99,7 @@ func (w *Widget) GetActions() []ActionType {
 	return actions
 }
 
-// GetText 获取文本
+// GetText 鑾峰彇鏂囨湰
 func (w *Widget) GetText() string {
 	if w == nil {
 		return ""
@@ -106,7 +107,7 @@ func (w *Widget) GetText() string {
 	return w.Text
 }
 
-// GetEnabled 获取是否启用
+// GetEnabled 鑾峰彇鏄惁鍚敤
 func (w *Widget) GetEnabled() bool {
 	if w == nil {
 		return false
@@ -114,7 +115,7 @@ func (w *Widget) GetEnabled() bool {
 	return w.Enabled
 }
 
-// HasOperate 检查是否有指定操作
+// HasOperate 妫€鏌ユ槸鍚︽湁鎸囧畾鎿嶄綔
 func (w *Widget) HasOperate(opt OperateType) bool {
 	if w == nil {
 		return false
@@ -122,7 +123,7 @@ func (w *Widget) HasOperate(opt OperateType) bool {
 	return w.OperateMask&opt != 0
 }
 
-// HasAction 检查是否有动作
+// HasAction 妫€鏌ユ槸鍚︽湁鍔ㄤ綔
 func (w *Widget) HasAction() bool {
 	if w == nil {
 		return false
@@ -130,7 +131,7 @@ func (w *Widget) HasAction() bool {
 	return len(w.Actions) > 0
 }
 
-// IsEditable 检查是否可编辑
+// IsEditable 妫€鏌ユ槸鍚﹀彲缂栬緫
 func (w *Widget) IsEditable() bool {
 	if w == nil {
 		return false
@@ -138,13 +139,14 @@ func (w *Widget) IsEditable() bool {
 	return w.Editable
 }
 
-// Hash 计算哈希值
+// Hash 璁＄畻鍝堝笇鍊?
+
 func (w *Widget) Hash() uintptr {
 	if w == nil {
 		return 0
 	}
 	if w.Hashcode == 0 {
-		// 基础哈希计算
+		// 鍩虹鍝堝笇璁＄畻
 		//hashcode1 := utils.HashString(w.elementSimpleIdentifier)
 		//hashcode2 := utils.HashString(w.ResourceID)
 		hashcode3 := tool.HashInt(int(w.OperateMask))
@@ -166,7 +168,8 @@ func (w *Widget) GetElementIdentifier() uintptr {
 	return w.elementSimpleIdentifier
 }
 
-// String 返回字符串表示
+// String 杩斿洖瀛楃涓茶〃绀?
+
 func (w *Widget) String() string {
 	if w == nil {
 		return ""
@@ -175,7 +178,7 @@ func (w *Widget) String() string {
 		w.Text, w.Bounds.String(), w.Enabled, w.path)
 }
 
-// BuildFullXpath 构建完整XPath
+// BuildFullXpath 鏋勫缓瀹屾暣XPath
 func (w *Widget) GetPath() string {
 	if w == nil {
 		return ""
@@ -183,14 +186,14 @@ func (w *Widget) GetPath() string {
 	return w.path
 }
 
-// ClearDetails 清除详细信息
+// ClearDetails 娓呴櫎璇︾粏淇℃伅
 func (w *Widget) ClearDetails() {
 	w.Text = ""
 	w.ContextDesc = ""
 	w.Hashcode = 0
 }
 
-// FillDetails 填充详细信息
+// FillDetails 濉厖璇︾粏淇℃伅
 func (w *Widget) FillDetails(copy *Widget) {
 	if copy == nil {
 		return
@@ -200,14 +203,16 @@ func (w *Widget) FillDetails(copy *Widget) {
 	w.Hashcode = copy.Hashcode
 }
 
-// enableOperate 启用操作
+// enableOperate 鍚敤鎿嶄綔
 func (w *Widget) enableOperate(opt OperateType) {
 	w.OperateMask |= opt
 }
 
-// preprocessText 文本预处理
+// preprocessText 鏂囨湰棰勫鐞?
+
 func (w *Widget) preprocessText() {
-	// 移除数字和空格
+	// 绉婚櫎鏁板瓧鍜岀┖鏍?
+
 	var result strings.Builder
 	for _, r := range w.Text {
 		if !((r >= '0' && r <= '9') || r == ' ') {
@@ -216,18 +221,18 @@ func (w *Widget) preprocessText() {
 	}
 	w.Text = result.String()
 
-	// 文本长度处理
+	// 鏂囨湰闀垮害澶勭悊
 	if STATE_WITH_TEXT {
 		overMaxLen := len(w.Text) > STATE_TEXT_MAX_LEN
 
-		// 先截断到 STATE_TEXT_MAX_LEN * 4
+		// 鍏堟埅鏂埌 STATE_TEXT_MAX_LEN * 4
 		if len(w.Text) > STATE_TEXT_MAX_LEN*4 {
 			w.Text = w.Text[:STATE_TEXT_MAX_LEN*4]
 		}
 
 		cutLength := STATE_TEXT_MAX_LEN
 
-		// 处理中文字符截断
+		// 澶勭悊涓枃瀛楃鎴柇
 		if len(w.Text) > cutLength && cutLength < len(w.Text) && tool.IsZhCnByte(w.Text[STATE_TEXT_MAX_LEN]) {
 			ci := 0
 			for ci < cutLength {
@@ -244,24 +249,25 @@ func (w *Widget) preprocessText() {
 			w.Text = w.Text[:cutLength]
 		}
 
-		// 哈希计算
-		// 只有在 !overMaxLen 时才更新哈希
+		// 鍝堝笇璁＄畻
+		// 鍙湁鍦?!overMaxLen 鏃舵墠鏇存柊鍝堝笇
 		if !overMaxLen {
 			textHash := tool.HashString(w.Text)
 			w.Hashcode ^= (0x79b9 + (textHash << 5))
 		}
 	}
 
-	// 索引哈希处理
+	// 绱㈠紩鍝堝笇澶勭悊
 	//if STATE_WITH_INDEX {
 	//	indexHash := utils.HashInt(w.Index)
 	//	w.Hashcode ^= ((0x79b9 + (indexHash << 6)) << 1)
 	//}
 }
 
-// initFormElement 从Element初始化
+// initFormElement 浠嶦lement鍒濆鍖?
+
 func (w *Widget) initFormElement(element IElement) {
-	// 先设置基本属性
+	// 鍏堣缃熀鏈睘鎬?
 	w.Text = element.GetText()
 	w.elementSimpleIdentifier = element.GetIdentifierHash()
 	w.path = element.GetPath()
@@ -272,7 +278,7 @@ func (w *Widget) initFormElement(element IElement) {
 	//w.ContextDesc = element.GetContentDesc()
 	w.ScrollTypeField = element.GetScrollType()
 
-	// 设置操作掩码
+	// 璁剧疆鎿嶄綔鎺╃爜
 	if element.GetCheckBoxable() {
 		w.enableOperate(Checkable)
 	}
@@ -293,7 +299,7 @@ func (w *Widget) initFormElement(element IElement) {
 		w.Actions[CLICK] = true
 	}
 
-	// 处理滚动动作
+	// 澶勭悊婊氬姩鍔ㄤ綔
 	switch w.ScrollTypeField {
 	case ALL:
 		w.Actions[SCROLL_BOTTOM_UP] = true
@@ -307,18 +313,18 @@ func (w *Widget) initFormElement(element IElement) {
 		w.Actions[SCROLL_BOTTOM_UP] = true
 		w.Actions[SCROLL_TOP_DOWN] = true
 	case NONE:
-		// 不添加滚动动作
+		// 涓嶆坊鍔犳粴鍔ㄥ姩浣?
 	}
 
-	//// 精确的编辑框判断
+	//// 绮剧‘鐨勭紪杈戞鍒ゆ柇
 	//w.IsEditableField = (w.Clazz == "uia.widget.EditText" ||
 	//	w.Clazz == "uia.inputmethodservice.ExtractEditText" ||
 	//	w.Clazz == "uia.widget.AutoCompleteTextView" ||
 	//	w.Clazz == "uia.widget.MultiAutoCompleteTextView")
 
-	// 特殊处理：强制为EditText元素添加点击和长按功能（类似C++版本的FORCE_EDITTEXT_CLICK_TRUE）
+	// 鐗规畩澶勭悊锛氬己鍒朵负EditText鍏冪礌娣诲姞鐐瑰嚮鍜岄暱鎸夊姛鑳斤紙绫讳技C++鐗堟湰鐨凢ORCE_EDITTEXT_CLICK_TRUE锛?
 	if FORCE_EDITTEXT_CLICK_TRUE && w.Editable {
-		// 强制设置操作掩码和动作
+		// 寮哄埗璁剧疆鎿嶄綔鎺╃爜鍜屽姩浣?
 		w.enableOperate(Clickable)
 		w.enableOperate(LongClickable)
 		w.Actions[CLICK] = true
@@ -326,7 +332,7 @@ func (w *Widget) initFormElement(element IElement) {
 	}
 
 	//if w.HasAction() {
-	//	// 特殊的SCROLL_BOTTOM_UP_N动作
+	//	// 鐗规畩鐨凷CROLL_BOTTOM_UP_N鍔ㄤ綔
 	//	if SCROLL_BOTTOM_UP_N_ENABLE && (w.Clazz == "uia.widget.ListView" ||
 	//		w.Clazz == "uia.support.v7.widget.RecyclerView" ||
 	//		w.Clazz == "androidx.recyclerview.widget.RecyclerView") {
@@ -338,30 +344,32 @@ func (w *Widget) initFormElement(element IElement) {
 
 }
 
-// WidgetList Widget指针切片
+// WidgetList Widget鎸囬拡鍒囩墖
 type WidgetList []IWidget
 
-// WidgetSet Widget指针集合
+// WidgetSet Widget鎸囬拡闆嗗悎
 type WidgetSet map[uintptr]IWidget
 
-// WidgetListMap Widget指针向量映射
+// WidgetListMap Widget鎸囬拡鍚戦噺鏄犲皠
 type WidgetListMap map[uintptr]WidgetList
 
-// Add 添加到集合
+// Add 娣诲姞鍒伴泦鍚?
+
 func (s WidgetSet) Add(widget IWidget) {
 	if widget != nil {
 		s[widget.Hash()] = widget
 	}
 }
 
-// Remove 从集合中移除
+// Remove 浠庨泦鍚堜腑绉婚櫎
 func (s WidgetSet) Remove(widget IWidget) {
 	if widget != nil {
 		delete(s, widget.Hash())
 	}
 }
 
-// Contains 检查是否包含
+// Contains 妫€鏌ユ槸鍚﹀寘鍚?
+
 func (s WidgetSet) Contains(widget IWidget) bool {
 	if widget == nil {
 		return false
@@ -370,7 +378,8 @@ func (s WidgetSet) Contains(widget IWidget) bool {
 	return exists
 }
 
-// ToSlice 转换为切片
+// ToSlice 杞崲涓哄垏鐗?
+
 func (s WidgetSet) ToSlice() WidgetList {
 	result := make(WidgetList, 0, len(s))
 	for _, widget := range s {
@@ -379,7 +388,8 @@ func (s WidgetSet) ToSlice() WidgetList {
 	return result
 }
 
-// Add 添加到映射
+// Add 娣诲姞鍒版槧灏?
+
 func (m WidgetListMap) Add(hash uintptr, widget IWidget) {
 	if m[hash] == nil {
 		m[hash] = make(WidgetList, 0)
@@ -387,7 +397,8 @@ func (m WidgetListMap) Add(hash uintptr, widget IWidget) {
 	m[hash] = append(m[hash], widget)
 }
 
-// Get 获取映射值
+// Get 鑾峰彇鏄犲皠鍊?
+
 func (m WidgetListMap) Get(hash uintptr) WidgetList {
 	return m[hash]
 }

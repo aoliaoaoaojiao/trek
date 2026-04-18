@@ -6,22 +6,23 @@ import (
 	"sort"
 	"sync/atomic"
 	"time"
-	"trek/internal/engine/tool"
+	"trek/internal/engine/core/tool"
 	"trek/logger"
 )
 
-// 状态处理常量
+// 鐘舵€佸鐞嗗父閲?
+
 const (
-	// STATE_MERGE_DETAIL_TEXT 是否合并详细文本
+	// STATE_MERGE_DETAIL_TEXT 鏄惁鍚堝苟璇︾粏鏂囨湰
 	STATE_MERGE_DETAIL_TEXT = true
 
-	// STATE_WITH_WIDGET_ORDER 是否在哈希中包含widget顺序
+	// STATE_WITH_WIDGET_ORDER 鏄惁鍦ㄥ搱甯屼腑鍖呭惈widget椤哄簭
 	STATE_WITH_WIDGET_ORDER = false
 )
 
 var _ IState = (*State)(nil)
 
-// State 状态结构，StateKey
+// State 鐘舵€佺粨鏋勶紝StateKey
 type State struct {
 	Node
 	PriorityNodeImpl
@@ -35,7 +36,8 @@ type State struct {
 	BackAction    *StatefulAction
 }
 
-// NewState 创建新的状态
+// NewState 鍒涘缓鏂扮殑鐘舵€?
+
 func NewState() *State {
 	return &State{
 		Node:             *NewNode(),
@@ -50,7 +52,8 @@ func NewState() *State {
 	}
 }
 
-// NewStateWithPage 创建带活动名称的状态
+// NewStateWithPage 鍒涘缓甯︽椿鍔ㄥ悕绉扮殑鐘舵€?
+
 func NewStateWithPage(pageName string) *State {
 	logger.Debugf("create state for page: %s", pageName)
 
@@ -70,54 +73,57 @@ func (s *State) GetWidgets() WidgetList {
 	return s.Widgets
 }
 
-// GetBackAction 获取返回动作
+// GetBackAction 鑾峰彇杩斿洖鍔ㄤ綔
 func (s *State) GetBackAction() *StatefulAction {
 	return s.BackAction
 }
 
-// GetActions 获取所有动作
+// GetActions 鑾峰彇鎵€鏈夊姩浣?
+
 func (s *State) GetActions() StatefulActionList {
 	return s.Actions
 }
 
-// SetPriority 设置状态优先级
+// SetPriority 璁剧疆鐘舵€佷紭鍏堢骇
 func (s *State) SetPriority(priority int32) {
 	s.PriorityNodeImpl.SetPriority(priority)
 }
 
-// GetpageString 获取活动字符串
+// GetpageString 鑾峰彇娲诲姩瀛楃涓?
+
 func (s *State) GetPageNameString() string {
 	return s.PageName
 }
 
-// String 实现Stringer接口
+// String 瀹炵幇Stringer鎺ュ彛
 func (s *State) String() string {
 	return fmt.Sprintf("State{id:%s, page:%s, widgets:%d, actions:%d}",
 		s.GetId(), s.PageName, len(s.Widgets), len(s.Actions))
 }
 
-// Hash 计算哈希值
+// Hash 璁＄畻鍝堝笇鍊?
+
 func (s *State) Hash() uintptr {
 	if s.Hashcode == 0 {
-		// page哈希计算
+		// page鍝堝笇璁＄畻
 		pageHash := (tool.HashString(s.PageName) * 31) << 5
 
-		// 计算widgets的合并哈希
+		// 璁＄畻widgets鐨勫悎骞跺搱甯?
 		widgetsHash := CombineHashWidgets(s.Widgets, STATE_WITH_WIDGET_ORDER)
 
-		// 对齐C++版本的最终哈希计算
+		// 瀵归綈C++鐗堟湰鐨勬渶缁堝搱甯岃绠?
 		pageHash ^= (widgetsHash << 1)
 		s.Hashcode = pageHash
 	}
 	return s.Hashcode
 }
 
-// GetMergedWidgets 获取合并的Widgets
+// GetMergedWidgets 鑾峰彇鍚堝苟鐨刉idgets
 func (s *State) GetMergedWidgets() WidgetListMap {
 	return s.MergedWidgets
 }
 
-// TargetActions 获取目标动作
+// TargetActions 鑾峰彇鐩爣鍔ㄤ綔
 func (s *State) TargetActions() StatefulActionList {
 	result := make(StatefulActionList, 0)
 	for _, action := range s.Actions {
@@ -128,7 +134,7 @@ func (s *State) TargetActions() StatefulActionList {
 	return result
 }
 
-// RandomPickUnvisitedAction 随机选择未访问的动作
+// RandomPickUnvisitedAction 闅忔満閫夋嫨鏈闂殑鍔ㄤ綔
 func (s *State) RandomPickUnvisitedAction() IAction {
 	action := s.randomPickAction(EnableValidUnvisitedFilter, false)
 	if action == nil && EnableValidUnvisitedFilter.Include(s.BackAction) {
@@ -137,7 +143,7 @@ func (s *State) RandomPickUnvisitedAction() IAction {
 	return action
 }
 
-// GreedyPickAction 贪心选择最大值的动作
+// GreedyPickAction 璐績閫夋嫨鏈€澶у€肩殑鍔ㄤ綔
 func (s *State) GreedyPickAction(filter IStatefulActionFilter) IAction {
 	if filter == nil {
 		filter = EnableValidValuePriorityFilter
@@ -162,12 +168,12 @@ func (s *State) GreedyPickAction(filter IStatefulActionFilter) IAction {
 	return maxAction
 }
 
-// RandomPickAction 随机选择动作
+// RandomPickAction 闅忔満閫夋嫨鍔ㄤ綔
 func (s *State) RandomPickAction(filter IStatefulActionFilter, includeBack bool) IAction {
 	return s.randomPickAction(filter, includeBack)
 }
 
-// randomPickAction 内部随机选择动作方法
+// randomPickAction 鍐呴儴闅忔満閫夋嫨鍔ㄤ綔鏂规硶
 func (s *State) randomPickAction(filter IStatefulActionFilter, includeBack bool) IAction {
 	total := s.CountActionPriority(filter, includeBack)
 	if total == 0 {
@@ -179,7 +185,8 @@ func (s *State) randomPickAction(filter IStatefulActionFilter, includeBack bool)
 	return s.pickAction(filter, includeBack, index)
 }
 
-// ResolveAt 在指定时间解析动作
+// ResolveAt 鍦ㄦ寚瀹氭椂闂磋В鏋愬姩浣?
+
 func (s *State) ResolveAt(action *StatefulAction, t time.Time) *StatefulAction {
 	if action == nil {
 		return nil
@@ -204,7 +211,7 @@ func (s *State) ResolveAt(action *StatefulAction, t time.Time) *StatefulAction {
 	return action
 }
 
-// ContainsTarget 检查是否包含目标Widget
+// ContainsTarget 妫€鏌ユ槸鍚﹀寘鍚洰鏍嘩idget
 func (s *State) ContainsTarget(widget IWidget) bool {
 	if widget == nil {
 		return false
@@ -216,7 +223,7 @@ func (s *State) ContainsTarget(widget IWidget) bool {
 		}
 	}
 
-	// 检查合并的widgets
+	// 妫€鏌ュ悎骞剁殑widgets
 	for _, widgetList := range s.MergedWidgets {
 		for _, w := range widgetList {
 			if w.Hash() == widget.Hash() {
@@ -228,7 +235,8 @@ func (s *State) ContainsTarget(widget IWidget) bool {
 	return false
 }
 
-// IsSaturated 检查动作是否饱和
+// IsSaturated 妫€鏌ュ姩浣滄槸鍚﹂ケ鍜?
+
 func (s *State) IsSaturated(action *StatefulAction) bool {
 	if action == nil {
 		return false
@@ -248,7 +256,7 @@ func (s *State) IsSaturated(action *StatefulAction) bool {
 	return action.GetVisitedCount() >= 1
 }
 
-// Less 比较大小
+// Less 姣旇緝澶у皬
 func (s *State) Less(other *State) bool {
 	if other == nil {
 		return true
@@ -256,7 +264,7 @@ func (s *State) Less(other *State) bool {
 	return s.Hash() < other.Hash()
 }
 
-// Equal 判断是否相等
+// Equal 鍒ゆ柇鏄惁鐩哥瓑
 func (s *State) Equal(other IState) bool {
 	if other == nil {
 		return false
@@ -264,7 +272,7 @@ func (s *State) Equal(other IState) bool {
 	return s.Hash() == other.Hash()
 }
 
-// Equals 判断是否相等（别名方法）
+// Equals 鍒ゆ柇鏄惁鐩哥瓑锛堝埆鍚嶆柟娉曪級
 func (s *State) Equals(other IState) bool {
 	return s.Equal(other)
 }
@@ -278,7 +286,7 @@ func (s *State) ClearDetails() {
 	s.Hashcode = 0
 }
 
-// FillDetails 填充详细信息
+// FillDetails 濉厖璇︾粏淇℃伅
 func (s *State) FillDetails(copyIState IState) {
 	if copyIState == nil {
 		return
@@ -308,17 +316,18 @@ func (s *State) HasDetail() bool {
 	return !s.HasNoDetail
 }
 
-// GetId 获取ID
+// GetId 鑾峰彇ID
 func (s *State) GetId() string {
 	return "g0s" + s.Node.GetId()
 }
 
-// Visit 更新访问计数
+// Visit 鏇存柊璁块棶璁℃暟
 func (s *State) Visit(timestamp time.Time) {
 	atomic.AddInt32(&s.Node.VisitedCount, 1)
 }
 
-// CountActionPriority 计算动作优先级
+// CountActionPriority 璁＄畻鍔ㄤ綔浼樺厛绾?
+
 func (s *State) CountActionPriority(filter IStatefulActionFilter, includeBack bool) int {
 	if filter == nil {
 		filter = EnableValidFilter
@@ -345,18 +354,17 @@ func (s *State) CountActionPriority(filter IStatefulActionFilter, includeBack bo
 	return totalP
 }
 
-// MergeWidgetAndStoreMergedOnes 合并Widget并存储合并的
+// MergeWidgetAndStoreMergedOnes 鍚堝苟Widget骞跺瓨鍌ㄥ悎骞剁殑
 func (s *State) MergeWidgetAndStoreMergedOnes(mergeWidgets WidgetSet) int {
 	mergedWidgetCount := 0
 
-	// 检查STATE_MERGE_DETAIL_TEXT标志和widgets是否为空
+	// 妫€鏌TATE_MERGE_DETAIL_TEXT鏍囧織鍜寃idgets鏄惁涓虹┖
 	if STATE_MERGE_DETAIL_TEXT && len(s.Widgets) > 0 {
 		for _, widgetPtr := range s.Widgets {
-			// 尝试将widget插入到mergeWidgets set中
-			// 如果widget已存在，则noMerged为false
+			// 灏濊瘯灏唚idget鎻掑叆鍒癿ergeWidgets set涓?			// 濡傛灉widget宸插瓨鍦紝鍒檔oMerged涓篺alse
 			_, exists := mergeWidgets[widgetPtr.Hash()]
 			if !exists {
-				// 第一次出现，添加到set中
+				// 绗竴娆″嚭鐜帮紝娣诲姞鍒皊et涓?
 				mergeWidgets[widgetPtr.Hash()] = widgetPtr
 			} else {
 				h := widgetPtr.Hash()
@@ -374,7 +382,7 @@ func (s *State) MergeWidgetAndStoreMergedOnes(mergeWidgets WidgetSet) int {
 	return mergedWidgetCount
 }
 
-// CombineHashWidgets 合并widget哈希 - 对齐C++版本的combineHash
+// CombineHashWidgets 鍚堝苟widget鍝堝笇 - 瀵归綈C++鐗堟湰鐨刢ombineHash
 func CombineHashWidgets(widgets WidgetList, withOrder bool) uintptr {
 	count := len(widgets)
 	combinedHashcode := uintptr(0x1)
@@ -392,13 +400,13 @@ func CombineHashWidgets(widgets WidgetList, withOrder bool) uintptr {
 	return combinedHashcode
 }
 
-// BuildFromElement 从Element构建
+// BuildFromElement 浠嶦lement鏋勫缓
 func (s *State) BuildFromElement(parentWidget IWidget, elem IElement) {
 	if elem == nil {
 		return
 	}
 
-	// 处理rootBounds逻辑，对齐C++版本
+	// 澶勭悊rootBounds閫昏緫锛屽榻怌++鐗堟湰
 	if elem.GetParent() == nil && !elem.GetBounds().IsEmpty() {
 		if SameRootBounds.IsEmpty() {
 			SameRootBounds = elem.GetBounds()
@@ -410,19 +418,19 @@ func (s *State) BuildFromElement(parentWidget IWidget, elem IElement) {
 		}
 	}
 
-	// 创建新的widget
+	// 鍒涘缓鏂扮殑widget
 	widget := NewWidget(parentWidget, elem)
 
-	// 添加到widgets列表
+	// 娣诲姞鍒皐idgets鍒楄〃
 	s.Widgets = append(s.Widgets, widget)
 
-	// 递归处理子元素
+	// 閫掑綊澶勭悊瀛愬厓绱?
 	for _, childElement := range elem.GetChildren() {
 		s.BuildFromElement(widget, childElement)
 	}
 }
 
-// pickAction 选择动作
+// pickAction 閫夋嫨鍔ㄤ綔
 func (s *State) pickAction(filter IStatefulActionFilter, includeBack bool, index int) IAction {
 	if filter == nil {
 		filter = EnableValidFilter
@@ -447,7 +455,7 @@ func (s *State) pickAction(filter IStatefulActionFilter, includeBack bool, index
 	return nil
 }
 
-// Create 创建State
+// Create 鍒涘缓State
 func Create(elem IElement, pageName string) *State {
 	state := NewStateWithPage(pageName)
 
@@ -456,10 +464,10 @@ func Create(elem IElement, pageName string) *State {
 		state.BuildFromElement(nil, elem)
 	}
 
-	// 计算page哈希
+	// 璁＄畻page鍝堝笇
 	pageHash := (tool.HashString(state.PageName) * 31) << 5
 
-	// 合并widgets
+	// 鍚堝苟widgets
 	mergedWidgets := make(WidgetSet)
 	mergedWidgetCount := state.MergeWidgetAndStoreMergedOnes(mergedWidgets)
 	if mergedWidgetCount != 0 {
@@ -470,11 +478,11 @@ func Create(elem IElement, pageName string) *State {
 		}
 	}
 
-	// 计算最终哈希
+	// 璁＄畻鏈€缁堝搱甯?
 	pageHash ^= (CombineHashWidgets(state.Widgets, STATE_WITH_WIDGET_ORDER) << 1)
 	state.Hashcode = uintptr(pageHash)
 
-	// 为每个widget创建动作（添加去重逻辑）
+	// 涓烘瘡涓獁idget鍒涘缓鍔ㄤ綔锛堟坊鍔犲幓閲嶉€昏緫锛?
 	actionHashSet := make(map[uintptr]bool)
 	for _, widget := range state.Widgets {
 		if widget.GetBounds() == nil {
@@ -488,7 +496,7 @@ func Create(elem IElement, pageName string) *State {
 		for _, actionType := range actions {
 			action := NewStatefulAction(state, widget, actionType)
 
-			// 去重：检查是否已经存在相同哈希值的action
+			// 鍘婚噸锛氭鏌ユ槸鍚﹀凡缁忓瓨鍦ㄧ浉鍚屽搱甯屽€肩殑action
 			actionHash := action.Hash()
 			if actionHashSet[actionHash] {
 
@@ -500,7 +508,7 @@ func Create(elem IElement, pageName string) *State {
 		}
 	}
 
-	// 创建返回动作
+	// 鍒涘缓杩斿洖鍔ㄤ綔
 	backAction := NewStatefulAction(state, nil, BACK)
 	state.BackAction = backAction
 	state.Actions = append(state.Actions, backAction)
@@ -508,27 +516,29 @@ func Create(elem IElement, pageName string) *State {
 	return state
 }
 
-// StateList State接口切片
+// StateList State鎺ュ彛鍒囩墖
 type StateList []IState
 
-// StateSet State接口集合
+// StateSet State鎺ュ彛闆嗗悎
 type StateSet map[uintptr]IState
 
-// Add 添加到集合
+// Add 娣诲姞鍒伴泦鍚?
+
 func (s StateSet) Add(state IState) {
 	if state != nil {
 		s[state.Hash()] = state
 	}
 }
 
-// Remove 从集合中移除
+// Remove 浠庨泦鍚堜腑绉婚櫎
 func (s StateSet) Remove(state IState) {
 	if state != nil {
 		delete(s, state.Hash())
 	}
 }
 
-// Contains 检查是否包含
+// Contains 妫€鏌ユ槸鍚﹀寘鍚?
+
 func (s StateSet) Contains(state IState) bool {
 	if state == nil {
 		return false
@@ -537,7 +547,8 @@ func (s StateSet) Contains(state IState) bool {
 	return exists
 }
 
-// ToSlice 转换为切片
+// ToSlice 杞崲涓哄垏鐗?
+
 func (s StateSet) ToSlice() StateList {
 	result := make(StateList, 0, len(s))
 	for _, state := range s {
@@ -546,14 +557,15 @@ func (s StateSet) ToSlice() StateList {
 	return result
 }
 
-// SortByPriority 按优先级排序
+// SortByPriority 鎸変紭鍏堢骇鎺掑簭
 func (states StateList) SortByPriority() {
 	sort.Slice(states, func(i, j int) bool {
 		return states[i].GetPriority() < states[j].GetPriority()
 	})
 }
 
-// FilterByPage 按活动名称过滤
+// FilterByPage 鎸夋椿鍔ㄥ悕绉拌繃婊?
+
 func (states StateList) FilterByPage(page string) StateList {
 	result := make(StateList, 0)
 	for _, state := range states {
@@ -564,7 +576,8 @@ func (states StateList) FilterByPage(page string) StateList {
 	return result
 }
 
-// GetByPage 根据活动名称获取状态
+// GetByPage 鏍规嵁娲诲姩鍚嶇О鑾峰彇鐘舵€?
+
 func (states StateList) GetByPage(page string) IState {
 	for _, state := range states {
 		if state.GetPageNameString() == page {
@@ -574,7 +587,7 @@ func (states StateList) GetByPage(page string) IState {
 	return nil
 }
 
-// 全局变量
+// 鍏ㄥ眬鍙橀噺
 var (
 	SameRootBounds = NewRect(0, 0, 0, 0)
 )

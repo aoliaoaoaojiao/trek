@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"trek/internal/engine/core/model"
+	"trek/internal/engine/core/tool"
 	"trek/internal/engine/core/types"
-	"trek/internal/engine/tool"
 	"trek/logger"
 
 	"github.com/tidwall/gjson"
@@ -35,7 +35,7 @@ func CreateAndroidElement(tag string) (types.IElement, error) {
 
 }
 
-// CreateAndroidElementFromXml 从XML创建元素
+// CreateAndroidElementFromXml 浠嶺ML鍒涘缓鍏冪礌
 func CreateAndroidElementFromXml(xmlContent string) (types.IElement, error) {
 
 	doc := etree.NewDocument()
@@ -51,7 +51,7 @@ func CreateAndroidElementFromXml(xmlContent string) (types.IElement, error) {
 		return nil, err
 	}
 
-	// 如果整个界面，没有任何一个可点击项，则所有的元素都设置成可点击项
+	// 濡傛灉鏁翠釜鐣岄潰锛屾病鏈変换浣曚竴涓彲鐐瑰嚮椤癸紝鍒欐墍鏈夌殑鍏冪礌閮借缃垚鍙偣鍑婚」
 	var noSetAllElementClickable = false
 
 	elem.RecursiveDoElements(func(element *AndroidElement) {
@@ -70,7 +70,7 @@ func CreateAndroidElementFromXml(xmlContent string) (types.IElement, error) {
 	return elem, nil
 }
 
-// createAndroidFromXmlDoc 从XML文档创建元素
+// createAndroidFromXmlDoc 浠嶺ML鏂囨。鍒涘缓鍏冪礌
 func createAndroidFromXmlDoc(doc *etree.Document) (*AndroidElement, error) {
 	root := doc.Root()
 	if root == nil {
@@ -88,7 +88,7 @@ func createAndroidFromXmlDoc(doc *etree.Document) (*AndroidElement, error) {
 	return element, nil
 }
 
-// NewAndroidElement 创建新的元素
+// NewAndroidElement 鍒涘缓鏂扮殑鍏冪礌
 func NewAndroidElement() *AndroidElement {
 	return &AndroidElement{
 		children: make([]types.IElement, 0),
@@ -96,10 +96,10 @@ func NewAndroidElement() *AndroidElement {
 	}
 }
 
-// AndroidElement 元素结构
+// AndroidElement 鍏冪礌缁撴瀯
 type AndroidElement struct {
 	children []types.IElement
-	// todo 不推荐这么写，这应该给接口类型，但是目前代码就这样了，后面有空优化
+	// todo 涓嶆帹鑽愯繖涔堝啓锛岃繖搴旇缁欐帴鍙ｇ被鍨嬶紝浣嗘槸鐩墠浠ｇ爜灏辫繖鏍蜂簡锛屽悗闈㈡湁绌轰紭鍖?
 	parent types.IElement
 
 	path string
@@ -139,7 +139,7 @@ func (e *AndroidElement) GetPath() string {
 	return e.path
 }
 
-// GetClassname 获取类名
+// GetClassname 鑾峰彇绫诲悕
 func (e *AndroidElement) GetClassname() string {
 	if e == nil || e.eNode == nil {
 		return ""
@@ -147,7 +147,7 @@ func (e *AndroidElement) GetClassname() string {
 	return e.eNode.SelectAttrValue("class", "attribute class name get failed")
 }
 
-// GetResourceID 获取资源ID
+// GetResourceID 鑾峰彇璧勬簮ID
 func (e *AndroidElement) GetResourceID() string {
 	if e == nil || e.eNode == nil {
 		return ""
@@ -155,7 +155,7 @@ func (e *AndroidElement) GetResourceID() string {
 	return e.eNode.SelectAttrValue("resource-id", "attribute resource_id get failed")
 }
 
-// GetContentDesc 获取内容描述
+// GetContentDesc 鑾峰彇鍐呭鎻忚堪
 func (e *AndroidElement) GetContentDesc() string {
 	if e == nil || e.eNode == nil {
 		return ""
@@ -163,7 +163,7 @@ func (e *AndroidElement) GetContentDesc() string {
 	return e.eNode.SelectAttrValue("content-desc", "attribute content description get failed")
 }
 
-// GetPackageName 获取包名
+// GetPackageName 鑾峰彇鍖呭悕
 func (e *AndroidElement) GetPackageName() string {
 	if e == nil || e.eNode == nil {
 		return ""
@@ -171,7 +171,8 @@ func (e *AndroidElement) GetPackageName() string {
 	return e.eNode.SelectAttrValue("package", "attribute package name get failed")
 }
 
-// GetClickable 获取是否可点击
+// GetClickable 鑾峰彇鏄惁鍙偣鍑?
+
 func (e *AndroidElement) GetClickable() bool {
 	if e == nil || e.eNode == nil {
 		return false
@@ -203,7 +204,8 @@ func (e *AndroidElement) SetScrollable(scrollable bool) {
 	e.eNode.CreateAttr("scrollable", fmt.Sprintf("%v", scrollable))
 }
 
-// GetLongClickable 获取是否可长按
+// GetLongClickable 鑾峰彇鏄惁鍙暱鎸?
+
 func (e *AndroidElement) GetLongClickable() bool {
 	if e == nil || e.eNode == nil {
 		return false
@@ -221,7 +223,8 @@ func (e *AndroidElement) SetLongClickable(longClickable bool) {
 	e.eNode.CreateAttr("long-clickable", fmt.Sprintf("%v", longClickable))
 }
 
-// GetCheckBoxable 获取是否可勾选
+// GetCheckBoxable 鑾峰彇鏄惁鍙嬀閫?
+
 func (e *AndroidElement) GetCheckBoxable() bool {
 	if e == nil || e.eNode == nil {
 		return false
@@ -239,7 +242,7 @@ func (e *AndroidElement) SetCheckBoxable(checked bool) {
 	e.eNode.CreateAttr("checkable", fmt.Sprintf("%v", checked))
 }
 
-// GetEnable 获取是否启用
+// GetEnable 鑾峰彇鏄惁鍚敤
 func (e *AndroidElement) GetEnable() bool {
 	if e == nil || e.eNode == nil {
 		return false
@@ -257,7 +260,7 @@ func (e *AndroidElement) SetEnable(enable bool) {
 	e.eNode.CreateAttr("enabled", fmt.Sprintf("%v", enable))
 }
 
-// GetText 获取文本
+// GetText 鑾峰彇鏂囨湰
 func (e *AndroidElement) GetText() string {
 	if e == nil || e.eNode == nil {
 		return ""
@@ -275,7 +278,7 @@ func (e *AndroidElement) SetText(text string) {
 	e.eNode.CreateAttr("text", text)
 }
 
-// GetBounds 获取边界
+// GetBounds 鑾峰彇杈圭晫
 func (e *AndroidElement) GetBounds() *types.Rect {
 	if e == nil || e.eNode == nil {
 		return nil
@@ -297,7 +300,8 @@ func (e *AndroidElement) SetBounds(rect *types.Rect) {
 	e.eNode.CreateAttr("bounds", fmt.Sprintf("[%.0f,%.0f][%.0f,%.0f]", rect.Left, rect.Top, rect.Right, rect.Bottom))
 }
 
-// GetChildren 获取子元素
+// GetChildren 鑾峰彇瀛愬厓绱?
+
 func (e *AndroidElement) GetChildren() []types.IElement {
 	if e == nil || e.eNode == nil {
 		return nil
@@ -309,7 +313,7 @@ func (e *AndroidElement) SetChildren(childList []types.IElement) {
 	if e == nil || e.eNode == nil {
 		return
 	}
-	// 只考虑为第一层赋值parent，child下的子项，应该在调用前就做好设置父节点的准备
+	// 鍙€冭檻涓虹涓€灞傝祴鍊紁arent锛宑hild涓嬬殑瀛愰」锛屽簲璇ュ湪璋冪敤鍓嶅氨鍋氬ソ璁剧疆鐖惰妭鐐圭殑鍑嗗
 	for _, child := range childList {
 		if androidChild, ok := child.(*AndroidElement); ok {
 			androidChild.parent = e
@@ -318,10 +322,11 @@ func (e *AndroidElement) SetChildren(childList []types.IElement) {
 	e.children = childList
 }
 
-// GetParent 获取父元素
+// GetParent 鑾峰彇鐖跺厓绱?
+
 func (e *AndroidElement) GetParent() types.IElement {
-	// 1. 防护：如果 e 本身是空指针，避免 e.parent 触发 Panic
-	// 2. 转换：如果 e.parent 存储的具体指针是 nil，显式返回 nil 接口
+	// 1. 闃叉姢锛氬鏋?e 鏈韩鏄┖鎸囬拡锛岄伩鍏?e.parent 瑙﹀彂 Panic
+	// 2. 杞崲锛氬鏋?e.parent 瀛樺偍鐨勫叿浣撴寚閽堟槸 nil锛屾樉寮忚繑鍥?nil 鎺ュ彛
 	if e == nil || e.parent == nil {
 		return nil
 	}
@@ -329,12 +334,12 @@ func (e *AndroidElement) GetParent() types.IElement {
 	return e.parent
 }
 
-// GetScrollType 获取滚动类型
+// GetScrollType 鑾峰彇婊氬姩绫诲瀷
 func (e *AndroidElement) GetScrollType() types.ScrollType {
 	if e == nil || e.eNode == nil {
 		return types.NONE
 	}
-	// 如果有值，肯定是被用户自己修改过了，所以优先级最高
+	// 濡傛灉鏈夊€硷紝鑲畾鏄鐢ㄦ埛鑷繁淇敼杩囦簡锛屾墍浠ヤ紭鍏堢骇鏈€楂?
 	if val := e.eNode.SelectAttrValue("scrollType", ""); val != "" {
 		return types.StringToScrollType(val)
 	}
@@ -343,7 +348,7 @@ func (e *AndroidElement) GetScrollType() types.ScrollType {
 		return types.NONE
 	}
 
-	// 根据类名精确判断滚动类型
+	// 鏍规嵁绫诲悕绮剧‘鍒ゆ柇婊氬姩绫诲瀷
 	switch e.GetClassname() {
 	case "uia.widget.ScrollView",
 		"uia.widget.ListView",
@@ -358,16 +363,16 @@ func (e *AndroidElement) GetScrollType() types.ScrollType {
 		return types.Horizontal
 	}
 
-	// 如果类名包含"ScrollView"，则支持所有方向滚动
+	// 濡傛灉绫诲悕鍖呭惈"ScrollView"锛屽垯鏀寔鎵€鏈夋柟鍚戞粴鍔?
 	if strings.Contains(e.GetClassname(), "ScrollView") {
 		return types.ALL
 	}
 
-	// 默认情况下支持所有方向滚动
+	// 榛樿鎯呭喌涓嬫敮鎸佹墍鏈夋柟鍚戞粴鍔?
 	return types.ALL
 }
 
-// SetScrollType 设置滚动类型
+// SetScrollType 璁剧疆婊氬姩绫诲瀷
 func (e *AndroidElement) SetScrollType(ScrollType string) {
 	if e == nil || e.eNode == nil {
 		return
@@ -375,17 +380,18 @@ func (e *AndroidElement) SetScrollType(ScrollType string) {
 	e.eNode.CreateAttr("scrollType", ScrollType)
 }
 
-// IsWebView 判断是否为WebView
+// IsWebView 鍒ゆ柇鏄惁涓篧ebView
 func (e *AndroidElement) IsWebView() bool {
 	return strings.Contains(strings.ToLower(e.GetClassname()), "webview")
 }
 
-// IsEditText 判断是否为编辑文本
+// IsEditText 鍒ゆ柇鏄惁涓虹紪杈戞枃鏈?
+
 func (e *AndroidElement) GetEditable() bool {
 	if e == nil || e.eNode == nil {
 		return false
 	}
-	// 肯定被用户修改过了，优先级最高
+	// 鑲畾琚敤鎴蜂慨鏀硅繃浜嗭紝浼樺厛绾ф渶楂?
 	if val := e.eNode.SelectAttrValue("editable", ""); val != "" {
 		return val == "true"
 	}
@@ -400,31 +406,17 @@ func (e *AndroidElement) SetEditable(editable bool) {
 	e.eNode.CreateAttr("editable", fmt.Sprintf("%v", editable))
 }
 
-// addChild 添加子元素
+// addChild 娣诲姞瀛愬厓绱?
+
 func (e *AndroidElement) addChild(child *AndroidElement) {
 	e.children = append(e.children, child)
 	child.parent = e
 }
 
-//// DeleteElement 删除元素
-//func (e *AndroidElement) DeleteElement() {
-//	if e.GetParent() != nil {
-//		for i, child := range e.GetParent().GetChildren() {
-//			if child == e {
-//				childList := append(e.parent.children[:i], e.parent.children[i+1:]...)
-//				e.GetParent().SetChildren(childList)
-//				break
-//			}
-//		}
-//	} else {
-//		logger.Errorf("element is a root elements")
-//	}
-//}
-
-// RecursiveDoElements 递归执行操作
-// RecursiveDoElements 递归执行操作
+// RecursiveDoElements 閫掑綊鎵ц鎿嶄綔
+// RecursiveDoElements 閫掑綊鎵ц鎿嶄綔
 func (e *AndroidElement) RecursiveDoElements(doFunc func(*AndroidElement)) {
-	// 修复点：自身判空
+	// 淇鐐癸細鑷韩鍒ょ┖
 	if e == nil || doFunc == nil {
 		return
 	}
@@ -432,7 +424,7 @@ func (e *AndroidElement) RecursiveDoElements(doFunc func(*AndroidElement)) {
 	doFunc(e)
 	for _, child := range e.children {
 		if androidChild, ok := child.(*AndroidElement); ok {
-			// 修复点：显式检查子节点指针
+			// 淇鐐癸細鏄惧紡妫€鏌ュ瓙鑺傜偣鎸囬拡
 			if androidChild != nil {
 				androidChild.RecursiveDoElements(doFunc)
 			}
@@ -440,7 +432,7 @@ func (e *AndroidElement) RecursiveDoElements(doFunc func(*AndroidElement)) {
 	}
 }
 
-// String 实现Stringer接口
+// String 瀹炵幇Stringer鎺ュ彛
 func (e *AndroidElement) String() string {
 	if e != nil && e.eNode != nil {
 		var buf bytes.Buffer
@@ -452,7 +444,7 @@ func (e *AndroidElement) String() string {
 	return ""
 }
 
-// fromXMLNode 从XML节点创建元素
+// fromXMLNode 浠嶺ML鑺傜偣鍒涘缓鍏冪礌
 func (e *AndroidElement) fromXMLNode(node *etree.Element, parent types.IElement) {
 
 	if node == nil {
@@ -486,7 +478,7 @@ func (e *AndroidElement) fromXMLNode(node *etree.Element, parent types.IElement)
 		e.SetEnable(true)
 	}
 
-	// 递归处理子节点
+	// 閫掑綊澶勭悊瀛愯妭鐐?
 	for _, childNode := range e.eNode.ChildElements() {
 		child := NewAndroidElement()
 		child.fromXMLNode(childNode, e)
@@ -494,9 +486,10 @@ func (e *AndroidElement) fromXMLNode(node *etree.Element, parent types.IElement)
 	}
 }
 
-// parseBounds 解析边界字符串
+// parseBounds 瑙ｆ瀽杈圭晫瀛楃涓?
+
 func parseBounds(boundsStr string) *types.Rect {
-	// 边界格式通常是 "[left,top][right,bottom]"
+	// 杈圭晫鏍煎紡閫氬父鏄?"[left,top][right,bottom]"
 	parts := strings.Split(boundsStr, "][")
 	if len(parts) != 2 {
 		return types.NewRect(0, 0, 0, 0)
@@ -520,44 +513,44 @@ func parseBounds(boundsStr string) *types.Rect {
 	return types.NewRect(left, top, right, bottom)
 }
 
-// Query 根据 XPath 表达式查询元素
-// 返回 []*AndroidElement，对这些对象的修改会直接同步到原始树中
+// Query 鏍规嵁 XPath 琛ㄨ揪寮忔煡璇㈠厓绱?// 杩斿洖 []*AndroidElement锛屽杩欎簺瀵硅薄鐨勪慨鏀逛細鐩存帴鍚屾鍒板師濮嬫爲涓?
+
 func (e *AndroidElement) Query(xpath string) []types.IElement {
 	if e == nil || e.eNode == nil || xpath == "" {
 		return nil
 	}
 
-	// 1. 获取所有匹配的底层 XML 节点
+	// 1. 鑾峰彇鎵€鏈夊尮閰嶇殑搴曞眰 XML 鑺傜偣
 	matchedNodes := e.eNode.FindElements(xpath)
 	if len(matchedNodes) == 0 {
 		return nil
 	}
 
-	// 2. 为了高效比对，将匹配到的 XML 节点指针存入 map
+	// 2. 涓轰簡楂樻晥姣斿锛屽皢鍖归厤鍒扮殑 XML 鑺傜偣鎸囬拡瀛樺叆 map
 	targetMap := make(map[*etree.Element]bool)
 	for _, node := range matchedNodes {
 		targetMap[node] = true
 	}
 
-	// 3. 递归寻找持有这些 eNode 的 AndroidElement 包装对象
+	// 3. 閫掑綊瀵绘壘鎸佹湁杩欎簺 eNode 鐨?AndroidElement 鍖呰瀵硅薄
 	var results []types.IElement
 	e.findWrappersRecursive(targetMap, &results)
 
 	return results
 }
 
-// findWrappersRecursive 内部递归查找匹配包装器的辅助函数
+// findWrappersRecursive 鍐呴儴閫掑綊鏌ユ壘鍖归厤鍖呰鍣ㄧ殑杈呭姪鍑芥暟
 func (e *AndroidElement) findWrappersRecursive(targetMap map[*etree.Element]bool, results *[]types.IElement) {
 	if e == nil {
 		return
 	}
 
-	// 如果当前节点的 eNode 在匹配名单中，将其加入结果集
+	// 濡傛灉褰撳墠鑺傜偣鐨?eNode 鍦ㄥ尮閰嶅悕鍗曚腑锛屽皢鍏跺姞鍏ョ粨鏋滈泦
 	if targetMap[e.eNode] {
 		*results = append(*results, e)
 	}
 
-	// 继续向下递归
+	// 缁х画鍚戜笅閫掑綊
 	for _, child := range e.children {
 		if androidChild, ok := child.(*AndroidElement); ok && androidChild != nil {
 			androidChild.findWrappersRecursive(targetMap, results)
@@ -565,57 +558,58 @@ func (e *AndroidElement) findWrappersRecursive(targetMap map[*etree.Element]bool
 	}
 }
 
-// DeleteElement 根据用户输入的 XPath 表达式删除匹配的所有元素
+// DeleteElement 鏍规嵁鐢ㄦ埛杈撳叆鐨?XPath 琛ㄨ揪寮忓垹闄ゅ尮閰嶇殑鎵€鏈夊厓绱?
+
 func (e *AndroidElement) DeleteElement(xpath string) bool {
 	if e == nil || e.eNode == nil || xpath == "" {
 		return false
 	}
 
-	// 1. 利用 etree 的 XPath 引擎找到所有匹配的底层 XML 节点
+	// 1. 鍒╃敤 etree 鐨?XPath 寮曟搸鎵惧埌鎵€鏈夊尮閰嶇殑搴曞眰 XML 鑺傜偣
 	matchedNodes := e.eNode.FindElements(xpath)
 	if len(matchedNodes) == 0 {
 		return false
 	}
 
-	// 2. 将匹配到的节点指针存入 map，方便后续 O(1) 效率的比对
+	// 2. 灏嗗尮閰嶅埌鐨勮妭鐐规寚閽堝瓨鍏?map锛屾柟渚垮悗缁?O(1) 鏁堢巼鐨勬瘮瀵?
 	targetMap := make(map[*etree.Element]bool)
 	for _, node := range matchedNodes {
 		targetMap[node] = true
 	}
 
-	// 3. 调用递归辅助函数进行删除
+	// 3. 璋冪敤閫掑綊杈呭姪鍑芥暟杩涜鍒犻櫎
 	return e.deleteRecursiveByMatchedNodes(targetMap)
 }
 
-// deleteRecursiveByMatchedNodes 递归辅助函数
+// deleteRecursiveByMatchedNodes 閫掑綊杈呭姪鍑芥暟
 func (e *AndroidElement) deleteRecursiveByMatchedNodes(targetMap map[*etree.Element]bool) bool {
 	hasDeleted := false
 
-	// 注意：删除切片元素时，必须逆序遍历，否则索引会发生错乱
+	// 娉ㄦ剰锛氬垹闄ゅ垏鐗囧厓绱犳椂锛屽繀椤婚€嗗簭閬嶅巻锛屽惁鍒欑储寮曚細鍙戠敓閿欎贡
 	for i := len(e.children) - 1; i >= 0; i-- {
 		child, ok := e.children[i].(*AndroidElement)
 		if !ok || child == nil {
 			continue
 		}
 
-		// 如果当前子节点的底层 eNode 在匹配名单中
+		// 濡傛灉褰撳墠瀛愯妭鐐圭殑搴曞眰 eNode 鍦ㄥ尮閰嶅悕鍗曚腑
 		if targetMap[child.eNode] {
-			// A. 从底层的 XML 树中删除节点
+			// A. 浠庡簳灞傜殑 XML 鏍戜腑鍒犻櫎鑺傜偣
 			if child.eNode != nil {
 				e.eNode.RemoveChild(child.eNode)
 			}
 
-			// B. 从当前包装对象的 children 切片中删除
+			// B. 浠庡綋鍓嶅寘瑁呭璞＄殑 children 鍒囩墖涓垹闄?
 			e.children = append(e.children[:i], e.children[i+1:]...)
 
-			// C. 清空父引用
+			// C. 娓呯┖鐖跺紩鐢?
 			child.parent = nil
 
 			hasDeleted = true
-			continue // 继续检查同级的其他子节点
+			continue // 缁х画妫€鏌ュ悓绾х殑鍏朵粬瀛愯妭鐐?
 		}
 
-		// 如果当前子节点没命中，则递归进入子节点的子节点寻找
+		// 濡傛灉褰撳墠瀛愯妭鐐规病鍛戒腑锛屽垯閫掑綊杩涘叆瀛愯妭鐐圭殑瀛愯妭鐐瑰鎵?
 		if child.deleteRecursiveByMatchedNodes(targetMap) {
 			hasDeleted = true
 		}

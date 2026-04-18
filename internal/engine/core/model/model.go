@@ -1,7 +1,7 @@
 package model
 
 import (
-	"trek/internal/engine/configruntime"
+	"trek/internal/engine/config"
 	"trek/internal/engine/core/types"
 	"trek/logger"
 )
@@ -9,7 +9,7 @@ import (
 type Model struct {
 	graph           *Graph
 	deviceAgentMap  map[string]types.IAgent
-	configManager   *configruntime.Manager
+	configManager   *config.Manager
 	packageName     string
 	netActionTaskID int
 }
@@ -34,7 +34,7 @@ func NewModel(packageName string) *Model {
 	return &Model{
 		graph:          NewGraph(),
 		deviceAgentMap: make(map[string]types.IAgent),
-		configManager:  configruntime.GetInstance(),
+		configManager:  config.GetInstance(),
 		packageName:    packageName,
 	}
 }
@@ -67,15 +67,13 @@ func (m *Model) GetAgent(deviceID string) interface{} {
 	return m.deviceAgentMap[deviceID]
 }
 
-func (m *Model) GetConfigManager() *configruntime.Manager {
+func (m *Model) GetConfigManager() *config.Manager {
 	return m.configManager
 }
 
-func (m *Model) SetConfigManager(manager *configruntime.Manager) {
+func (m *Model) SetConfigManager(manager *config.Manager) {
 	m.configManager = manager
 }
-
-
 
 func (m *Model) GetPackageName() string {
 	return m.packageName

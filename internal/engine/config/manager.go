@@ -1,7 +1,10 @@
-package configruntime
+package config
 
 import (
+	"encoding/json"
+	"fmt"
 	"math/rand"
+	"os"
 	"time"
 	"trek/internal/engine/core/types"
 )
@@ -68,15 +71,13 @@ func GetInstance() *Manager {
 
 func (m *Manager) ResolvePageAndGetSpecifiedAction(pageName string, rootXML types.IElement) types.IAction {
 	if rootXML != nil {
-		m.resolvePage(pageName, rootXML)
+		m.resolvePage(rootXML)
 	}
 
-	var returnAction types.IAction = nil
 	if len(m.currentActions) == 0 {
 		for _, customEvent := range m.customEvents {
 			eventRate := rand.Float64()
 			if eventRate < customEvent.Prob && customEvent.Times > 0 && customEvent.PageName == pageName {
-				m.currentActions = nil
 				m.currentActions = make([]types.IAction, len(customEvent.Actions))
 				for i, action := range customEvent.Actions {
 					m.currentActions[i] = action
@@ -99,10 +100,10 @@ func (m *Manager) ResolvePageAndGetSpecifiedAction(pageName string, rootXML type
 		}
 	}
 
-	return returnAction
+	return nil
 }
 
-func (m *Manager) resolvePage(pageName string, rootXML types.IElement) {
+func (m *Manager) resolvePage(rootXML types.IElement) {
 	m.cachePageTexts(rootXML)
 }
 
@@ -120,6 +121,8 @@ func (m *Manager) cachePageTexts(rootXML types.IElement) {
 }
 
 func (m *Manager) patchActionBounds(action *CustomAction, rootXML types.IElement) bool {
+	_ = action
+	_ = rootXML
 	return true
 }
 
@@ -152,17 +155,49 @@ func (m *Manager) PatchOperate(operate *types.DeviceOperateWrapper) {
 // LoadResourceMapping 加载资源映射配置（主入口）。
 func (m *Manager) LoadResourceMapping(resourceMappingPath string) error {
 	m.resMapping = make(map[string]string)
-	_ = resourceMappingPath
+	m.blackRects = make(map[string][][4]int)
+
+	if resourceMappingPath == "" {
+		return nil
+	}
+
+	data, err := os.ReadFile(resourceMappingPath)
+	if err != nil {
+		return err
+	}
+
+	type runtimeConfig struct {
+		ResMapping map[string]string  `json:"res_mapping"`
+		BlackRects map[string][][]int `json:"black_rects"`
+	}
+
+	var cfg runtimeConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return err
+	}
+
+	for k, v := range cfg.ResMapping {
+		m.resMapping[k] = v
+	}
+
+	for pageName, rects := range cfg.BlackRects {
+		pageRects := make([][4]int, 0, len(rects))
+		for idx, rect := range rects {
+			if len(rect) != 4 {
+				return fmt.Errorf("black_rects[%s][%d] 长度必须为4", pageName, idx)
+			}
+			pageRects = append(pageRects, [4]int{rect[0], rect[1], rect[2], rect[3]})
+		}
+		m.blackRects[pageName] = pageRects
+	}
+
 	return nil
 }
 
 // Deprecated: 请使用 LoadResourceMapping。
-// LoadMixResMapping 兼容旧命名。
 func (m *Manager) LoadMixResMapping(resourceMappingPath string) error {
 	return m.LoadResourceMapping(resourceMappingPath)
 }
-
-
 
 func (m *Manager) CheckPointIsInBlackRects(pageName string, pointX int, pointY int) bool {
 	if rects, ok := m.blackRects[pageName]; ok {

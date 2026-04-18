@@ -39,8 +39,8 @@ func TestSessionCheckPointInBlackRects(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("写入测试配置失败: %v", err)
 	}
-	if err := session.LoadPreferenceFile(configPath); err != nil {
-		t.Fatalf("加载偏好配置失败: %v", err)
+	if err := session.LoadConfigFile(configPath); err != nil {
+		t.Fatalf("加载配置失败: %v", err)
 	}
 
 	if !session.CheckPointInBlackRects("LoginActivity", types.Point{X: 50, Y: 50}) {

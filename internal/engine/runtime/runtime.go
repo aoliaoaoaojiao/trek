@@ -40,16 +40,25 @@ func InitAgent(agentType types2.AlgorithmType, packageName string, deviceType ty
 	engineModel.SetPackageName(packageName)
 }
 
-func LoadResMapping(resMappingFilepath string) {
+// LoadResourceMapping 加载资源映射配置（主入口）。
+func LoadResourceMapping(resourceMappingFilepath string) {
 	if engineModel == nil {
 		engineModel = model.NewModel("")
 	}
 
 	configManager := engineModel.GetConfigManager()
 	if configManager != nil {
-		_ = configManager.LoadMixResMapping(resMappingFilepath)
+		_ = configManager.LoadResourceMapping(resourceMappingFilepath)
 	}
 }
+
+// Deprecated: 请使用 LoadResourceMapping。
+// LoadResMapping 兼容旧命名。
+func LoadResMapping(resMappingFilepath string) {
+	LoadResourceMapping(resMappingFilepath)
+}
+
+
 
 func CheckPointIsInBlackRects(activity string, pointX float32, pointY float32) bool {
 	if engineModel == nil {

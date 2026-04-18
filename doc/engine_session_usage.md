@@ -24,9 +24,9 @@ _ = operate
 _ = jsonText
 ```
 
-## 偏好配置
+## 运行时配置
 
-可通过 `session.LoadPreferenceFile(path)` 加载 JSON 配置，支持以下字段：
+可通过 `session.LoadConfigFile(path)` 加载 JSON 配置，支持以下字段（`LoadPreferenceFile` 仍保留为兼容别名，不建议新代码使用）：
 
 ```json
 {

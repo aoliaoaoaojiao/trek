@@ -117,7 +117,8 @@ func (m *Model) GetOperate(elemType string, descContent string, pageName string,
 func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID string) *types.DeviceOperateWrapper {
 	customAction := m.resolvePageAndGetSpecifiedAction(pageName, elem)
 	if customAction != nil {
-		logger.Debugf("try get custom action from preference")
+		logger.Debugf("try get custom action from config manager")
+
 	}
 
 	visitedPages := m.graph.GetVisitedPages()

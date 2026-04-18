@@ -39,17 +39,23 @@ func (s *Session) Reset() {
 	engineruntime.InitAgent(s.config.Algorithm, s.config.PackageName, s.config.DeviceType)
 }
 
-// LoadPreferenceFile 加载偏好配置文件。
-func (s *Session) LoadPreferenceFile(path string) error {
+// LoadConfigFile 加载运行时配置文件（主入口）。
+func (s *Session) LoadConfigFile(path string) error {
 	model := engineruntime.GetModel()
 	if model == nil {
 		s.Reset()
 		model = engineruntime.GetModel()
 	}
 	if model == nil || model.GetConfigManager() == nil {
-		return fmt.Errorf("偏好配置实例不可用")
+		return fmt.Errorf("配置实例不可用")
 	}
-	return model.GetConfigManager().LoadMixResMapping(path)
+	return model.GetConfigManager().LoadResourceMapping(path)
+}
+
+// Deprecated: 请使用 LoadConfigFile。
+// LoadPreferenceFile 兼容旧命名。
+func (s *Session) LoadPreferenceFile(path string) error {
+	return s.LoadConfigFile(path)
 }
 
 // NextActionJSON 根据页面名称和 Android XML 计算下一步操作 JSON（兼容接口）。

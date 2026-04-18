@@ -149,11 +149,20 @@ func (m *Manager) PatchOperate(operate *types.DeviceOperateWrapper) {
 	}
 }
 
-func (m *Manager) LoadMixResMapping(resourceMappingPath string) error {
+// LoadResourceMapping 加载资源映射配置（主入口）。
+func (m *Manager) LoadResourceMapping(resourceMappingPath string) error {
 	m.resMapping = make(map[string]string)
 	_ = resourceMappingPath
 	return nil
 }
+
+// Deprecated: 请使用 LoadResourceMapping。
+// LoadMixResMapping 兼容旧命名。
+func (m *Manager) LoadMixResMapping(resourceMappingPath string) error {
+	return m.LoadResourceMapping(resourceMappingPath)
+}
+
+
 
 func (m *Manager) CheckPointIsInBlackRects(pageName string, pointX int, pointY int) bool {
 	if rects, ok := m.blackRects[pageName]; ok {

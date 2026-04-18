@@ -68,35 +68,17 @@ _ = currentMode
 
 ## 运行时配置
 
-可通过 `session.LoadConfigFile(path)` 加载 JSON 配置。
+可通过 `session.LoadConfigFile(path)` 加载 Goja 脚本配置（仅支持 `.js`）。
 `LoadPreferenceFile` 仅保留为兼容别名，不建议新代码使用。
 
-```json
-{
-  "res_mapping": {
-    "login_button_alias": "com.demo:id/login"
+```javascript
+const config = {
+  res_mapping: {
+    login_button_alias: "com.demo:id/login",
   },
-  "black_rects": {
-    "LoginActivity": [[0, 0, 100, 100]]
+  black_rects: {
+    LoginActivity: [[0, 0, 100, 100]],
   },
-  "input_texts": ["demo_user"],
-  "fuzzing_texts": ["fuzz_value"],
-  "random_input_text": true,
-  "do_input_fuzzing": false,
-  "skip_all_actions_from_model": false,
-  "custom_events": [
-    {
-      "prob": 1.0,
-      "times": 1,
-      "pageName": "LoginActivity",
-      "actions": [
-        {
-          "action": "CLICK",
-          "resourceID": "login_button_alias"
-        }
-      ]
-    }
-  ]
 }
 ```
 

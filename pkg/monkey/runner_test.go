@@ -400,3 +400,19 @@ func TestPickWeightedCandidateFallbackFirstNonNil(t *testing.T) {
 		t.Fatalf("预期兜底返回 BACK，实际: %+v", cmd)
 	}
 }
+
+func TestResolvePageNameDefault(t *testing.T) {
+	xml := `<node class="com.demo.MainActivity"/>`
+	page := ResolvePageName(xml, nil)
+	if page != "com.demo.MainActivity" {
+		t.Fatalf("默认解析页面名错误: %s", page)
+	}
+}
+
+func TestResolvePageNameWithCustomResolver(t *testing.T) {
+	xml := `<node class="com.demo.MainActivity"/>`
+	page := ResolvePageName(xml, func(_ string) string { return "CustomPage" })
+	if page != "CustomPage" {
+		t.Fatalf("自定义解析页面名错误: %s", page)
+	}
+}

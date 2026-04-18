@@ -10,8 +10,12 @@ func TestLoadResourceMappingBlackRects(t *testing.T) {
 	m := GetInstance()
 	m.blackRects = map[string][][4]int{}
 
-	p := filepath.Join(t.TempDir(), "mix.json")
-	content := `{"black_rects":{"LoginActivity":[[0,0,100,100],[200,200,300,300]]}}`
+	p := filepath.Join(t.TempDir(), "mix.js")
+	content := `const config = {
+  black_rects: {
+    LoginActivity: [[0, 0, 100, 100], [200, 200, 300, 300]]
+  }
+};`
 	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
 		t.Fatalf("写入测试文件失败: %v", err)
 	}
@@ -32,13 +36,32 @@ func TestLoadResourceMappingRejectInvalidRect(t *testing.T) {
 	m := GetInstance()
 	m.blackRects = map[string][][4]int{}
 
-	p := filepath.Join(t.TempDir(), "mix.json")
-	content := `{"black_rects":{"LoginActivity":[[0,0,100]]}}`
+	p := filepath.Join(t.TempDir(), "mix.js")
+	content := `const config = {
+  black_rects: {
+    LoginActivity: [[0, 0, 100]]
+  }
+};`
 	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
 		t.Fatalf("写入测试文件失败: %v", err)
 	}
 
 	if err := m.LoadResourceMapping(p); err == nil {
 		t.Fatalf("非法矩形应返回错误")
+	}
+}
+
+func TestLoadResourceMappingRejectNonJS(t *testing.T) {
+	m := GetInstance()
+	m.blackRects = map[string][][4]int{}
+
+	p := filepath.Join(t.TempDir(), "mix.toml")
+	content := `black_rects = { LoginActivity = [[0,0,100,100]] }`
+	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+		t.Fatalf("写入测试文件失败: %v", err)
+	}
+
+	if err := m.LoadResourceMapping(p); err == nil {
+		t.Fatalf("非 js 文件应被拒绝")
 	}
 }

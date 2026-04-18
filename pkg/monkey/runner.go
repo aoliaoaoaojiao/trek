@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 	"trek/internal/engine/core/types"
+	"trek/logger"
 	"trek/pkg/driver/common"
 	"trek/pkg/session"
 )
@@ -149,15 +150,22 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	defer func() {
 		report.FinishedAt = time.Now()
 		report.DurationMs = report.FinishedAt.Sub(report.StartedAt).Milliseconds()
+		logger.Infof("monkey run finished: reason=%s total=%d success=%d failed=%d duration_ms=%d",
+			report.StopReason, report.StepsTotal, report.StepsSucceeded, report.StepsFailed, report.DurationMs)
 	}()
+
+	logger.Infof("monkey run start: package=%s max_steps=%d max_duration=%s page_source=%s",
+		r.cfg.PackageName, r.cfg.MaxSteps, r.cfg.MaxDuration, r.cfg.PageSourceType)
 
 	checkResult, err := r.driver.CheckEnvironment(r.cfg.PageSourceType)
 	report.Preflight = checkResult
 	if err != nil {
 		report.StopReason = StopPreflightFailed
 		report.PreflightError = err.Error()
+		logger.Errorf("monkey preflight failed: err=%v detail=%+v", err, checkResult)
 		return report, nil
 	}
+	logger.Infof("monkey preflight ok: detail=%+v", checkResult)
 
 	pageSource := r.driver.GetPageSource(r.cfg.PageSourceType)
 	if pageSource == nil {
@@ -168,6 +176,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		if err := r.driver.StartApp(pkg); err != nil {
 			return nil, fmt.Errorf("启动被测应用失败: %w", err)
 		}
+		logger.Infof("monkey app started: package=%s", pkg)
 	}
 
 	_ = r.driver.ClearLogcat()
@@ -176,10 +185,12 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	for step := 1; step <= r.cfg.MaxSteps; step++ {
 		if err := ctx.Err(); err != nil {
 			report.StopReason = StopContextCanceled
+			logger.Warnf("monkey canceled by context")
 			return report, nil
 		}
 		if time.Now().After(deadline) {
 			report.StopReason = StopTimeout
+			logger.Warnf("monkey timeout reached")
 			return report, nil
 		}
 
@@ -190,6 +201,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		if err != nil {
 			record.Err = err.Error()
 			r.markFailed(report, record, stepStart)
+			logger.Warnf("monkey step=%d dump page source failed: %v", step, err)
 			if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
 				report.StopReason = StopMaxConsecutiveFailures
 				return report, nil
@@ -203,12 +215,14 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			report.StopReason = StopCrashDetectedLogcat
 			record.Err = "检测到系统 crash 信号"
 			r.appendRecord(report, record, stepStart)
+			logger.Errorf("monkey stop on crash signal at step=%d", step)
 			return report, nil
 		}
 		if r.cfg.StopOnANR && r.detectANRBySystem() {
 			report.StopReason = StopANRDetectedLogcat
 			record.Err = "检测到系统 ANR 信号"
 			r.appendRecord(report, record, stepStart)
+			logger.Errorf("monkey stop on anr signal at step=%d", step)
 			return report, nil
 		}
 
@@ -228,6 +242,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		if err != nil {
 			record.Err = err.Error()
 			r.markFailed(report, record, stepStart)
+			logger.Warnf("monkey step=%d next command failed: %v", step, err)
 			if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
 				report.StopReason = StopMaxConsecutiveFailures
 				return report, nil
@@ -239,6 +254,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		if cmd == nil {
 			record.Err = "决策返回空动作"
 			r.markFailed(report, record, stepStart)
+			logger.Warnf("monkey step=%d got nil command", step)
 			if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
 				report.StopReason = StopMaxConsecutiveFailures
 				return report, nil
@@ -255,6 +271,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		if err = r.execute(cmd); err != nil {
 			record.Err = err.Error()
 			r.markFailed(report, record, stepStart)
+			logger.Warnf("monkey step=%d execute action=%s failed: %v", step, cmd.Act.String(), err)
 			if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
 				report.StopReason = StopMaxConsecutiveFailures
 				return report, nil
@@ -267,6 +284,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		report.StepsSucceeded++
 		report.ConsecutiveFailures = 0
 		r.appendRecord(report, record, stepStart)
+		logger.Debugf("monkey step=%d execute action=%s success", step, cmd.Act.String())
 		r.sleepStep(ctx, r.resolveStepDelay(cmd))
 	}
 
@@ -523,6 +541,14 @@ func defaultPageNameResolver(xml string) string {
 		}
 	}
 	return "UnknownPage"
+}
+
+// ResolvePageName 使用 Runner 同款逻辑解析页面名，便于调试和外部调用。
+func ResolvePageName(xml string, resolver PageNameResolver) string {
+	if resolver == nil {
+		resolver = defaultPageNameResolver
+	}
+	return resolver(xml)
 }
 
 func centerPoint(rect types.Rect) (types.Point, error) {

@@ -28,7 +28,7 @@ func InitLogger(logDir string) error {
 
 		// 获取当前日期用于日志文件名
 		currentDate := time.Now().Format("2006-01-02")
-		logFile := filepath.Join(logDir, "app_"+currentDate+".logger")
+		logFile := filepath.Join(logDir, "app_"+currentDate+".log")
 
 		// 配置日志文件
 		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
@@ -70,7 +70,7 @@ func InitLogger(logDir string) error {
 // GetLogger 获取标准日志记录器
 func GetLogger() *zap.Logger {
 	if logger == nil {
-		InitLogger("logger")
+		InitLogger("log")
 	}
 	return logger
 }
@@ -78,7 +78,7 @@ func GetLogger() *zap.Logger {
 // GetSugar 获取Sugared日志记录器
 func GetSugar() *zap.SugaredLogger {
 	if sugar == nil {
-		InitLogger("logger")
+		InitLogger("log ")
 	}
 	return sugar
 }

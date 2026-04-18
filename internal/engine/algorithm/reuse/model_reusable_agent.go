@@ -7,13 +7,12 @@ import (
 	"os"
 	"sync"
 	"time"
-	protoPkg "trek/internal/engine/algorithm/reuse/proto"
 	"trek/internal/engine/core/model"
 	"trek/internal/engine/core/types"
 	"trek/internal/engine/tool"
 	"trek/logger"
 
-	"google.golang.org/protobuf/proto"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 var _ types.IAgent = (*ModelReusableAgent)(nil)
@@ -30,6 +29,11 @@ const (
 type PageVisitCount map[string]int
 type ActionPageStatistics map[uintptr]PageVisitCount
 type ActionQValue map[uintptr]float64
+
+type reuseModelSnapshot struct {
+	ActionStatistics map[uint64]map[string]int `msgpack:"action_statistics"`
+	QvalueStatistics map[uint64]float64        `msgpack:"qvalue_statistics"`
+}
 
 type ModelReusableAgent struct {
 	model                           *model.Model
@@ -741,91 +745,69 @@ func (a *ModelReusableAgent) LoadReuseModel() {
 	a.reuseModelLock.Lock()
 	defer a.reuseModelLock.Unlock()
 
-	// 读取文件
 	data, err := os.ReadFile(a.modelSavePath)
 	if err != nil {
 		logger.Errorf("Failed to read reuse model file: %v", err)
 		return
 	}
 
-	// 解析protobuf数据
-	fullModel := &protoPkg.ReuseModel{}
-	err = proto.Unmarshal(data, fullModel)
-	if err != nil {
-		logger.Errorf("Failed to unmarshal reuse model: %v", err)
+	snapshot := &reuseModelSnapshot{}
+	if err = msgpack.Unmarshal(data, snapshot); err != nil {
+		logger.Errorf("Failed to unmarshal reuse model (msgpack): %v", err)
 		return
 	}
 
-	// 将protobuf数据转换为内存数据结构
-	if fullModel.ActionStatistics != nil {
-		for actionId, pageVisitCount := range fullModel.ActionStatistics.ActionPages {
-			if pageVisitCount != nil {
-				reuseEntryM := make(PageVisitCount)
-				for pageId, count := range pageVisitCount.PageVisits {
-					reuseEntryM[pageId] = int(count)
-				}
-				a.reuseModel[uintptr(actionId)] = reuseEntryM
-			}
+	a.reuseModel = make(ActionPageStatistics)
+	a.reuseQValue = make(ActionQValue)
+
+	for actionID, pageVisitCount := range snapshot.ActionStatistics {
+		reuseEntryM := make(PageVisitCount)
+		for pageID, count := range pageVisitCount {
+			reuseEntryM[pageID] = count
 		}
+		a.reuseModel[uintptr(actionID)] = reuseEntryM
 	}
 
-	if fullModel.QvalueStatistics != nil {
-		for actionId, qvalue := range fullModel.QvalueStatistics.ActionQvalues {
-			a.reuseQValue[uintptr(actionId)] = qvalue
-		}
+	for actionID, qvalue := range snapshot.QvalueStatistics {
+		a.reuseQValue[uintptr(actionID)] = qvalue
 	}
 
 	logger.Infof("Successfully loaded reuse model from %s", a.modelSavePath)
 }
 
 func (a *ModelReusableAgent) SaveReuseModel() error {
-
 	outputFilePath := a.modelSavePath
-
 	logger.Infof("save model to path: %s", outputFilePath)
 
 	a.reuseModelLock.Lock()
 	defer a.reuseModelLock.Unlock()
 
-	// 将内存数据结构转换为protobuf格式
-	actionStatistics := &protoPkg.ActionPageStatistics{
-		ActionPages: make(map[uint64]*protoPkg.PageVisitCount),
+	snapshot := &reuseModelSnapshot{
+		ActionStatistics: make(map[uint64]map[string]int),
+		QvalueStatistics: make(map[uint64]float64),
 	}
 
-	for actionId, entryMap := range a.reuseModel {
-		if entryMap != nil {
-			pageVisitCount := &protoPkg.PageVisitCount{
-				PageVisits: make(map[string]int32),
-			}
-			for pageId, count := range entryMap {
-				pageVisitCount.PageVisits[pageId] = int32(count)
-			}
-			actionStatistics.ActionPages[uint64(actionId)] = pageVisitCount
+	for actionID, entryMap := range a.reuseModel {
+		if entryMap == nil {
+			continue
 		}
+		pageVisits := make(map[string]int)
+		for pageID, count := range entryMap {
+			pageVisits[pageID] = count
+		}
+		snapshot.ActionStatistics[uint64(actionID)] = pageVisits
 	}
 
-	qvalueStatistics := &protoPkg.ActionQValue{
-		ActionQvalues: make(map[uint64]float64),
+	for actionID, qvalue := range a.reuseQValue {
+		snapshot.QvalueStatistics[uint64(actionID)] = qvalue
 	}
 
-	for actionId, qvalue := range a.reuseQValue {
-		qvalueStatistics.ActionQvalues[uint64(actionId)] = qvalue
-	}
-
-	// 创建完整的模型
-	fullModel := &protoPkg.ReuseModel{
-		ActionStatistics: actionStatistics,
-		QvalueStatistics: qvalueStatistics,
-	}
-
-	// 序列化为protobuf格式
-	data, err := proto.Marshal(fullModel)
+	data, err := msgpack.Marshal(snapshot)
 	if err != nil {
-		logger.Errorf("Failed to marshal reuse model: %v", err)
+		logger.Errorf("Failed to marshal reuse model (msgpack): %v", err)
 		return err
 	}
 
-	// 写入文件
 	if err := os.WriteFile(outputFilePath, data, 0644); err != nil {
 		logger.Errorf("Failed to save reuse model to file: %v", err)
 		return err

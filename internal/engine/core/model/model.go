@@ -47,7 +47,7 @@ func (m *Model) SetGraph(graph *Graph) {
 	m.graph = graph
 }
 
-// AddAgent 添加一个新的agent到model层中
+// AddAgent 娣诲姞涓€涓柊鐨刟gent鍒癿odel灞備腑
 func (m *Model) AddAgent(deviceID string, algorithmType string, deviceType types.DeviceType) types.IAgent {
 	var graphListener types.IAgent
 	var err error
@@ -112,7 +112,7 @@ func (m *Model) GetOperate(elemType string, descContent string, pageName string,
 	return operate.ToJSON()
 }
 
-func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID string) *types.DeviceOperateWrapper {
+func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID string) *types.ActionCommand {
 	customAction := m.resolvePageAndGetSpecifiedAction(pageName, elem)
 	if customAction != nil {
 		logger.Debugf("try get custom action from config manager")
@@ -149,7 +149,7 @@ func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID str
 	}
 
 	if agent == nil {
-		return types.OperateNop
+		return types.ActionCommandNop
 	}
 
 	var state types.IState
@@ -201,7 +201,7 @@ func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID str
 			agent.UpdateStrategy()
 			if action == nil {
 				logger.Errorf("get null action!!!!")
-				return types.OperateNop
+				return types.ActionCommandNop
 			}
 			if action.(*types.StatefulAction).IsModelAct() && state != nil {
 				action.(*types.StatefulAction).Visit(m.graph.GetTimestamp())
@@ -210,7 +210,7 @@ func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID str
 		}
 	}
 
-	operate := types.OperateNop
+	operate := types.ActionCommandNop
 	if action != nil {
 		logger.Infof("selected action %s", action.(*types.StatefulAction).String())
 		operate = action.(*types.StatefulAction).ToOperate()
@@ -239,7 +239,7 @@ func (m *Model) skipAllActionsFromModel() bool {
 	return false
 }
 
-func (m *Model) patchOperate(operate *types.DeviceOperateWrapper) {
+func (m *Model) patchOperate(operate *types.ActionCommand) {
 	if m.configManager != nil {
 		m.configManager.PatchOperate(operate)
 	}

@@ -56,11 +56,11 @@ func (f *fakePlanner) Select(ctx context.Context, obs *decision.Observation, can
 
 type fakeActuator struct {
 	called bool
-	op     *types.DeviceOperateWrapper
+	op     *types.ActionCommand
 	err    error
 }
 
-func (f *fakeActuator) Compile(ctx context.Context, obs *decision.Observation, plan *decision.ExecutionPlan) (*types.DeviceOperateWrapper, error) {
+func (f *fakeActuator) Compile(ctx context.Context, obs *decision.Observation, plan *decision.ExecutionPlan) (*types.ActionCommand, error) {
 	f.called = true
 	if f.err != nil {
 		return nil, f.err
@@ -70,7 +70,7 @@ func (f *fakeActuator) Compile(ctx context.Context, obs *decision.Observation, p
 
 func TestOrchestratorPipelineSuccess(t *testing.T) {
 	obs := &decision.Observation{PageName: "Main"}
-	op := types.NewDeviceOperateWrapper()
+	op := types.NewActionCommand()
 	op.Act = types.BACK
 
 	orch := &Orchestrator{

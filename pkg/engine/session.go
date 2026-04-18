@@ -83,12 +83,12 @@ func (s *Session) NextActionJSONWithInput(pageName string, input ActionInput) (s
 }
 
 // NextAction 返回结构化的下一步操作（主路径）。
-func (s *Session) NextAction(pageName string, xmlDescOfGuiTree string) (*types.DeviceOperateWrapper, error) {
+func (s *Session) NextAction(pageName string, xmlDescOfGuiTree string) (*types.ActionCommand, error) {
 	return s.NextActionWithInput(pageName, ActionInput{XMLDescOfGuiTree: xmlDescOfGuiTree})
 }
 
 // NextActionWithInput 基于 XML/截图扩展输入返回下一步操作。
-func (s *Session) NextActionWithInput(pageName string, input ActionInput) (*types.DeviceOperateWrapper, error) {
+func (s *Session) NextActionWithInput(pageName string, input ActionInput) (*types.ActionCommand, error) {
 	if strings.TrimSpace(pageName) == "" {
 		return nil, fmt.Errorf("pageName 不能为空")
 	}

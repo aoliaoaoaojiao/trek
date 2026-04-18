@@ -130,7 +130,7 @@ func (m *Manager) SkipAllActionsFromModel() bool {
 	return m.skipAllActionsFromModel
 }
 
-func (m *Manager) PatchOperate(operate *types.DeviceOperateWrapper) {
+func (m *Manager) PatchOperate(operate *types.ActionCommand) {
 	if !m.doInputFuzzing {
 		return
 	}

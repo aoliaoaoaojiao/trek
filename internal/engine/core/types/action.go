@@ -11,7 +11,7 @@ import (
 
 var _ IAction = (*Action)(nil)
 
-// Action 鍩虹Action绫?
+// Action 閸╄櫣顢匒ction缁?
 
 type Action struct {
 	Node
@@ -21,7 +21,7 @@ type Action struct {
 	QValue     float64
 }
 
-// NewAction 鍒涘缓鎸囧畾绫诲瀷鐨凙ction
+// NewAction 閸掓稑缂撻幐鍥х暰缁鐎烽惃鍑檆tion
 func NewAction(actionType ActionType) *Action {
 	return &Action{
 		Node:             *NewNode(),
@@ -32,23 +32,23 @@ func NewAction(actionType ActionType) *Action {
 	}
 }
 
-// GetEnabled 鑾峰彇鏄惁鍚敤
+// GetEnabled 閼惧嘲褰囬弰顖氭儊閸氼垳鏁?
 func (a *Action) GetEnabled() bool {
 	return true
 }
 
-// GetActionType 鑾峰彇鍔ㄤ綔绫诲瀷
+// GetActionType 閼惧嘲褰囬崝銊ょ稊缁鐎?
 func (a *Action) GetActionType() ActionType {
 	return a.ActionType
 }
 
-// SetPriority 璁剧疆浼樺厛绾?
+// SetPriority 鐠佸墽鐤嗘导妯哄帥缁?
 
 func (a *Action) SetPriority(priority int32) {
 	a.PriorityNodeImpl.SetPriority(priority)
 }
 
-// GetPriorityByActionType 鏍规嵁鍔ㄤ綔绫诲瀷鑾峰彇浼樺厛绾?
+// GetPriorityByActionType 閺嶈宓侀崝銊ょ稊缁鐎烽懢宄板絿娴兼ê鍘涚痪?
 
 func (a *Action) GetPriorityByActionType() int32 {
 	switch a.ActionType {
@@ -61,32 +61,32 @@ func (a *Action) GetPriorityByActionType() int32 {
 	}
 }
 
-// IsBack 鏄惁涓鸿繑鍥炲姩浣?
+// IsBack 閺勵垰鎯佹稉楦跨箲閸ョ偛濮╂担?
 
 func (a *Action) IsBack() bool {
 	return a.ActionType == BACK
 }
 
-// IsClick 鏄惁涓虹偣鍑诲姩浣?
+// IsClick 閺勵垰鎯佹稉铏瑰仯閸戣濮╂担?
 
 func (a *Action) IsClick() bool {
 	return a.ActionType == CLICK
 }
 
-// IsNop 鏄惁涓烘棤鎿嶄綔
+// IsNop 閺勵垰鎯佹稉鐑樻￥閹垮秳缍?
 func (a *Action) IsNop() bool {
 	return a.ActionType == NOP
 }
 
-// IsValid 鏄惁鏈夋晥
+// IsValid 閺勵垰鎯侀張澶嬫櫏
 func (a *Action) IsValid() bool {
 	return true
 }
 
-// ToOperate 杞崲涓烘搷浣?
+// ToOperate 鏉烆剚宕叉稉鐑樻惙娴?
 
-func (a *Action) ToOperate() *DeviceOperateWrapper {
-	opt := NewDeviceOperateWrapper()
+func (a *Action) ToOperate() *ActionCommand {
+	opt := NewActionCommand()
 	opt.Act = a.ActionType
 	opt.Aid = a.GetId()
 	if a.GetVisitedCount() <= 1 {
@@ -96,30 +96,30 @@ func (a *Action) ToOperate() *DeviceOperateWrapper {
 	return opt
 }
 
-// Hash 璁＄畻鍝堝笇鍊?
+// Hash 鐠侊紕鐣婚崫鍫濈瑖閸?
 
 func (a *Action) Hash() uintptr {
 	return a.Hashcode
 }
 
-// IsModelAct 鏄惁涓烘ā鍨嬪姩浣?
+// IsModelAct 閺勵垰鎯佹稉鐑樐侀崹瀣З娴?
 
 func (a *Action) IsModelAct() bool {
 	return a.ActionType >= BACK && a.ActionType <= SCROLL_BOTTOM_UP_N
 }
 
-// RequireTarget 鏄惁闇€瑕佺洰鏍?
+// RequireTarget 閺勵垰鎯侀棁鈧憰浣烘窗閺?
 
 func (a *Action) RequireTarget() bool {
 	return a.ActionType >= CLICK && a.ActionType <= SCROLL_BOTTOM_UP_N
 }
 
-// CanStartTestApp 鏄惁鍙互鍚姩娴嬭瘯搴旂敤
+// CanStartTestApp 閺勵垰鎯侀崣顖欎簰閸氼垰濮╁ù瀣槸鎼存梻鏁?
 func (a *Action) CanStartTestApp() bool {
 	return a.ActionType == START || a.ActionType == RESTART || a.ActionType == CLEAN_RESTART
 }
 
-// Equal 鍒ゆ柇鏄惁鐩哥瓑
+// Equal 閸掋倖鏌囬弰顖氭儊閻╁摜鐡?
 func (a *Action) Equal(other *Action) bool {
 	if other == nil {
 		return false
@@ -127,69 +127,69 @@ func (a *Action) Equal(other *Action) bool {
 	return a.ActionType == other.ActionType
 }
 
-// SetQValue 璁剧疆Q鍊?
+// SetQValue 鐠佸墽鐤哘閸?
 
 func (a *Action) SetQValue(value float64) {
 	a.QValue = value
 }
 
-// GetQValue 鑾峰彇Q鍊?
+// GetQValue 閼惧嘲褰嘠閸?
 
 func (a *Action) GetQValue() float64 {
 	return a.QValue
 }
 
-// GetId 鑾峰彇ID
+// GetId 閼惧嘲褰嘔D
 func (a *Action) GetId() string {
 	return "g0a" + a.Node.GetId()
 }
 
-// Visit 鏇存柊璁块棶璁℃暟
+// Visit 閺囧瓨鏌婄拋鍧楁６鐠佲剝鏆?
 func (a *Action) Visit(timestamp time.Time) {
 	atomic.AddInt32(&a.Node.VisitedCount, 1)
 
 }
 
-// String 杩斿洖瀛楃涓茶〃绀?
+// String 鏉╂柨娲栫€涙顑佹稉鑼躲€冪粈?
 
 func (a *Action) String() string {
 	return fmt.Sprintf("{id: %s, act: %s, value: %.2f}",
 		a.GetId(), a.ActionType.String(), a.QValue)
 }
 
-// 鍏ㄥ眬Action瀹炰緥
+// 閸忋劌鐪珹ction鐎圭偘绶?
 var (
 	NOPAction      = NewAction(NOP)
 	ACTIVATEAction = NewAction(ACTIVATE)
 	RESTARTAction  = NewAction(RESTART)
 )
 
-// getThrottle 鑾峰彇鑺傛祦鍊?
+// getThrottle 閼惧嘲褰囬懞鍌涚ウ閸?
 
 func getThrottle() int {
 	return 100
 }
 
-// StatefulAction 宓屽叆鍔ㄤ綔涓庢暣涓椿鍔ㄧ姸鎬併€佺洰鏍嘩idget鍜岃鎵ц鐨勫姩浣?
+// StatefulAction 瀹撳苯鍙嗛崝銊ょ稊娑撳孩鏆ｆ稉顏呮た閸斻劎濮搁幀浣碘偓浣烘窗閺嶅槱idget閸滃矁顩﹂幍褑顢戦惃鍕З娴?
 
 type StatefulAction struct {
 	Action
-	// 琛ㄧず鍔ㄤ綔鐨勮捣濮嬬姸鎬佽妭鐐癸紝鏋勫缓鐘舵€佽浆绉诲浘鐨勫叧閿繛鎺ョ偣
+	// 鐞涖劎銇氶崝銊ょ稊閻ㄥ嫯鎹ｆ慨瀣Ц閹浇濡悙鐧哥礉閺嬪嫬缂撻悩鑸碘偓浣芥祮缁夎娴橀惃鍕彠闁款喛绻涢幒銉у仯
 	State    *State
 	Target   IWidget
 	Hashcode uintptr
 }
 
-// NewStatefulAction 鍒涘缓鏂扮殑NewStatefulAction
+// NewStatefulAction 閸掓稑缂撻弬鎵畱NewStatefulAction
 func NewStatefulAction(state *State, targetWidget IWidget, actionType ActionType) *StatefulAction {
 	asa := &StatefulAction{
 		Action:   *NewAction(actionType),
 		State:    state,
 		Target:   targetWidget,
-		Hashcode: 0, // 鍒濆鍖栦负0锛屽皢鍦ㄤ笅闈㈣绠?
+		Hashcode: 0, // 閸掓繂顫愰崠鏍﹁礋0閿涘苯鐨㈤崷銊ょ瑓闂堛垼顓哥粻?
 	}
 
-	// 璁＄畻鍝堝笇鐮?
+	// 鐠侊紕鐣婚崫鍫濈瑖閻?
 	hashcode := tool.HashInt(int(asa.GetActionType()))
 	var stateHash uintptr
 	if asa.State != nil {
@@ -212,18 +212,18 @@ func NewStatefulAction(state *State, targetWidget IWidget, actionType ActionType
 	return asa
 }
 
-// GetState 鑾峰彇鐘舵€?
+// GetState 閼惧嘲褰囬悩鑸碘偓?
 
 func (asa *StatefulAction) GetState() *State {
 	return asa.State
 }
 
-// GetTarget 鑾峰彇鐩爣
+// GetTarget 閼惧嘲褰囬惄顔界垼
 func (asa *StatefulAction) GetTarget() IWidget {
 	return asa.Target
 }
 
-// GetEnabled 鑾峰彇鏄惁鍚敤
+// GetEnabled 閼惧嘲褰囬弰顖氭儊閸氼垳鏁?
 func (asa *StatefulAction) GetEnabled() bool {
 	if asa.Target == nil {
 		return true
@@ -231,7 +231,7 @@ func (asa *StatefulAction) GetEnabled() bool {
 	return asa.Target.GetEnabled()
 }
 
-// IsValid 鏄惁鏈夋晥
+// IsValid 閺勵垰鎯侀張澶嬫櫏
 func (asa *StatefulAction) IsValid() bool {
 	if asa.Target == nil {
 		return true
@@ -239,14 +239,14 @@ func (asa *StatefulAction) IsValid() bool {
 	return !asa.Target.GetBounds().IsEmpty()
 }
 
-// SetTarget 璁剧疆鐩爣
+// SetTarget 鐠佸墽鐤嗛惄顔界垼
 func (asa *StatefulAction) SetTarget(widget IWidget) {
 	asa.Target = widget
 }
 
-// ToOperate 杞崲涓烘搷浣?
+// ToOperate 鏉烆剚宕叉稉鐑樻惙娴?
 
-func (asa *StatefulAction) ToOperate() *DeviceOperateWrapper {
+func (asa *StatefulAction) ToOperate() *ActionCommand {
 	opt := asa.Action.ToOperate()
 	if asa.State != nil {
 		opt.Sid = asa.State.GetId()
@@ -259,7 +259,7 @@ func (asa *StatefulAction) ToOperate() *DeviceOperateWrapper {
 	return opt
 }
 
-// IsTargetEmpty 鐩爣鏄惁涓虹┖
+// IsTargetEmpty 閻╊喗鐖ｉ弰顖氭儊娑撹櫣鈹?
 func (asa *StatefulAction) IsTargetEmpty() bool {
 	if asa.Target == nil {
 		return true
@@ -268,7 +268,7 @@ func (asa *StatefulAction) IsTargetEmpty() bool {
 	return rect.IsEmpty()
 }
 
-// IsEmpty 鍒ゆ柇鏄惁涓虹┖
+// IsEmpty 閸掋倖鏌囬弰顖氭儊娑撹櫣鈹?
 func (asa *StatefulAction) IsEmpty() bool {
 	if asa.Target == nil {
 		return true
@@ -277,13 +277,13 @@ func (asa *StatefulAction) IsEmpty() bool {
 	return rect.IsEmpty()
 }
 
-// Hash 璁＄畻鍝堝笇鍊?
+// Hash 鐠侊紕鐣婚崫鍫濈瑖閸?
 
 func (asa *StatefulAction) Hash() uintptr {
 	return asa.Hashcode
 }
 
-// Equal 鍒ゆ柇鏄惁鐩哥瓑
+// Equal 閸掋倖鏌囬弰顖氭儊閻╁摜鐡?
 func (asa *StatefulAction) Equal(other *StatefulAction) bool {
 	if other == nil {
 		return false
@@ -291,12 +291,12 @@ func (asa *StatefulAction) Equal(other *StatefulAction) bool {
 	return asa.Hash() == other.Hash()
 }
 
-// Less 姣旇緝澶у皬
+// Less 濮ｆ棁绶濇径褍鐨?
 func (asa *StatefulAction) Less(other *StatefulAction) bool {
 	return asa.Hash() < other.Hash()
 }
 
-// String 杩斿洖瀛楃涓茶〃绀?
+// String 鏉╂柨娲栫€涙顑佹稉鑼躲€冪粈?
 
 func (asa *StatefulAction) String() string {
 	stateID := ""
@@ -313,7 +313,7 @@ func (asa *StatefulAction) String() string {
 		asa.Action.String(), stateID, targetStr)
 }
 
-// NetActionParam 缃戠粶鍔ㄤ綔鍙傛暟
+// NetActionParam 缂冩垹绮堕崝銊ょ稊閸欏倹鏆?
 type NetActionParam struct {
 	Throttle        int    `json:"throttle"`
 	NetActionTaskID int    `json:"net_action_taskid"`
@@ -323,13 +323,13 @@ type NetActionParam struct {
 	DeviceID        string `json:"device_id"`
 }
 
-// StatefulActionList PageNameStateAction鎸囬拡鍒囩墖
+// StatefulActionList PageNameStateAction閹稿洭鎷￠崚鍥╁
 type StatefulActionList []*StatefulAction
 
-// StatefulActionSet PageNameStateAction鎸囬拡闆嗗悎
+// StatefulActionSet PageNameStateAction閹稿洭鎷￠梿鍡楁値
 type StatefulActionSet map[uintptr]*StatefulAction
 
-// Add 娣诲姞鍒伴泦鍚?
+// Add 濞ｈ濮為崚浼存肠閸?
 
 func (s StatefulActionSet) Add(action *StatefulAction) {
 	if action != nil {
@@ -337,14 +337,14 @@ func (s StatefulActionSet) Add(action *StatefulAction) {
 	}
 }
 
-// Remove 浠庨泦鍚堜腑绉婚櫎
+// Remove 娴犲酣娉﹂崥鍫滆厬缁夊娅?
 func (s StatefulActionSet) Remove(action *StatefulAction) {
 	if action != nil {
 		delete(s, action.Hash())
 	}
 }
 
-// Contains 妫€鏌ユ槸鍚﹀寘鍚?
+// Contains 濡偓閺屻儲妲搁崥锕€瀵橀崥?
 
 func (s StatefulActionSet) Contains(action *StatefulAction) bool {
 	if action == nil {
@@ -354,7 +354,7 @@ func (s StatefulActionSet) Contains(action *StatefulAction) bool {
 	return exists
 }
 
-// ToSlice 杞崲涓哄垏鐗?
+// ToSlice 鏉烆剚宕叉稉鍝勫瀼閻?
 
 func (s StatefulActionSet) ToSlice() StatefulActionList {
 	result := make(StatefulActionList, 0, len(s))
@@ -364,14 +364,14 @@ func (s StatefulActionSet) ToSlice() StatefulActionList {
 	return result
 }
 
-// SortByPriority 鎸変紭鍏堢骇鎺掑簭
+// SortByPriority 閹稿绱崗鍫㈤獓閹烘帒绨?
 func (actions StatefulActionList) SortByPriority() {
 	sort.Slice(actions, func(i, j int) bool {
 		return actions[i].GetPriority() < actions[j].GetPriority()
 	})
 }
 
-// FilterByQValue 鎸塓鍊艰繃婊?
+// FilterByQValue 閹稿閸婅壈绻冨?
 
 func (actions StatefulActionList) FilterByQValue(minQValue float64) StatefulActionList {
 	result := make(StatefulActionList, 0)
@@ -383,7 +383,7 @@ func (actions StatefulActionList) FilterByQValue(minQValue float64) StatefulActi
 	return result
 }
 
-// GetMaxQValueAction 鑾峰彇鏈€澶鍊肩殑鍔ㄤ綔
+// GetMaxQValueAction 閼惧嘲褰囬張鈧径顪楅崐鑲╂畱閸斻劋缍?
 func (actions StatefulActionList) GetMaxQValueAction() *StatefulAction {
 	if len(actions) == 0 {
 		return nil
@@ -402,7 +402,7 @@ func (actions StatefulActionList) GetMaxQValueAction() *StatefulAction {
 	return maxAction
 }
 
-// GetRandomUnvisitedAction 鑾峰彇闅忔満鏈闂殑鍔ㄤ綔
+// GetRandomUnvisitedAction 閼惧嘲褰囬梾蹇旀簚閺堫亣顔栭梻顔炬畱閸斻劋缍?
 func (actions StatefulActionList) GetRandomUnvisitedAction() *StatefulAction {
 	unvisited := make(StatefulActionList, 0)
 	for _, action := range actions {

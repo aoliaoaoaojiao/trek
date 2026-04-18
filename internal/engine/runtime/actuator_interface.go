@@ -8,5 +8,5 @@ import (
 
 // Actuator 负责把执行计划编译成设备操作。
 type Actuator interface {
-	Compile(ctx context.Context, obs *decision.Observation, plan *decision.ExecutionPlan) (*types.DeviceOperateWrapper, error)
+	Compile(ctx context.Context, obs *decision.Observation, plan *decision.ExecutionPlan) (*types.ActionCommand, error)
 }

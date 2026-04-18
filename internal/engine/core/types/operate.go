@@ -5,8 +5,8 @@ import (
 	"fmt"
 )
 
-// DeviceOperateWrapper 设备操作包装器，用于将模型生成的操作转换为设备可理解的操作
-type DeviceOperateWrapper struct {
+// ActionCommand 是引擎输出给执行层的标准动作命令。
+type ActionCommand struct {
 	Act          ActionType `json:"act"`
 	Pos          Rect       `json:"pos"`
 	Sid          string     `json:"sid"`
@@ -24,9 +24,9 @@ type DeviceOperateWrapper struct {
 	JAction      string     `json:"j_action"`
 }
 
-// NewDeviceOperateWrapper 创建新的设备操作包装器
-func NewDeviceOperateWrapper() *DeviceOperateWrapper {
-	return &DeviceOperateWrapper{
+// NewActionCommand 创建新的动作命令。
+func NewActionCommand() *ActionCommand {
+	return &ActionCommand{
 		Act:          NOP,
 		Pos:          *NewRect(0, 0, 0, 0),
 		Sid:          "",
@@ -45,22 +45,22 @@ func NewDeviceOperateWrapper() *DeviceOperateWrapper {
 	}
 }
 
-// NewDeviceOperateWrapperFromJSON 从JSON创建设备操作包装器
-func NewDeviceOperateWrapperFromJSON(optJsonStr string) *DeviceOperateWrapper {
-	var wrapper DeviceOperateWrapper
-	if err := json.Unmarshal([]byte(optJsonStr), &wrapper); err != nil {
-		return NewDeviceOperateWrapper()
+// NewActionCommandFromJSON 从 JSON 创建动作命令。
+func NewActionCommandFromJSON(optJSONStr string) *ActionCommand {
+	var cmd ActionCommand
+	if err := json.Unmarshal([]byte(optJSONStr), &cmd); err != nil {
+		return NewActionCommand()
 	}
-	return &wrapper
+	return &cmd
 }
 
-// NewDeviceOperateWrapperCopy 复制设备操作包装器
-func NewDeviceOperateWrapperCopy(opt *DeviceOperateWrapper) *DeviceOperateWrapper {
+// NewActionCommandCopy 复制动作命令。
+func NewActionCommandCopy(opt *ActionCommand) *ActionCommand {
 	if opt == nil {
-		return NewDeviceOperateWrapper()
+		return NewActionCommand()
 	}
 
-	return &DeviceOperateWrapper{
+	return &ActionCommand{
 		Act:          opt.Act,
 		Pos:          opt.Pos,
 		Sid:          opt.Sid,
@@ -79,93 +79,82 @@ func NewDeviceOperateWrapperCopy(opt *DeviceOperateWrapper) *DeviceOperateWrappe
 	}
 }
 
-// SetText 设置文本
-func (dow *DeviceOperateWrapper) SetText(text string) string {
-	dow.Text = text
+func (cmd *ActionCommand) SetText(text string) string {
+	cmd.Text = text
 	return text
 }
 
-// GetText 获取文本
-func (dow *DeviceOperateWrapper) GetText() string {
-	return dow.Text
+func (cmd *ActionCommand) GetText() string {
+	return cmd.Text
 }
 
-// String 返回字符串表示
-func (dow *DeviceOperateWrapper) String() string {
-	return fmt.Sprintf("DeviceOperateWrapper{act:%s, pos:%s, sid:%s, aid:%s, throttle:%.2f, waitTime:%d, editable:%t, allowFuzzing:%t, clear:%t, adbInput:%t, name:%s, text:%s}",
-		dow.Act.String(), dow.Pos.String(), dow.Sid, dow.Aid, dow.Throttle, dow.WaitTime, dow.Editable, dow.AllowFuzzing, dow.Clear, dow.AdbInput, dow.Name, dow.Text)
+func (cmd *ActionCommand) String() string {
+	return fmt.Sprintf("ActionCommand{act:%s, pos:%s, sid:%s, aid:%s, throttle:%.2f, waitTime:%d, editable:%t, allowFuzzing:%t, clear:%t, adbInput:%t, name:%s, text:%s}",
+		cmd.Act.String(), cmd.Pos.String(), cmd.Sid, cmd.Aid, cmd.Throttle, cmd.WaitTime, cmd.Editable, cmd.AllowFuzzing, cmd.Clear, cmd.AdbInput, cmd.Name, cmd.Text)
 }
 
-// ToJSON 转换为JSON
-func (dow *DeviceOperateWrapper) ToJSON() string {
-	jsonBytes, err := json.Marshal(dow)
+func (cmd *ActionCommand) ToJSON() string {
+	jsonBytes, err := json.Marshal(cmd)
 	if err != nil {
 		return "{}"
 	}
 	return string(jsonBytes)
 }
 
-// FromJSON 从JSON加载
-func (dow *DeviceOperateWrapper) FromJSON(jsonStr string) error {
-	return json.Unmarshal([]byte(jsonStr), dow)
+func (cmd *ActionCommand) FromJSON(jsonStr string) error {
+	return json.Unmarshal([]byte(jsonStr), cmd)
 }
 
-// Equal 判断是否相等
-func (dow *DeviceOperateWrapper) Equal(other *DeviceOperateWrapper) bool {
+func (cmd *ActionCommand) Equal(other *ActionCommand) bool {
 	if other == nil {
 		return false
 	}
 
-	return dow.Act == other.Act &&
-		dow.Pos.Equal(&other.Pos) &&
-		dow.Sid == other.Sid &&
-		dow.Aid == other.Aid &&
-		dow.Throttle == other.Throttle &&
-		dow.WaitTime == other.WaitTime &&
-		dow.Editable == other.Editable &&
-		dow.AllowFuzzing == other.AllowFuzzing &&
-		dow.Clear == other.Clear &&
-		dow.AdbInput == other.AdbInput &&
-		dow.Name == other.Name &&
-		dow.Text == other.Text &&
-		dow.Extra0 == other.Extra0 &&
-		dow.JAction == other.JAction
+	return cmd.Act == other.Act &&
+		cmd.Pos.Equal(&other.Pos) &&
+		cmd.Sid == other.Sid &&
+		cmd.Aid == other.Aid &&
+		cmd.Throttle == other.Throttle &&
+		cmd.WaitTime == other.WaitTime &&
+		cmd.Editable == other.Editable &&
+		cmd.AllowFuzzing == other.AllowFuzzing &&
+		cmd.Clear == other.Clear &&
+		cmd.AdbInput == other.AdbInput &&
+		cmd.Name == other.Name &&
+		cmd.Text == other.Text &&
+		cmd.Extra0 == other.Extra0 &&
+		cmd.JAction == other.JAction
 }
 
-// Clone 克隆
-func (dow *DeviceOperateWrapper) Clone() *DeviceOperateWrapper {
-	return NewDeviceOperateWrapperCopy(dow)
+func (cmd *ActionCommand) Clone() *ActionCommand {
+	return NewActionCommandCopy(cmd)
 }
 
-// Reset 重置
-func (dow *DeviceOperateWrapper) Reset() {
-	dow.Act = NOP
-	dow.Pos = *NewRect(0, 0, 0, 0)
-	dow.Sid = ""
-	dow.Aid = ""
-	dow.Throttle = 0
-	dow.WaitTime = 0
-	dow.Editable = false
-	dow.AllowFuzzing = true
-	dow.Clear = false
-	dow.AdbInput = false
-	dow.Name = ""
-	dow.RawInput = false
-	dow.Text = ""
-	dow.Extra0 = ""
-	dow.JAction = ""
+func (cmd *ActionCommand) Reset() {
+	cmd.Act = NOP
+	cmd.Pos = *NewRect(0, 0, 0, 0)
+	cmd.Sid = ""
+	cmd.Aid = ""
+	cmd.Throttle = 0
+	cmd.WaitTime = 0
+	cmd.Editable = false
+	cmd.AllowFuzzing = true
+	cmd.Clear = false
+	cmd.AdbInput = false
+	cmd.Name = ""
+	cmd.RawInput = false
+	cmd.Text = ""
+	cmd.Extra0 = ""
+	cmd.JAction = ""
 }
 
-// IsValid 检查是否有效
-func (dow *DeviceOperateWrapper) IsValid() bool {
-	// 基本有效性检查
-	if dow.Act == NOP && dow.Text == "" {
+func (cmd *ActionCommand) IsValid() bool {
+	if cmd.Act == NOP && cmd.Text == "" {
 		return false
 	}
 
-	// 如果需要目标但位置为空，则无效
-	if dow.Act >= CLICK && dow.Act <= SCROLL_BOTTOM_UP_N {
-		if dow.Pos.IsEmpty() {
+	if cmd.Act >= CLICK && cmd.Act <= SCROLL_BOTTOM_UP_N {
+		if cmd.Pos.IsEmpty() {
 			return false
 		}
 	}
@@ -173,45 +162,39 @@ func (dow *DeviceOperateWrapper) IsValid() bool {
 	return true
 }
 
-// GetActionName 获取动作名称
-func (dow *DeviceOperateWrapper) GetActionName() string {
-	if name, exists := actName[dow.Act]; exists {
+func (cmd *ActionCommand) GetActionName() string {
+	if name, exists := actName[cmd.Act]; exists {
 		return name
 	}
 	return "UNKNOWN"
 }
 
-// IsTextInput 是否为文本输入
-func (dow *DeviceOperateWrapper) IsTextInput() bool {
-	return dow.Text != "" || dow.Editable
+func (cmd *ActionCommand) IsTextInput() bool {
+	return cmd.Text != "" || cmd.Editable
 }
 
-// IsScrollAction 是否为滚动动作
-func (dow *DeviceOperateWrapper) IsScrollAction() bool {
-	return dow.Act == SCROLL_TOP_DOWN ||
-		dow.Act == SCROLL_BOTTOM_UP ||
-		dow.Act == SCROLL_LEFT_RIGHT ||
-		dow.Act == SCROLL_RIGHT_LEFT ||
-		dow.Act == SCROLL_BOTTOM_UP_N
+func (cmd *ActionCommand) IsScrollAction() bool {
+	return cmd.Act == SCROLL_TOP_DOWN ||
+		cmd.Act == SCROLL_BOTTOM_UP ||
+		cmd.Act == SCROLL_LEFT_RIGHT ||
+		cmd.Act == SCROLL_RIGHT_LEFT ||
+		cmd.Act == SCROLL_BOTTOM_UP_N
 }
 
-// IsClickAction 是否为点击动作
-func (dow *DeviceOperateWrapper) IsClickAction() bool {
-	return dow.Act == CLICK || dow.Act == LONG_CLICK
+func (cmd *ActionCommand) IsClickAction() bool {
+	return cmd.Act == CLICK || cmd.Act == LONG_CLICK
 }
 
-// OperateNop 无操作实例
-var OperateNop = NewDeviceOperateWrapper()
+// ActionCommandNop 表示空动作命令。
+var ActionCommandNop = NewActionCommand()
 
-// OperateList 操作指针切片
-type OperateList []*DeviceOperateWrapper
+// OperateList 是动作命令列表。
+type OperateList []*ActionCommand
 
-// Add 添加操作
-func (ops OperateList) Add(op *DeviceOperateWrapper) OperateList {
+func (ops OperateList) Add(op *ActionCommand) OperateList {
 	return append(ops, op)
 }
 
-// Remove 移除操作
 func (ops OperateList) Remove(index int) OperateList {
 	if index < 0 || index >= len(ops) {
 		return ops
@@ -219,7 +202,6 @@ func (ops OperateList) Remove(index int) OperateList {
 	return append(ops[:index], ops[index+1:]...)
 }
 
-// FilterValid 过滤有效操作
 func (ops OperateList) FilterValid() OperateList {
 	result := make(OperateList, 0)
 	for _, op := range ops {
@@ -230,7 +212,6 @@ func (ops OperateList) FilterValid() OperateList {
 	return result
 }
 
-// FilterByActionType 按动作类型过滤
 func (ops OperateList) FilterByActionType(actionType ActionType) OperateList {
 	result := make(OperateList, 0)
 	for _, op := range ops {
@@ -241,7 +222,6 @@ func (ops OperateList) FilterByActionType(actionType ActionType) OperateList {
 	return result
 }
 
-// ToJSON 转换为JSON数组
 func (ops OperateList) ToJSON() string {
 	jsonBytes, err := json.Marshal(ops)
 	if err != nil {

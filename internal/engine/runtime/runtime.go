@@ -22,11 +22,11 @@ func GetAction(activity string, xmlDescOfGuiTree string) string {
 	return operate.ToJSON()
 }
 
-func GetActionOpt(activity string, xmlDescOfGuiTree string) *types2.DeviceOperateWrapper {
+func GetActionOpt(activity string, xmlDescOfGuiTree string) *types2.ActionCommand {
 	return GetActionOptWithInput(activity, xmlDescOfGuiTree, nil)
 }
 
-func GetActionOptWithInput(activity string, xmlDescOfGuiTree string, screenshot []byte) *types2.DeviceOperateWrapper {
+func GetActionOptWithInput(activity string, xmlDescOfGuiTree string, screenshot []byte) *types2.ActionCommand {
 	if defaultOrchestrator == nil {
 		defaultOrchestrator = newDefaultOrchestrator()
 	}

@@ -20,14 +20,14 @@ type Orchestrator struct {
 	actuator  Actuator
 }
 
-func (o *Orchestrator) NextAction(ctx context.Context, pageName string, xmlDescOfGuiTree string) *types.DeviceOperateWrapper {
+func (o *Orchestrator) NextAction(ctx context.Context, pageName string, xmlDescOfGuiTree string) *types.ActionCommand {
 	return o.NextActionWithInput(ctx, decision.PerceptionInput{
 		PageName: pageName,
 		XMLDesc:  xmlDescOfGuiTree,
 	})
 }
 
-func (o *Orchestrator) NextActionWithInput(ctx context.Context, input decision.PerceptionInput) *types.DeviceOperateWrapper {
+func (o *Orchestrator) NextActionWithInput(ctx context.Context, input decision.PerceptionInput) *types.ActionCommand {
 	if o == nil || o.perceptor == nil || o.policy == nil || o.planner == nil || o.actuator == nil {
 		return nil
 	}
@@ -114,7 +114,7 @@ func (p *firstCandidatePlanner) Select(ctx context.Context, obs *decision.Observ
 
 type passthroughActuator struct{}
 
-func (a *passthroughActuator) Compile(ctx context.Context, obs *decision.Observation, plan *decision.ExecutionPlan) (*types.DeviceOperateWrapper, error) {
+func (a *passthroughActuator) Compile(ctx context.Context, obs *decision.Observation, plan *decision.ExecutionPlan) (*types.ActionCommand, error) {
 	_ = ctx
 	_ = obs
 	if plan == nil || plan.Operate == nil {

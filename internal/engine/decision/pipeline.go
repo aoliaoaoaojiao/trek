@@ -19,12 +19,12 @@ type Observation struct {
 
 // CandidateAction 表示策略层给出的候选动作。
 type CandidateAction struct {
-	Operate *types.DeviceOperateWrapper
+	Operate *types.ActionCommand
 	Source  string
 }
 
 // ExecutionPlan 表示规划层输出的执行计划。
 type ExecutionPlan struct {
-	Operate  *types.DeviceOperateWrapper
+	Operate  *types.ActionCommand
 	Strategy string
 }

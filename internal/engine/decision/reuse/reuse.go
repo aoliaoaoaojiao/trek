@@ -1,4 +1,4 @@
-// Package reuse 瀹炵幇閲嶇敤鐩稿叧鐨勫姛鑳斤紝鍖呮嫭RichWidget銆丄ctivityNameAction鍜孯euseState
+﻿// Package reuse 提供 reuse 策略子域对外复用的公共符号与兼容导出。
 package reuse
 
 import (
@@ -6,7 +6,7 @@ import (
 	"trek/internal/engine/core/types"
 )
 
-// 瀵煎嚭desc鍖呬腑鐨勫搱甯岃绠楀伐鍏峰嚱鏁?
+// 兼容导出：复用 core 中常用哈希与控件组合工具，降低迁移改动范围。
 var (
 	HashString         = tool.HashString
 	HashInt            = tool.HashInt

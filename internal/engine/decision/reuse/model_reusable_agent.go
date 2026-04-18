@@ -80,7 +80,7 @@ var createReuseAgent = func(m *model.Model, deviceType types.DeviceType) (types.
 
 	reuseAgent.LoadReuseModel()
 
-	// 閸氼垰濮╃€规碍妞傛穱婵嗙摠濡€崇€烽惃鍒routine
+	// 启动定时自动保存协程，避免长时间运行时模型状态丢失。
 	go func() {
 		ticker := time.NewTicker(10 * time.Minute) // 濮?0閸掑棝鎸撴穱婵嗙摠娑撯偓濞?
 		defer ticker.Stop()

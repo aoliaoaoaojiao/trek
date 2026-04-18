@@ -44,6 +44,7 @@ type PageNameResolver func(xml string) string
 // Config 是 Smart Monkey Runner 配置。
 type Config struct {
 	PackageName            string
+	AutoStartOnRun         *bool
 	MaxSteps               int
 	MaxDuration            time.Duration
 	StepInterval           time.Duration
@@ -115,6 +116,12 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	pageSource := r.driver.GetPageSource(r.cfg.PageSourceType)
 	if pageSource == nil {
 		return nil, fmt.Errorf("页面源不可用: %s", r.cfg.PageSourceType)
+	}
+
+	if pkg := strings.TrimSpace(r.cfg.PackageName); pkg != "" && isAutoStartOnRunEnabled(r.cfg) {
+		if err := r.driver.StartApp(pkg); err != nil {
+			return nil, fmt.Errorf("启动被测应用失败: %w", err)
+		}
 	}
 
 	_ = r.driver.ClearLogcat()
@@ -403,6 +410,13 @@ func pointByRatio(rect types.Rect, rx, ry float64) types.Point {
 		X: rect.Left + (rect.Right-rect.Left)*rx,
 		Y: rect.Top + (rect.Bottom-rect.Top)*ry,
 	}
+}
+
+func isAutoStartOnRunEnabled(cfg Config) bool {
+	if cfg.AutoStartOnRun == nil {
+		return true
+	}
+	return *cfg.AutoStartOnRun
 }
 
 func (r *Runner) detectCrashBySystem() bool {

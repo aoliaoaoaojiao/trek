@@ -32,6 +32,7 @@ func (f *fakePageSource) Close() error                    { return nil }
 type fakeDriver struct {
 	pageSource common.IPageSource
 	clickCount int
+	startCount int
 	crash      bool
 	anr        bool
 	clearCnt   int
@@ -64,7 +65,7 @@ func (f *fakeDriver) GetInfo() map[string]interface{} {
 	return map[string]interface{}{"device": "fake"}
 }
 func (f *fakeDriver) Back() error                                     { return nil }
-func (f *fakeDriver) StartApp(packageName string) error               { return nil }
+func (f *fakeDriver) StartApp(packageName string) error               { f.startCount++; return nil }
 func (f *fakeDriver) RestartApp(packageName string, clean bool) error { return nil }
 func (f *fakeDriver) ActivateApp(packageName string) error            { return nil }
 func (f *fakeDriver) InputText(text string, clear bool) error         { return nil }
@@ -76,23 +77,10 @@ func (f *fakeDriver) ClearLogcat() error {
 }
 
 func TestRunnerRunCompleted(t *testing.T) {
-	decider := &fakeDecider{
-		commands: []*types.ActionCommand{
-			{
-				Act: types.CLICK,
-				Pos: *types.NewRect(0, 0, 100, 100),
-			},
-		},
-	}
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
 	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}
 
-	runner, err := NewRunner(decider, driver, Config{
-		MaxSteps:        3,
-		StepInterval:    0,
-		KeepStepRecords: true,
-		StopOnCrash:     true,
-		StopOnANR:       true,
-	})
+	runner, err := NewRunner(decider, driver, Config{MaxSteps: 3, StepInterval: 0, KeepStepRecords: true, StopOnCrash: true, StopOnANR: true})
 	if err != nil {
 		t.Fatalf("创建 runner 失败: %v", err)
 	}
@@ -113,26 +101,10 @@ func TestRunnerRunCompleted(t *testing.T) {
 }
 
 func TestRunnerDetectCrash(t *testing.T) {
-	decider := &fakeDecider{
-		commands: []*types.ActionCommand{
-			{
-				Act: types.CLICK,
-				Pos: *types.NewRect(0, 0, 100, 100),
-			},
-		},
-	}
-	driver := &fakeDriver{
-		pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`},
-		crash:      true,
-	}
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
+	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}, crash: true}
 
-	runner, err := NewRunner(decider, driver, Config{
-		MaxSteps:        5,
-		StepInterval:    0,
-		KeepStepRecords: true,
-		StopOnCrash:     true,
-		StopOnANR:       true,
-	})
+	runner, err := NewRunner(decider, driver, Config{MaxSteps: 5, StepInterval: 0, KeepStepRecords: true, StopOnCrash: true, StopOnANR: true})
 	if err != nil {
 		t.Fatalf("创建 runner 失败: %v", err)
 	}
@@ -147,26 +119,10 @@ func TestRunnerDetectCrash(t *testing.T) {
 }
 
 func TestRunnerDetectCrashBySystemSignal(t *testing.T) {
-	decider := &fakeDecider{
-		commands: []*types.ActionCommand{
-			{
-				Act: types.CLICK,
-				Pos: *types.NewRect(0, 0, 100, 100),
-			},
-		},
-	}
-	driver := &fakeDriver{
-		pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`},
-		crash:      true,
-	}
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
+	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}, crash: true}
 
-	runner, err := NewRunner(decider, driver, Config{
-		MaxSteps:        5,
-		StepInterval:    0,
-		KeepStepRecords: true,
-		StopOnCrash:     true,
-		StopOnANR:       true,
-	})
+	runner, err := NewRunner(decider, driver, Config{MaxSteps: 5, StepInterval: 0, KeepStepRecords: true, StopOnCrash: true, StopOnANR: true})
 	if err != nil {
 		t.Fatalf("创建 runner 失败: %v", err)
 	}
@@ -180,5 +136,63 @@ func TestRunnerDetectCrashBySystemSignal(t *testing.T) {
 	}
 	if driver.clearCnt == 0 {
 		t.Fatalf("预期启动前清理 logcat")
+	}
+}
+
+func TestRunnerAutoStartOnRunDefaultEnabled(t *testing.T) {
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
+	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}
+
+	runner, err := NewRunner(decider, driver, Config{
+		PackageName:     "com.example.app",
+		MaxSteps:        1,
+		StepInterval:    0,
+		KeepStepRecords: true,
+		StopOnCrash:     true,
+		StopOnANR:       true,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if driver.startCount != 1 {
+		t.Fatalf("默认应自动启动一次应用，实际: %d", driver.startCount)
+	}
+}
+
+func TestRunnerAutoStartOnRunDisabled(t *testing.T) {
+	disabled := false
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
+	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}
+
+	runner, err := NewRunner(decider, driver, Config{
+		PackageName:     "com.example.app",
+		AutoStartOnRun:  &disabled,
+		MaxSteps:        1,
+		StepInterval:    0,
+		KeepStepRecords: true,
+		StopOnCrash:     true,
+		StopOnANR:       true,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if driver.startCount != 0 {
+		t.Fatalf("关闭自动启动后不应启动应用，实际: %d", driver.startCount)
 	}
 }

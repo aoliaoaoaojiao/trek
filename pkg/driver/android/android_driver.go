@@ -449,6 +449,56 @@ func (a *AndroidDriver) GetInfo() map[string]interface{} {
 	return info
 }
 
+// CheckEnvironment 在运行前检测 ADB 与页面源（UIA）环境是否就绪。
+func (a *AndroidDriver) CheckEnvironment(pageSourceType string) (*common.EnvironmentCheckResult, error) {
+	result := &common.EnvironmentCheckResult{
+		PageSourceType: pageSourceType,
+		DeviceName:     a.Name(),
+	}
+
+	if err := utils.EnsureADBServer(); err != nil {
+		result.Detail = "adb 环境不可用"
+		return result, fmt.Errorf("adb 环境不可用: %w", err)
+	}
+	result.ADBReady = true
+	if a.device == nil {
+		result.Detail = "device is nil"
+		return result, fmt.Errorf("device is nil")
+	}
+	if strings.TrimSpace(a.device.Serial()) == "" {
+		result.Detail = "device serial is empty"
+		return result, fmt.Errorf("device serial is empty")
+	}
+	if _, err := a.device.RunShellCommand("echo", "ok"); err != nil {
+		result.Detail = "adb shell 不可用"
+		return result, fmt.Errorf("adb shell 不可用: %w", err)
+	}
+	result.DeviceReady = true
+
+	if a.GetPageSource(pageSourceType) == nil {
+		result.Detail = "页面源不可用"
+		return result, fmt.Errorf("页面源不可用: %s", pageSourceType)
+	}
+	result.PageSourceReady = true
+
+	if PageType(pageSourceType) == PageTypeUIA {
+		if a.uiaClient == nil {
+			result.Detail = "uia client is nil"
+			return result, fmt.Errorf("uia client is nil")
+		}
+		if err := a.uiaClient.CheckSessionId(); err != nil {
+			result.Detail = "uia 会话不可用"
+			return result, fmt.Errorf("uia 会话不可用: %w", err)
+		}
+		result.UIAReady = true
+	} else {
+		result.UIAReady = true
+	}
+
+	result.Detail = "ok"
+	return result, nil
+}
+
 func (a *AndroidDriver) initPoco() error {
 	a.frowardPocoPort = common.GetRandomPort()
 	logger.Infof("Starting Poco port forwarding, localPort=%d remotePort=%d", a.frowardPocoPort, a.pocoPort)

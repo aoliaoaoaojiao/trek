@@ -73,8 +73,19 @@ type IHealthCheck interface {
 	ClearLogcat() error
 }
 
+// EnvironmentCheckResult 是运行前环境检测结果。
+type EnvironmentCheckResult struct {
+	ADBReady        bool
+	DeviceReady     bool
+	PageSourceReady bool
+	UIAReady        bool
+	PageSourceType  string
+	DeviceName      string
+	Detail          string
+}
+
 // IDriver 定义统一设备驱动接口。
-// 该接口现在强制要求驱动实现应用控制、输入与健康检测能力。
+// 该接口强制要求驱动实现应用控制、输入与健康检测能力。
 type IDriver interface {
 	ITouch
 	IScreenCapture
@@ -85,4 +96,5 @@ type IDriver interface {
 	GetPageSource(pageSourceType string) IPageSource
 	Name() string
 	GetInfo() map[string]interface{}
+	CheckEnvironment(pageSourceType string) (*EnvironmentCheckResult, error)
 }

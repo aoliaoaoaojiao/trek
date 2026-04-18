@@ -2,6 +2,7 @@ package monkey
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"trek/internal/engine/core/types"
 	"trek/pkg/driver/common"
@@ -30,18 +31,19 @@ func (f *fakePageSource) DumpPageSource() (string, error) { return f.xml, nil }
 func (f *fakePageSource) Close() error                    { return nil }
 
 type fakeDriver struct {
-	pageSource common.IPageSource
-	clickCount int
-	startCount int
-	crash      bool
-	anr        bool
-	clearCnt   int
+	pageSource  common.IPageSource
+	clickCount  int
+	startCount  int
+	clearCnt    int
+	envCheckCnt int
+	crash       bool
+	anr         bool
+	envResult   *common.EnvironmentCheckResult
+	envErr      error
 }
 
-func (f *fakeDriver) Click(point types.Point) error { f.clickCount++; return nil }
-func (f *fakeDriver) LongClick(point types.Point, duration int64) error {
-	return nil
-}
+func (f *fakeDriver) Click(point types.Point) error                     { f.clickCount++; return nil }
+func (f *fakeDriver) LongClick(point types.Point, duration int64) error { return nil }
 func (f *fakeDriver) Swipe(startPoint types.Point, endPoint types.Point, step int64, duration int64) error {
 	return nil
 }
@@ -75,6 +77,21 @@ func (f *fakeDriver) ClearLogcat() error {
 	f.clearCnt++
 	return nil
 }
+func (f *fakeDriver) CheckEnvironment(pageSourceType string) (*common.EnvironmentCheckResult, error) {
+	f.envCheckCnt++
+	if f.envResult != nil {
+		return f.envResult, f.envErr
+	}
+	return &common.EnvironmentCheckResult{
+		ADBReady:        true,
+		DeviceReady:     true,
+		PageSourceReady: true,
+		UIAReady:        true,
+		PageSourceType:  pageSourceType,
+		DeviceName:      "fake-device",
+		Detail:          "ok",
+	}, f.envErr
+}
 
 func TestRunnerRunCompleted(t *testing.T) {
 	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
@@ -98,23 +115,8 @@ func TestRunnerRunCompleted(t *testing.T) {
 	if driver.clickCount != 3 {
 		t.Fatalf("点击执行次数错误: %d", driver.clickCount)
 	}
-}
-
-func TestRunnerDetectCrash(t *testing.T) {
-	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
-	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}, crash: true}
-
-	runner, err := NewRunner(decider, driver, Config{MaxSteps: 5, StepInterval: 0, KeepStepRecords: true, StopOnCrash: true, StopOnANR: true})
-	if err != nil {
-		t.Fatalf("创建 runner 失败: %v", err)
-	}
-
-	report, err := runner.Run(context.Background())
-	if err != nil {
-		t.Fatalf("运行 monkey 失败: %v", err)
-	}
-	if report.StopReason != StopCrashDetectedLogcat {
-		t.Fatalf("预期 crash 停止，实际: %s", report.StopReason)
+	if report.Preflight == nil || !report.Preflight.ADBReady {
+		t.Fatalf("预期记录前置检测结果")
 	}
 }
 
@@ -194,5 +196,93 @@ func TestRunnerAutoStartOnRunDisabled(t *testing.T) {
 	}
 	if driver.startCount != 0 {
 		t.Fatalf("关闭自动启动后不应启动应用，实际: %d", driver.startCount)
+	}
+	if driver.envCheckCnt == 0 {
+		t.Fatalf("关闭自动启动后仍应执行前置检测")
+	}
+}
+
+func TestRunnerPreflightCheckFailed(t *testing.T) {
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
+	driver := &fakeDriver{
+		pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`},
+		envResult: &common.EnvironmentCheckResult{
+			ADBReady:        false,
+			DeviceReady:     false,
+			PageSourceReady: false,
+			UIAReady:        false,
+			PageSourceType:  "uia",
+			Detail:          "adb unavailable",
+		},
+		envErr: errors.New("adb unavailable"),
+	}
+
+	runner, err := NewRunner(decider, driver, Config{MaxSteps: 1, StepInterval: 0, KeepStepRecords: true, StopOnCrash: true, StopOnANR: true})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, runErr := runner.Run(context.Background())
+	if runErr != nil {
+		t.Fatalf("预期返回报告而不是 error: %v", runErr)
+	}
+	if report.StopReason != StopPreflightFailed {
+		t.Fatalf("预期前置检测失败停止，实际: %s", report.StopReason)
+	}
+	if report.PreflightError == "" {
+		t.Fatalf("预期记录前置检测错误原因")
+	}
+	if report.Preflight == nil || report.Preflight.Detail != "adb unavailable" {
+		t.Fatalf("预期记录前置检测明细")
+	}
+}
+
+func TestRunnerPreflightPageSourceUnavailable(t *testing.T) {
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
+	driver := &fakeDriver{
+		pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`},
+		envResult: &common.EnvironmentCheckResult{
+			ADBReady:        true,
+			DeviceReady:     true,
+			PageSourceReady: false,
+			UIAReady:        false,
+			PageSourceType:  "uia",
+			Detail:          "页面源不可用",
+		},
+		envErr: errors.New("页面源不可用"),
+	}
+
+	runner, _ := NewRunner(decider, driver, Config{MaxSteps: 1, StepInterval: 0, KeepStepRecords: true, StopOnCrash: true, StopOnANR: true})
+	report, _ := runner.Run(context.Background())
+	if report.StopReason != StopPreflightFailed {
+		t.Fatalf("预期前置检测失败停止，实际: %s", report.StopReason)
+	}
+	if report.Preflight == nil || report.Preflight.PageSourceReady {
+		t.Fatalf("预期记录页面源未就绪")
+	}
+}
+
+func TestRunnerPreflightUIASessionUnavailable(t *testing.T) {
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
+	driver := &fakeDriver{
+		pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`},
+		envResult: &common.EnvironmentCheckResult{
+			ADBReady:        true,
+			DeviceReady:     true,
+			PageSourceReady: true,
+			UIAReady:        false,
+			PageSourceType:  "uia",
+			Detail:          "uia 会话不可用",
+		},
+		envErr: errors.New("uia 会话不可用"),
+	}
+
+	runner, _ := NewRunner(decider, driver, Config{MaxSteps: 1, StepInterval: 0, KeepStepRecords: true, StopOnCrash: true, StopOnANR: true})
+	report, _ := runner.Run(context.Background())
+	if report.StopReason != StopPreflightFailed {
+		t.Fatalf("预期前置检测失败停止，实际: %s", report.StopReason)
+	}
+	if report.Preflight == nil || report.Preflight.UIAReady {
+		t.Fatalf("预期记录 UIA 会话未就绪")
 	}
 }

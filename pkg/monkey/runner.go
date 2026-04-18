@@ -29,6 +29,7 @@ const (
 	StopCompleted              StopReason = "completed"
 	StopContextCanceled        StopReason = "context_canceled"
 	StopTimeout                StopReason = "timeout"
+	StopPreflightFailed        StopReason = "preflight_failed"
 	StopMaxConsecutiveFailures StopReason = "max_consecutive_failures"
 	StopCrashDetectedLogcat    StopReason = "crash_logcat"
 	StopANRDetectedLogcat      StopReason = "anr_logcat"
@@ -76,6 +77,8 @@ type Report struct {
 	FinishedAt          time.Time
 	DurationMs          int64
 	StopReason          StopReason
+	Preflight           *common.EnvironmentCheckResult
+	PreflightError      string
 	StepsPlanned        int
 	StepsTotal          int
 	StepsSucceeded      int
@@ -113,6 +116,25 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 
 // Run 启动闭环执行，返回运行报告。
 func (r *Runner) Run(ctx context.Context) (*Report, error) {
+	report := &Report{
+		StartedAt:      time.Now(),
+		StepsPlanned:   r.cfg.MaxSteps,
+		ActionCount:    make(map[string]int),
+		PageVisitCount: make(map[string]int),
+	}
+	defer func() {
+		report.FinishedAt = time.Now()
+		report.DurationMs = report.FinishedAt.Sub(report.StartedAt).Milliseconds()
+	}()
+
+	checkResult, err := r.driver.CheckEnvironment(r.cfg.PageSourceType)
+	report.Preflight = checkResult
+	if err != nil {
+		report.StopReason = StopPreflightFailed
+		report.PreflightError = err.Error()
+		return report, nil
+	}
+
 	pageSource := r.driver.GetPageSource(r.cfg.PageSourceType)
 	if pageSource == nil {
 		return nil, fmt.Errorf("页面源不可用: %s", r.cfg.PageSourceType)
@@ -125,18 +147,6 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	}
 
 	_ = r.driver.ClearLogcat()
-
-	report := &Report{
-		StartedAt:      time.Now(),
-		StepsPlanned:   r.cfg.MaxSteps,
-		ActionCount:    make(map[string]int),
-		PageVisitCount: make(map[string]int),
-	}
-	defer func() {
-		report.FinishedAt = time.Now()
-		report.DurationMs = report.FinishedAt.Sub(report.StartedAt).Milliseconds()
-	}()
-
 	deadline := report.StartedAt.Add(r.cfg.MaxDuration)
 
 	for step := 1; step <= r.cfg.MaxSteps; step++ {
@@ -229,7 +239,6 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		report.StepsSucceeded++
 		report.ConsecutiveFailures = 0
 		r.appendRecord(report, record, stepStart)
-
 		r.sleepStep(ctx)
 	}
 

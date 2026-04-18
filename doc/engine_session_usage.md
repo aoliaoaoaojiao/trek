@@ -1,6 +1,6 @@
 ﻿# 单线程引擎入口使用说明
 
-`pkg/engine` 提供面向调用方的稳定会话入口，适合单线程工具直接接入。
+`pkg/session` 提供面向调用方的稳定会话入口，适合单线程工具直接接入。
 
 ## 基础用法（XML 输入）
 
@@ -106,3 +106,4 @@ _ = currentMode
 - 当只提供定位条件且未显式指定 `action` 时，默认按 `CLICK` 处理。
 - `CheckPointInBlackRects` 会复用已加载配置中的 `black_rects`。
 - 当前分支中 `LoadResourceMapping` 的完整解析能力仍在建设中，配置字段是否生效需结合当前实现确认。
+

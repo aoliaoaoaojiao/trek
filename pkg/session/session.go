@@ -1,4 +1,4 @@
-package engine
+package session
 
 import (
 	"fmt"
@@ -7,25 +7,25 @@ import (
 	engineruntime "trek/internal/engine/runtime"
 )
 
-// Config 描述一次单线程引擎会话的初始化参数。
+// Config 描述一次单线程会话初始化参数。
 type Config struct {
 	PackageName string
 	Algorithm   types.AlgorithmType
 	DeviceType  types.DeviceType
 }
 
-// ActionInput 描述 NextAction 的扩展输入，支持 XML 与截图双通道。
+// ActionInput 描述下一步决策输入，支持 XML 与截图双通道。
 type ActionInput struct {
 	XMLDescOfGuiTree string
 	Screenshot       []byte
 }
 
-// Session 为调用方提供稳定的单线程入口，屏蔽内部全局模型细节。
+// Session 是对外稳定会话入口，屏蔽内部全局模型细节。
 type Session struct {
 	config Config
 }
 
-// NewSession 创建新的单线程引擎会话。
+// NewSession 创建新会话并初始化默认配置。
 func NewSession(config Config) *Session {
 	if config.Algorithm == 0 {
 		config.Algorithm = types.Reuse
@@ -39,7 +39,7 @@ func NewSession(config Config) *Session {
 	return session
 }
 
-// Reset 重置内部模型并重新初始化 agent，适合新任务开始前调用。
+// Reset 重置内部模型并重新初始化 agent。
 func (s *Session) Reset() {
 	engineruntime.ResetModel()
 	engineruntime.InitAgent(s.config.Algorithm, s.config.PackageName, s.config.DeviceType)
@@ -59,12 +59,11 @@ func (s *Session) LoadConfigFile(path string) error {
 }
 
 // Deprecated: 请使用 LoadConfigFile。
-// LoadPreferenceFile 兼容旧命名。
 func (s *Session) LoadPreferenceFile(path string) error {
 	return s.LoadConfigFile(path)
 }
 
-// NextActionJSON 根据页面名称和 Android XML 计算下一步操作 JSON（兼容接口）。
+// NextActionJSON 返回 JSON 形式的下一步动作（兼容接口）。
 func (s *Session) NextActionJSON(pageName string, xmlDescOfGuiTree string) (string, error) {
 	operate, err := s.NextAction(pageName, xmlDescOfGuiTree)
 	if err != nil {
@@ -73,7 +72,7 @@ func (s *Session) NextActionJSON(pageName string, xmlDescOfGuiTree string) (stri
 	return operate.ToJSON(), nil
 }
 
-// NextActionJSONWithInput 根据扩展输入计算下一步操作 JSON。
+// NextActionJSONWithInput 返回 JSON 形式的下一步动作。
 func (s *Session) NextActionJSONWithInput(pageName string, input ActionInput) (string, error) {
 	operate, err := s.NextActionWithInput(pageName, input)
 	if err != nil {
@@ -82,12 +81,12 @@ func (s *Session) NextActionJSONWithInput(pageName string, input ActionInput) (s
 	return operate.ToJSON(), nil
 }
 
-// NextAction 返回结构化的下一步操作（主路径）。
+// NextAction 返回结构化下一步动作（主路径）。
 func (s *Session) NextAction(pageName string, xmlDescOfGuiTree string) (*types.ActionCommand, error) {
 	return s.NextActionWithInput(pageName, ActionInput{XMLDescOfGuiTree: xmlDescOfGuiTree})
 }
 
-// NextActionWithInput 基于 XML/截图扩展输入返回下一步操作。
+// NextActionWithInput 基于 XML/截图输入返回下一步动作。
 func (s *Session) NextActionWithInput(pageName string, input ActionInput) (*types.ActionCommand, error) {
 	if strings.TrimSpace(pageName) == "" {
 		return nil, fmt.Errorf("pageName 不能为空")
@@ -113,12 +112,12 @@ func (s *Session) GetObservationMode() string {
 	return engineruntime.GetObservationMode()
 }
 
-// CheckPointInBlackRects 判断点位是否落在黑名单矩形内。
+// CheckPointInBlackRects 判断坐标点是否在黑名单区域内。
 func (s *Session) CheckPointInBlackRects(pageName string, point types.Point) bool {
 	return engineruntime.CheckPointIsInBlackRects(pageName, float32(point.X), float32(point.Y))
 }
 
-// NativeVersion 返回当前原生引擎版本。
+// NativeVersion 返回当前引擎原生版本。
 func (s *Session) NativeVersion() string {
 	return engineruntime.GetNativeVersion()
 }

@@ -14,11 +14,24 @@ type StaticConfig struct {
 	ResMapping map[string]string
 	BlackRects map[string][][4]int
 	SkipAll    bool
+	PageSource string
+	TouchMode  string
+	UIA        StaticUIAConfig
+	Poco       StaticPocoConfig
 	Log        StaticLogConfig
 }
 
 type StaticLogConfig struct {
 	FileLevel string
+}
+
+type StaticUIAConfig struct {
+	ServerPort int
+}
+
+type StaticPocoConfig struct {
+	Engine string
+	Port   int
 }
 
 func LoadStaticConfigFile(path string) (StaticConfig, error) {
@@ -85,6 +98,48 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 
 	if skipValue := obj.Get("skip_all_actions_from_model"); !isEmptyJSValue(skipValue) {
 		cfg.SkipAll = skipValue.ToBoolean()
+	}
+	if pageSourceValue := obj.Get("page_source"); !isEmptyJSValue(pageSourceValue) {
+		cfg.PageSource = strings.TrimSpace(pageSourceValue.String())
+	}
+	if pageSourceValue := obj.Get("pageSource"); cfg.PageSource == "" && !isEmptyJSValue(pageSourceValue) {
+		cfg.PageSource = strings.TrimSpace(pageSourceValue.String())
+	}
+	if touchModeValue := obj.Get("touch_mode"); !isEmptyJSValue(touchModeValue) {
+		cfg.TouchMode = strings.TrimSpace(touchModeValue.String())
+	}
+	if touchModeValue := obj.Get("touchMode"); cfg.TouchMode == "" && !isEmptyJSValue(touchModeValue) {
+		cfg.TouchMode = strings.TrimSpace(touchModeValue.String())
+	}
+	if uiaValue := obj.Get("uia"); !isEmptyJSValue(uiaValue) {
+		uiaObj := uiaValue.ToObject(vm)
+		if serverPortValue := uiaObj.Get("server_port"); !isEmptyJSValue(serverPortValue) {
+			serverPort, err := intFromJSValue(serverPortValue)
+			if err != nil {
+				return cfg, fmt.Errorf("uia.server_port 非法: %w", err)
+			}
+			cfg.UIA.ServerPort = serverPort
+		}
+		if serverPortValue := uiaObj.Get("serverPort"); cfg.UIA.ServerPort == 0 && !isEmptyJSValue(serverPortValue) {
+			serverPort, err := intFromJSValue(serverPortValue)
+			if err != nil {
+				return cfg, fmt.Errorf("uia.serverPort 非法: %w", err)
+			}
+			cfg.UIA.ServerPort = serverPort
+		}
+	}
+	if pocoValue := obj.Get("poco"); !isEmptyJSValue(pocoValue) {
+		pocoObj := pocoValue.ToObject(vm)
+		if engineValue := pocoObj.Get("engine"); !isEmptyJSValue(engineValue) {
+			cfg.Poco.Engine = strings.TrimSpace(engineValue.String())
+		}
+		if portValue := pocoObj.Get("port"); !isEmptyJSValue(portValue) {
+			port, err := intFromJSValue(portValue)
+			if err != nil {
+				return cfg, fmt.Errorf("poco.port 非法: %w", err)
+			}
+			cfg.Poco.Port = port
+		}
 	}
 	if logValue := obj.Get("log"); !isEmptyJSValue(logValue) {
 		logObj := logValue.ToObject(vm)

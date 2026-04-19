@@ -58,6 +58,7 @@ type AndroidDriver struct {
 	uiaClient     *uia.UiaClient
 	uiaServerConn net.Conn
 	uiaPort       int
+	uiaServerPort int
 	isUIATouch    bool
 
 	pocoPort        int
@@ -72,6 +73,14 @@ func WithPoco(engine poco.Engine, pocoPort int) AndroidDriverOption {
 		if pocoPort > 0 && engine != "" {
 			d.pocoEngine = engine
 			d.pocoPort = pocoPort
+		}
+	}
+}
+
+func WithUIAServerPort(port int) AndroidDriverOption {
+	return func(d *AndroidDriver) {
+		if port > 0 {
+			d.uiaServerPort = port
 		}
 	}
 }
@@ -111,18 +120,19 @@ func NewAndroidDriverWith(deviceSerial string, opts ...AndroidDriverOption) (*An
 		touch:         touch.NewADBTouch(device),
 		screenCapture: screen.NewScreenCapture(device),
 		pageSources:   make(map[PageType]common.IPageSource),
+		uiaServerPort: uiaServerPort,
 	}
+
+	for _, opt := range opts {
+		opt(androidDriver)
+	}
+	logger.Infof("Driver options applied, isUIATouch=%t pocoPort=%d pocoEngine=%s", androidDriver.isUIATouch, androidDriver.pocoPort, androidDriver.pocoEngine)
 
 	err = androidDriver.initUIA()
 	if err != nil {
 		return nil, err
 	}
 	logger.Infof("UIA initialization completed, serial=%s", device.Serial())
-
-	for _, opt := range opts {
-		opt(androidDriver)
-	}
-	logger.Infof("Driver options applied, isUIATouch=%t pocoPort=%d pocoEngine=%s", androidDriver.isUIATouch, androidDriver.pocoPort, androidDriver.pocoEngine)
 
 	if androidDriver.pocoPort > 0 {
 		logger.Infof("Starting Poco page source initialization, remotePort=%d engine=%s", androidDriver.pocoPort, androidDriver.pocoEngine)
@@ -570,7 +580,7 @@ func (a *AndroidDriver) initUIA() error {
 	}
 
 	uiaPort := common.GetRandomPort()
-	logger.Infof("Preparing to start UIA server, localPort=%d remotePort=%d", uiaPort, uiaServerPort)
+	logger.Infof("Preparing to start UIA server, localPort=%d remotePort=%d", uiaPort, a.uiaServerPort)
 
 	if err := a.startUIAServer(uiaPort); err != nil {
 		return err
@@ -588,8 +598,8 @@ func (a *AndroidDriver) initUIA() error {
 }
 
 func (a *AndroidDriver) startUIAServer(uiaPort int) error {
-	logger.Infof("Starting UIA instrumentation, localPort=%d remotePort=%d", uiaPort, uiaServerPort)
-	if err := a.device.ForwardTcp(uiaPort, uiaServerPort); err != nil {
+	logger.Infof("Starting UIA instrumentation, localPort=%d remotePort=%d", uiaPort, a.uiaServerPort)
+	if err := a.device.ForwardTcp(uiaPort, a.uiaServerPort); err != nil {
 		return fmt.Errorf("forward uia port failed: %w", err)
 	}
 	logger.Infof("UIA port forwarding established, localPort=%d", uiaPort)

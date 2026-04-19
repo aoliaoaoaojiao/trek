@@ -458,7 +458,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		report.ActionCount[record.Action]++
 		report.StepsTotal++
 
-		logger.Infof("monkey step=%d execute cmd={%s}", step, cmd.DetailLogString())
+		logger.Infof("monkey step=%d execute cmd={%s}%s", step, cmd.DetailLogString(), formatTapPointLog(cmd))
 
 		if err = r.execute(cmd); err != nil {
 			record.Err = err.Error()
@@ -583,6 +583,20 @@ func (r *Runner) execute(cmd *types.ActionCommand) error {
 	default:
 		return fmt.Errorf("暂不支持动作: %s", cmd.Act.String())
 	}
+}
+
+func formatTapPointLog(cmd *types.ActionCommand) string {
+	if cmd == nil {
+		return ""
+	}
+	if cmd.Act != types.CLICK && cmd.Act != types.LONG_CLICK {
+		return ""
+	}
+	pt, err := centerPoint(cmd.Pos)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf(" tap_point=[%.3f,%.3f]", pt.X, pt.Y)
 }
 
 func (r *Runner) swipeByAction(rect types.Rect, act types.ActionType) error {

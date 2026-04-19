@@ -150,3 +150,56 @@ func TestLoadStaticConfigReadsLogFileLevel(t *testing.T) {
 		t.Fatalf("文件日志级别不符合预期: %q", cfg.Log.FileLevel)
 	}
 }
+
+func TestLoadStaticConfigReadsPageSourceAndTouchMode(t *testing.T) {
+	cfg, err := LoadStaticConfig(`const config = {
+  page_source: "uia",
+  touch_mode: "motion"
+}`)
+	if err != nil {
+		t.Fatalf("加载静态配置失败: %v", err)
+	}
+	if cfg.PageSource != "uia" {
+		t.Fatalf("页面源配置不符合预期: %q", cfg.PageSource)
+	}
+	if cfg.TouchMode != "motion" {
+		t.Fatalf("触控模式配置不符合预期: %q", cfg.TouchMode)
+	}
+}
+
+func TestLoadStaticConfigReadsCamelCasePageSourceAndTouchMode(t *testing.T) {
+	cfg, err := LoadStaticConfig(`const config = {
+  pageSource: "poco",
+  touchMode: "uia"
+}`)
+	if err != nil {
+		t.Fatalf("加载静态配置失败: %v", err)
+	}
+	if cfg.PageSource != "poco" {
+		t.Fatalf("页面源配置不符合预期: %q", cfg.PageSource)
+	}
+	if cfg.TouchMode != "uia" {
+		t.Fatalf("触控模式配置不符合预期: %q", cfg.TouchMode)
+	}
+}
+
+func TestLoadStaticConfigReadsUIAAndPocoSettings(t *testing.T) {
+	cfg, err := LoadStaticConfig(`const config = {
+  uia: {
+    server_port: 7900,
+  },
+  poco: {
+    engine: "UNITY_3D",
+    port: 5101,
+  }
+}`)
+	if err != nil {
+		t.Fatalf("加载静态配置失败: %v", err)
+	}
+	if cfg.UIA.ServerPort != 7900 {
+		t.Fatalf("uia 配置不符合预期: %+v", cfg.UIA)
+	}
+	if cfg.Poco.Engine != "UNITY_3D" || cfg.Poco.Port != 5101 {
+		t.Fatalf("poco 配置不符合预期: %+v", cfg.Poco)
+	}
+}

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +14,8 @@ import (
 	"trek/logger"
 	"trek/pkg/driver/common"
 	"trek/pkg/session"
+
+	"github.com/beevik/etree"
 )
 
 const (
@@ -453,12 +457,13 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			r.sleepStep(ctx, r.cfg.StepInterval)
 			continue
 		}
+		r.normalizePocoScrollCommand(step, cmd, xml)
 
 		record.Action = cmd.Act.String()
 		report.ActionCount[record.Action]++
 		report.StepsTotal++
 
-		logger.Infof("monkey step=%d execute cmd={%s}%s", step, cmd.DetailLogString(), formatTapPointLog(cmd))
+		logger.Infof("monkey step=%d execute cmd={%s}%s%s", step, cmd.DetailLogString(), formatTapPointLog(cmd), formatSwipePointLog(cmd))
 
 		if err = r.execute(cmd); err != nil {
 			record.Err = err.Error()
@@ -585,6 +590,90 @@ func (r *Runner) execute(cmd *types.ActionCommand) error {
 	}
 }
 
+func (r *Runner) normalizePocoScrollCommand(step int, cmd *types.ActionCommand, xml string) {
+	if cmd == nil {
+		return
+	}
+	if !strings.EqualFold(strings.TrimSpace(r.cfg.PageSourceType), "poco") {
+		return
+	}
+	switch cmd.Act {
+	case types.SCROLL_TOP_DOWN, types.SCROLL_BOTTOM_UP, types.SCROLL_LEFT_RIGHT, types.SCROLL_RIGHT_LEFT, types.SCROLL_BOTTOM_UP_N:
+		if cmd.Pos.IsEmpty() {
+			if rect, ok := resolvePocoScrollRectFromWidgetPath(cmd.WidgetInfo, xml); ok {
+				cmd.Pos = *rect
+				logger.Warnf("monkey step=%d action=%s bounds empty under poco, fallback to ancestor rect=%s", step, cmd.Act.String(), cmd.Pos.String())
+				return
+			}
+			cmd.Pos = *types.NewRect(0, 0, 1, 1)
+			logger.Warnf("monkey step=%d action=%s bounds empty under poco, fallback to normalized full-screen rect", step, cmd.Act.String())
+		}
+	}
+}
+
+var widgetPathRegex = regexp.MustCompile(`path:([^,}]+)`)
+
+func resolvePocoScrollRectFromWidgetPath(widgetInfo string, xml string) (*types.Rect, bool) {
+	pathMatch := widgetPathRegex.FindStringSubmatch(widgetInfo)
+	if len(pathMatch) < 2 {
+		return nil, false
+	}
+	path := strings.TrimSpace(pathMatch[1])
+	if path == "" {
+		return nil, false
+	}
+
+	doc := etree.NewDocument()
+	if err := doc.ReadFromString(xml); err != nil {
+		return nil, false
+	}
+	root := doc.Root()
+	if root == nil {
+		return nil, false
+	}
+
+	// 优先直接定位到目标路径节点。
+	current := root.FindElement(path)
+	// 兜底：路径里带根节点时，FindElement 可能返回空，尝试补全为绝对路径风格。
+	if current == nil {
+		normalizedPath := strings.TrimPrefix(path, "/")
+		current = root.FindElement(normalizedPath)
+	}
+	for current != nil {
+		if rect, ok := parseRectFromBoundsValue(current.SelectAttrValue("bounds", "")); ok && !rect.IsEmpty() {
+			return rect, true
+		}
+		current = current.Parent()
+	}
+	return nil, false
+}
+
+func parseRectFromBoundsValue(bounds string) (*types.Rect, bool) {
+	text := strings.TrimSpace(bounds)
+	if text == "" {
+		return nil, false
+	}
+	parts := strings.Split(text, "][")
+	if len(parts) != 2 {
+		return nil, false
+	}
+	leftTop := strings.Trim(parts[0], "[]")
+	rightBottom := strings.Trim(parts[1], "[]")
+	lt := strings.Split(leftTop, ",")
+	rb := strings.Split(rightBottom, ",")
+	if len(lt) != 2 || len(rb) != 2 {
+		return nil, false
+	}
+	left, err1 := strconv.ParseFloat(strings.TrimSpace(lt[0]), 64)
+	top, err2 := strconv.ParseFloat(strings.TrimSpace(lt[1]), 64)
+	right, err3 := strconv.ParseFloat(strings.TrimSpace(rb[0]), 64)
+	bottom, err4 := strconv.ParseFloat(strings.TrimSpace(rb[1]), 64)
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+		return nil, false
+	}
+	return types.NewRect(left, top, right, bottom), true
+}
+
 func formatTapPointLog(cmd *types.ActionCommand) string {
 	if cmd == nil {
 		return ""
@@ -599,30 +688,41 @@ func formatTapPointLog(cmd *types.ActionCommand) string {
 	return fmt.Sprintf(" tap_point=[%.3f,%.3f]", pt.X, pt.Y)
 }
 
-func (r *Runner) swipeByAction(rect types.Rect, act types.ActionType) error {
-	if rect.IsEmpty() {
-		return fmt.Errorf("滑动区域为空")
+func formatSwipePointLog(cmd *types.ActionCommand) string {
+	if cmd == nil {
+		return ""
 	}
+	start, end, err := resolveSwipePoints(cmd.Pos, cmd.Act)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf(" swipe_start=[%.3f,%.3f] swipe_end=[%.3f,%.3f]", start.X, start.Y, end.X, end.Y)
+}
 
-	var start, end types.Point
+func (r *Runner) swipeByAction(rect types.Rect, act types.ActionType) error {
+	start, end, err := resolveSwipePoints(rect, act)
+	if err != nil {
+		return err
+	}
+	return r.driver.Swipe(start, end, r.cfg.ScrollSteps, r.cfg.ScrollDuration.Milliseconds())
+}
+
+func resolveSwipePoints(rect types.Rect, act types.ActionType) (types.Point, types.Point, error) {
+	if rect.IsEmpty() {
+		return types.Point{}, types.Point{}, fmt.Errorf("滑动区域为空")
+	}
 	switch act {
 	case types.SCROLL_BOTTOM_UP:
-		start = pointByRatio(rect, 0.5, 0.82)
-		end = pointByRatio(rect, 0.5, 0.22)
+		return pointByRatio(rect, 0.5, 0.82), pointByRatio(rect, 0.5, 0.22), nil
 	case types.SCROLL_TOP_DOWN:
-		start = pointByRatio(rect, 0.5, 0.22)
-		end = pointByRatio(rect, 0.5, 0.82)
+		return pointByRatio(rect, 0.5, 0.22), pointByRatio(rect, 0.5, 0.82), nil
 	case types.SCROLL_LEFT_RIGHT:
-		start = pointByRatio(rect, 0.22, 0.5)
-		end = pointByRatio(rect, 0.82, 0.5)
+		return pointByRatio(rect, 0.22, 0.5), pointByRatio(rect, 0.82, 0.5), nil
 	case types.SCROLL_RIGHT_LEFT:
-		start = pointByRatio(rect, 0.82, 0.5)
-		end = pointByRatio(rect, 0.22, 0.5)
+		return pointByRatio(rect, 0.82, 0.5), pointByRatio(rect, 0.22, 0.5), nil
 	default:
-		return fmt.Errorf("不支持的滑动动作: %s", act.String())
+		return types.Point{}, types.Point{}, fmt.Errorf("不支持的滑动动作: %s", act.String())
 	}
-
-	return r.driver.Swipe(start, end, r.cfg.ScrollSteps, r.cfg.ScrollDuration.Milliseconds())
 }
 
 func (r *Runner) tryInputText(cmd *types.ActionCommand) error {

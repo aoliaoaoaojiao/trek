@@ -1,0 +1,131 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Monkey: 运行当前前台应用",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/cmd/monkey",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "env": {
+                "GO111MODULE": "on"
+            },
+            "args": [
+                "-auto-current-app",
+                "-serial",
+                "${input:deviceSerial}",
+                "-config",
+                "${input:configPath}",
+                "-max-steps",
+                "${input:maxSteps}",
+                "-max-duration",
+                "${input:maxDuration}",
+                "-step-interval",
+                "${input:stepInterval}",
+                "-log-level",
+                "${input:logLevel}"
+            ]
+        },
+        {
+            "name": "Monkey: 运行指定包名",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/cmd/monkey",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "env": {
+                "GO111MODULE": "on"
+            },
+            "args": [
+                "-package",
+                "${input:packageName}",
+                "-serial",
+                "${input:deviceSerial}",
+                "-config",
+                "${input:configPath}",
+                "-max-steps",
+                "${input:maxSteps}",
+                "-max-duration",
+                "${input:maxDuration}",
+                "-step-interval",
+                "${input:stepInterval}",
+                "-log-level",
+                "${input:logLevel}"
+            ]
+        },
+        {
+            "name": "Monkey: 获取当前页面名",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/cmd/monkey",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "env": {
+                "GO111MODULE": "on"
+            },
+            "args": [
+                "-auto-current-app",
+                "-serial",
+                "${input:deviceSerial}",
+                "-config",
+                "${input:configPath}",
+                "-probe-page-name",
+                "-log-level",
+                "${input:logLevel}"
+            ]
+        }
+    ],
+    "inputs": [
+        {
+            "id": "packageName",
+            "type": "promptString",
+            "description": "被测应用包名，例如 com.demo.app"
+        },
+        {
+            "id": "deviceSerial",
+            "type": "promptString",
+            "description": "ADB 设备序列号；留空则自动选择设备",
+            "default": ""
+        },
+        {
+            "id": "configPath",
+            "type": "promptString",
+            "description": "Goja 配置脚本路径；留空则不加载配置",
+            "default": ""
+        },
+        {
+            "id": "maxSteps",
+            "type": "promptString",
+            "description": "最大执行步数",
+            "default": "300"
+        },
+        {
+            "id": "maxDuration",
+            "type": "promptString",
+            "description": "最大运行时长，例如 10m、30s",
+            "default": "10m"
+        },
+        {
+            "id": "stepInterval",
+            "type": "promptString",
+            "description": "基础步进间隔，例如 300ms、1s",
+            "default": "300ms"
+        },
+        {
+            "id": "logLevel",
+            "type": "pickString",
+            "description": "日志级别",
+            "options": [
+                "debug",
+                "info",
+                "warn",
+                "error"
+            ],
+            "default": "info"
+        }
+    ]
+}

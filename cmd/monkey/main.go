@@ -20,16 +20,6 @@ type cliOptions struct {
 	packageName       string
 	deviceSerial      string
 	configPath        string
-	pageSourceType    string
-	pageSourceSet     bool
-	touchMode         string
-	touchModeSet      bool
-	uiaServerPort     int
-	uiaServerPortSet  bool
-	pocoEngine        string
-	pocoEngineSet     bool
-	pocoPort          int
-	pocoPortSet       bool
 	maxSteps          int
 	maxDuration       time.Duration
 	stepInterval      time.Duration
@@ -53,11 +43,6 @@ func parseFlags() cliOptions {
 	flag.StringVar(&opts.packageName, "package", "", "被测应用包名（必填）")
 	flag.StringVar(&opts.deviceSerial, "serial", "", "设备序列号（可选，默认自动选择）")
 	flag.StringVar(&opts.configPath, "config", "", "配置文件路径（可选，仅支持 .js，支持绝对/相对路径）")
-	flag.StringVar(&opts.pageSourceType, "page-source", "uia", "页面源类型，如 uia或者poco")
-	flag.StringVar(&opts.touchMode, "touch-mode", "motion", "触控模式，如 motion、uia、adb")
-	flag.IntVar(&opts.uiaServerPort, "uia-server-port", 0, "UIA 设备端服务端口（默认 6790）")
-	flag.StringVar(&opts.pocoEngine, "poco-engine", "", "Poco 引擎类型，如 UNITY_3D、COCOS_2DX_JS")
-	flag.IntVar(&opts.pocoPort, "poco-port", 0, "Poco 设备端端口（不填则按引擎默认端口）")
 	flag.IntVar(&opts.maxSteps, "max-steps", 300, "最大执行步数")
 	flag.DurationVar(&opts.maxDuration, "max-duration", 10*time.Minute, "最大运行时长")
 	flag.DurationVar(&opts.stepInterval, "step-interval", 300*time.Millisecond, "基础步进间隔")
@@ -67,20 +52,6 @@ func parseFlags() cliOptions {
 	flag.BoolVar(&opts.autoCurrentApp, "auto-current-app", false, "自动使用当前前台应用进行测试")
 	flag.StringVar(&opts.logLevel, "log-level", "info", "控制台日志级别: debug, info, warn, error")
 	flag.Parse()
-	flag.Visit(func(f *flag.Flag) {
-		switch f.Name {
-		case "page-source":
-			opts.pageSourceSet = true
-		case "touch-mode":
-			opts.touchModeSet = true
-		case "uia-server-port":
-			opts.uiaServerPortSet = true
-		case "poco-engine":
-			opts.pocoEngineSet = true
-		case "poco-port":
-			opts.pocoPortSet = true
-		}
-	})
 	return opts
 }
 
@@ -98,16 +69,16 @@ func run(opts cliOptions) error {
 		staticCfg = cfg
 	}
 
-	pageSourceType, err := resolvePageSourceType(opts, staticCfg)
+	pageSourceType, err := resolvePageSourceType(staticCfg)
 	if err != nil {
 		return err
 	}
-	touchMode, touchType, err := resolveTouchMode(opts, staticCfg)
+	touchMode, touchType, err := resolveTouchMode(staticCfg)
 	if err != nil {
 		return err
 	}
 
-	driverOptions, err := resolveDriverOptions(opts, staticCfg, pageSourceType, touchType)
+	driverOptions, err := resolveDriverOptions(staticCfg, pageSourceType, touchType)
 	if err != nil {
 		return err
 	}
@@ -189,10 +160,10 @@ func probePageName(driver *android.AndroidDriver, cfg monkey.Config) error {
 	return nil
 }
 
-func resolvePageSourceType(opts cliOptions, staticCfg scripting.StaticConfig) (string, error) {
-	pageSource := strings.TrimSpace(opts.pageSourceType)
-	if !opts.pageSourceSet && strings.TrimSpace(staticCfg.PageSource) != "" {
-		pageSource = strings.TrimSpace(staticCfg.PageSource)
+func resolvePageSourceType(staticCfg scripting.StaticConfig) (string, error) {
+	pageSource := strings.TrimSpace(staticCfg.PageSource)
+	if pageSource == "" {
+		pageSource = "uia"
 	}
 	switch strings.ToLower(pageSource) {
 	case "uia":
@@ -204,10 +175,10 @@ func resolvePageSourceType(opts cliOptions, staticCfg scripting.StaticConfig) (s
 	}
 }
 
-func resolveTouchMode(opts cliOptions, staticCfg scripting.StaticConfig) (string, android.TouchType, error) {
-	touchMode := strings.TrimSpace(opts.touchMode)
-	if !opts.touchModeSet && strings.TrimSpace(staticCfg.TouchMode) != "" {
-		touchMode = strings.TrimSpace(staticCfg.TouchMode)
+func resolveTouchMode(staticCfg scripting.StaticConfig) (string, android.TouchType, error) {
+	touchMode := strings.TrimSpace(staticCfg.TouchMode)
+	if touchMode == "" {
+		touchMode = "motion"
 	}
 	switch strings.ToLower(touchMode) {
 	case "motion":
@@ -221,47 +192,32 @@ func resolveTouchMode(opts cliOptions, staticCfg scripting.StaticConfig) (string
 	}
 }
 
-func resolveDriverOptions(opts cliOptions, staticCfg scripting.StaticConfig, pageSourceType string, touchType android.TouchType) ([]android.AndroidDriverOption, error) {
+func resolveDriverOptions(staticCfg scripting.StaticConfig, pageSourceType string, touchType android.TouchType) ([]android.AndroidDriverOption, error) {
 	options := []android.AndroidDriverOption{
 		android.WithTouch(touchType),
 	}
 
-	uiaServerPort := 0
-	if opts.uiaServerPortSet {
-		uiaServerPort = opts.uiaServerPort
-	} else if staticCfg.UIA.ServerPort > 0 {
-		uiaServerPort = staticCfg.UIA.ServerPort
-	}
+	uiaServerPort := staticCfg.UIA.ServerPort
 	if uiaServerPort > 0 {
 		options = append(options, android.WithUIAServerPort(uiaServerPort))
 	}
 
 	if strings.EqualFold(pageSourceType, "poco") {
-		engineText := ""
-		if opts.pocoEngineSet {
-			engineText = strings.TrimSpace(opts.pocoEngine)
-		} else {
-			engineText = strings.TrimSpace(staticCfg.Poco.Engine)
-		}
+		engineText := strings.TrimSpace(staticCfg.Poco.Engine)
 		if engineText == "" {
-			return nil, fmt.Errorf("使用 poco 页面源时必须指定 Poco 引擎（可通过 -poco-engine 或 config.poco.engine）")
+			return nil, fmt.Errorf("使用 poco 页面源时必须指定 Poco 引擎（请配置 config.poco.engine）")
 		}
 		engine, err := parsePocoEngine(engineText)
 		if err != nil {
 			return nil, err
 		}
 
-		pocoPort := 0
-		if opts.pocoPortSet {
-			pocoPort = opts.pocoPort
-		} else if staticCfg.Poco.Port > 0 {
-			pocoPort = staticCfg.Poco.Port
-		}
+		pocoPort := staticCfg.Poco.Port
 		if pocoPort <= 0 {
 			pocoPort = engine.GetDefaultPort()
 		}
 		if pocoPort <= 0 {
-			return nil, fmt.Errorf("Poco 端口无效，请通过 -poco-port 或 config.poco.port 指定")
+			return nil, fmt.Errorf("Poco 端口无效，请通过 config.poco.port 指定")
 		}
 		options = append(options, android.WithPoco(engine, pocoPort))
 	}

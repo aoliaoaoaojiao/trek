@@ -73,7 +73,15 @@ func TestMotionTouch_Swipe(t *testing.T) {
 func TestMotionTouch_Click(t *testing.T) {
 	motionTouch := touch.NewMotionTouch(device)
 	motionTouch.Click(types.Point{
-		X: 200,
-		Y: 700,
+		X: 0.147,
+		Y: 0.861,
 	})
+}
+
+func TestMotionTouch_longClick(t *testing.T) {
+	motionTouch := touch.NewMotionTouch(device)
+	motionTouch.LongClick(types.Point{
+		X: 0.147,
+		Y: 0.861,
+	}, 8000)
 }

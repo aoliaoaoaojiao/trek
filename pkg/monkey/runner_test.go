@@ -727,4 +727,32 @@ func TestRunnerUsesCurrentActivityAsPageNameWhenUIA(t *testing.T) {
 	}
 }
 
+func TestNormalizePocoScrollCommandFallbackToAncestorBounds(t *testing.T) {
+	decider := &fakeDecider{}
+	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<hierarchy/>`}}
+	runner, err := NewRunner(decider, driver, Config{
+		PageSourceType: "poco",
+		StepInterval:   0,
+		StopOnCrash:    true,
+		StopOnANR:      true,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	cmd := &types.ActionCommand{
+		Act:        types.SCROLL_BOTTOM_UP,
+		Pos:        *types.NewRect(0, 0, 0, 0),
+		WidgetInfo: `Widget{path:/hierarchy/node/node, bounds:[0.000,0.000,0.000,0.000], actions:[SCROLL_BOTTOM_UP]}`,
+	}
+	xml := `<hierarchy bounds="[0,0][1,1]"><node bounds="[0,0][1,1]"><node bounds="[0,0][0,0]"/></node></hierarchy>`
+	runner.normalizePocoScrollCommand(1, cmd, xml)
+	if cmd.Pos.IsEmpty() {
+		t.Fatalf("预期回退后应有可用滑动区域，实际: %s", cmd.Pos.String())
+	}
+	if cmd.Pos.Left != 0 || cmd.Pos.Top != 0 || cmd.Pos.Right != 1 || cmd.Pos.Bottom != 1 {
+		t.Fatalf("预期回退到父节点区域 [0,0,1,1]，实际: %s", cmd.Pos.String())
+	}
+}
+
 func boolPtr(v bool) *bool { return &v }

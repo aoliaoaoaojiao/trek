@@ -14,6 +14,11 @@ type StaticConfig struct {
 	ResMapping map[string]string
 	BlackRects map[string][][4]int
 	SkipAll    bool
+	Log        StaticLogConfig
+}
+
+type StaticLogConfig struct {
+	FileLevel string
 }
 
 func LoadStaticConfigFile(path string) (StaticConfig, error) {
@@ -80,6 +85,15 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 
 	if skipValue := obj.Get("skip_all_actions_from_model"); !isEmptyJSValue(skipValue) {
 		cfg.SkipAll = skipValue.ToBoolean()
+	}
+	if logValue := obj.Get("log"); !isEmptyJSValue(logValue) {
+		logObj := logValue.ToObject(vm)
+		if fileLevelValue := logObj.Get("file_level"); !isEmptyJSValue(fileLevelValue) {
+			cfg.Log.FileLevel = strings.TrimSpace(fileLevelValue.String())
+		}
+		if fileLevelValue := logObj.Get("fileLevel"); cfg.Log.FileLevel == "" && !isEmptyJSValue(fileLevelValue) {
+			cfg.Log.FileLevel = strings.TrimSpace(fileLevelValue.String())
+		}
 	}
 	return cfg, nil
 }

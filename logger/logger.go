@@ -13,14 +13,22 @@ import (
 )
 
 var (
-	logger   *zap.Logger
-	sugar    *zap.SugaredLogger
-	once     sync.Once
-	logLevel zapcore.Level = zapcore.InfoLevel
+	logger             *zap.Logger
+	sugar              *zap.SugaredLogger
+	once               sync.Once
+	logLevel           zapcore.Level = zapcore.InfoLevel
+	fileLogLevel       zapcore.Level = zapcore.DebugLevel
+	consoleAtomicLevel               = zap.NewAtomicLevelAt(zapcore.InfoLevel)
+	fileAtomicLevel                  = zap.NewAtomicLevelAt(zapcore.DebugLevel)
+	logFile            *os.File
 )
 
 // InitLogger 初始化全局日志配置
 func InitLogger(logDir string) error {
+	return initLoggerWithFilename(logDir, "app")
+}
+
+func initLoggerWithFilename(logDir string, filePrefix string) error {
 	var initErr error
 	once.Do(func() {
 		// 确保日志目录存在
@@ -29,16 +37,19 @@ func InitLogger(logDir string) error {
 			return
 		}
 
-		// 获取当前日期用于日志文件名
-		currentDate := time.Now().Format("2006-01-02")
-		logFile := filepath.Join(logDir, "app_"+currentDate+".log")
+		if strings.TrimSpace(filePrefix) == "" {
+			filePrefix = "app"
+		}
+		timestamp := time.Now().Format("2006-01-02_15-04-05")
+		logFilePath := filepath.Join(logDir, filePrefix+"_"+timestamp+".log")
 
 		// 配置日志文件
-		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		file, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
 			initErr = err
 			return
 		}
+		logFile = file
 
 		// 配置编码器
 		encoderConfig := zapcore.EncoderConfig{
@@ -55,12 +66,17 @@ func InitLogger(logDir string) error {
 			EncodeCaller:   zapcore.ShortCallerEncoder,
 		}
 
-		// 创建核心配置
-		core := zapcore.NewCore(
+		fileCore := zapcore.NewCore(
 			zapcore.NewJSONEncoder(encoderConfig),
-			zapcore.NewMultiWriteSyncer(zapcore.AddSync(file), zapcore.AddSync(os.Stdout)),
-			logLevel,
+			zapcore.AddSync(file),
+			fileAtomicLevel,
 		)
+		consoleCore := zapcore.NewCore(
+			zapcore.NewJSONEncoder(encoderConfig),
+			nopSyncer{WriteSyncer: zapcore.AddSync(os.Stdout)},
+			consoleAtomicLevel,
+		)
+		core := zapcore.NewTee(fileCore, consoleCore)
 
 		// 创建日志记录器
 		logger = zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1))
@@ -68,6 +84,17 @@ func InitLogger(logDir string) error {
 	})
 
 	return initErr
+}
+
+// InitLoggerWithPackage 使用被测应用包名作为日志前缀：
+// 包名_年-月-日_时-分-秒.log
+func InitLoggerWithPackage(logDir string, packageName string) error {
+	packageName = strings.TrimSpace(packageName)
+	if packageName == "" {
+		return InitLogger(logDir)
+	}
+	safeName := strings.NewReplacer("/", "_", "\\", "_", ":", "_", "*", "_", "?", "_", "\"", "_", "<", "_", ">", "_", "|", "_").Replace(packageName)
+	return initLoggerWithFilename(logDir, safeName)
 }
 
 // GetLogger 获取标准日志记录器
@@ -144,24 +171,50 @@ func Sync() error {
 	return nil
 }
 
-// SetLevel 设置日志级别
+// SetLevel 设置控制台日志级别。
 func SetLevel(level string) error {
-	var zapLevel zapcore.Level
-	switch strings.ToLower(level) {
-	case "debug":
-		zapLevel = zapcore.DebugLevel
-	case "info":
-		zapLevel = zapcore.InfoLevel
-	case "warn", "warning":
-		zapLevel = zapcore.WarnLevel
-	case "error":
-		zapLevel = zapcore.ErrorLevel
-	case "fatal":
-		zapLevel = zapcore.FatalLevel
-	default:
-		return fmt.Errorf("invalid log level: %s", level)
+	zapLevel, err := parseLevel(level)
+	if err != nil {
+		return err
 	}
 	logLevel = zapLevel
+	consoleAtomicLevel.SetLevel(zapLevel)
+	return nil
+}
+
+// SetFileLevel 设置文件日志级别，支持在 logger 初始化后动态生效。
+func SetFileLevel(level string) error {
+	zapLevel, err := parseLevel(level)
+	if err != nil {
+		return err
+	}
+	fileLogLevel = zapLevel
+	fileAtomicLevel.SetLevel(zapLevel)
+	return nil
+}
+
+func parseLevel(level string) (zapcore.Level, error) {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "debug":
+		return zapcore.DebugLevel, nil
+	case "info":
+		return zapcore.InfoLevel, nil
+	case "warn", "warning":
+		return zapcore.WarnLevel, nil
+	case "error":
+		return zapcore.ErrorLevel, nil
+	case "fatal":
+		return zapcore.FatalLevel, nil
+	default:
+		return zapcore.InfoLevel, fmt.Errorf("invalid log level: %s", level)
+	}
+}
+
+type nopSyncer struct {
+	zapcore.WriteSyncer
+}
+
+func (n nopSyncer) Sync() error {
 	return nil
 }
 

@@ -3,6 +3,7 @@ package types
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // ActionCommand 是引擎输出给执行层的标准动作命令。
@@ -95,6 +96,20 @@ func (cmd *ActionCommand) String() string {
 		cmd.Act.String(), cmd.Pos.String(), cmd.Sid, cmd.Aid, cmd.Throttle, cmd.WaitTime, cmd.Editable, cmd.AllowFuzzing, cmd.Clear, cmd.AdbInput, cmd.Name, cmd.Text)
 }
 
+// DetailLogString 返回适合日志排障的动作详情。
+func (cmd *ActionCommand) DetailLogString() string {
+	if cmd == nil {
+		return "nil"
+	}
+	widgetInfo := strings.TrimSpace(cmd.WidgetInfo)
+	if widgetInfo == "" {
+		widgetInfo = "n/a"
+	}
+	text := truncateLogText(cmd.Text, 80)
+	return fmt.Sprintf("act=%s pos=%s sid=%s aid=%s name=%s editable=%t text=%q wait_time=%d throttle=%.2f clear=%t adb_input=%t allow_fuzzing=%t raw_input=%t widget=%s",
+		cmd.Act.String(), cmd.Pos.String(), cmd.Sid, cmd.Aid, cmd.Name, cmd.Editable, text, cmd.WaitTime, cmd.Throttle, cmd.Clear, cmd.AdbInput, cmd.AllowFuzzing, cmd.RawInput, widgetInfo)
+}
+
 func (cmd *ActionCommand) ToJSON() string {
 	jsonBytes, err := json.Marshal(cmd)
 	if err != nil {
@@ -169,6 +184,16 @@ func (cmd *ActionCommand) GetActionName() string {
 		return name
 	}
 	return "UNKNOWN"
+}
+
+func truncateLogText(text string, max int) string {
+	if max <= 0 || len(text) <= max {
+		return text
+	}
+	if max <= 3 {
+		return text[:max]
+	}
+	return text[:max-3] + "..."
 }
 
 func (cmd *ActionCommand) IsTextInput() bool {

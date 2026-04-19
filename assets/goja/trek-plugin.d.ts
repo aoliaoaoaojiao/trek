@@ -115,6 +115,19 @@ interface TrekPlugin {
   onStepResult?(ctx: StepResultContext): void
 }
 
+type LogLevel = "debug" | "info" | "warn" | "warning" | "error" | "fatal"
+
+interface TrekStaticConfig {
+  res_mapping?: Record<string, string>
+  black_rects?: Record<string, Bounds[]>
+  skip_all_actions_from_model?: boolean
+  log?: {
+    /** 文件日志级别；控制台日志级别由命令行 -log-level 控制 */
+    file_level?: LogLevel
+    fileLevel?: LogLevel
+  }
+}
+
 interface TrekActionAPI {
   click(bounds: Bounds): Action
   longClick(bounds: Bounds): Action
@@ -165,5 +178,5 @@ interface TrekAPI {
 }
 
 declare const trek: TrekAPI
+declare const config: TrekStaticConfig
 declare const plugin: TrekPlugin
-

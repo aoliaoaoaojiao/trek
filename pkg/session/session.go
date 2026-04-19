@@ -122,11 +122,7 @@ func (s *Session) NextActionWithInput(pageName string, input ActionInput) (*type
 		return nil, fmt.Errorf("未生成有效动作")
 	}
 
-	widgetInfo := operate.WidgetInfo
-	if widgetInfo == "" {
-		widgetInfo = "no widget info"
-	}
-	logger.Infof("session next action: page=%s action=%s widget=%s", pageName, operate.Act.String(), widgetInfo)
+	logger.Infof("session next action: page=%s cmd={%s}", pageName, operate.DetailLogString())
 
 	return operate, nil
 }

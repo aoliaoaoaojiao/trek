@@ -49,7 +49,7 @@ func parseFlags() cliOptions {
 	flag.BoolVar(&opts.keepStepRecords, "keep-step-records", true, "是否保留每步记录")
 	flag.BoolVar(&opts.probePageName, "probe-page-name", false, "仅探测当前页面名后退出")
 	flag.BoolVar(&opts.autoCurrentApp, "auto-current-app", false, "自动使用当前前台应用进行测试")
-	flag.StringVar(&opts.logLevel, "log-level", "info", "日志级别: debug, info, warn, error")
+	flag.StringVar(&opts.logLevel, "log-level", "info", "控制台日志级别: debug, info, warn, error")
 	flag.Parse()
 	return opts
 }

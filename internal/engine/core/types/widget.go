@@ -144,8 +144,27 @@ func (w *Widget) String() string {
 	if w == nil {
 		return ""
 	}
-	return fmt.Sprintf("Widget{text:%s, bounds:%s, enabled:%t, path:%s}",
-		w.Text, w.Bounds.String(), w.Enabled, w.path)
+	text := strings.TrimSpace(w.Text)
+	if text == "" {
+		text = "<empty>"
+	}
+	contentDesc := strings.TrimSpace(w.ContextDesc)
+	if contentDesc == "" {
+		contentDesc = "<empty>"
+	}
+	if len(text) > 40 {
+		text = text[:37] + "..."
+	}
+	if len(contentDesc) > 40 {
+		contentDesc = contentDesc[:37] + "..."
+	}
+	actions := w.GetActions()
+	actionNames := make([]string, 0, len(actions))
+	for _, action := range actions {
+		actionNames = append(actionNames, action.String())
+	}
+	return fmt.Sprintf("Widget{hash:%d, text:%q, contentDesc:%q, bounds:%s, enabled:%t, editable:%t, path:%s, actions:[%s]}",
+		w.Hash(), text, contentDesc, w.Bounds.String(), w.Enabled, w.Editable, w.path, strings.Join(actionNames, ","))
 }
 
 func (w *Widget) GetPath() string {
@@ -219,6 +238,9 @@ func (w *Widget) preprocessText() {
 
 func (w *Widget) initFormElement(element IElement) {
 	w.Text = element.GetText()
+	if contentDescCarrier, ok := element.(interface{ GetContentDesc() string }); ok {
+		w.ContextDesc = contentDescCarrier.GetContentDesc()
+	}
 	w.elementSimpleIdentifier = element.GetIdentifierHash()
 	w.path = element.GetPath()
 	w.Enabled = element.GetEnable()

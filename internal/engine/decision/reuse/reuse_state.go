@@ -49,7 +49,7 @@ func (rs *ReuseState) buildStateFromElement(parentWidget *RichWidget, element ty
 	// 使用RichWidget构建状态
 	widget := NewRichWidget(parentWidget, element)
 	rs.Widgets = append(rs.Widgets, &widget.Widget)
-	logger.Debugf("Added RichWidget to state, total widgets now: %d", len(rs.Widgets))
+	logger.Debugf("Added RichWidget to state, total widgets now: %d, widget=%s", len(rs.Widgets), widget.String())
 
 	for _, childElement := range element.GetChildren() {
 		rs.buildFromElement(widget, childElement)
@@ -67,7 +67,7 @@ func (rs *ReuseState) buildFromElement(parentWidget *RichWidget, elem types.IEle
 
 	widget := types.NewWidget(parentWidgetPtr, elem)
 	rs.Widgets = append(rs.Widgets, widget)
-	logger.Debugf("Added Widget to state, total widgets now: %d", len(rs.Widgets))
+	logger.Debugf("Added Widget to state, total widgets now: %d, widget=%s", len(rs.Widgets), widget.String())
 
 	for _, childElement := range elem.GetChildren() {
 		rs.buildFromElement(parentWidget, childElement)

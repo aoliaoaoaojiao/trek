@@ -82,6 +82,10 @@ _ = currentMode
 
 ```javascript
 const config = {
+  log: {
+    // 控制台日志级别由命令行 -log-level 控制；文件日志级别可在这里单独指定。
+    file_level: "debug",
+  },
   res_mapping: {
     login_button_alias: "com.demo:id/login",
   },
@@ -142,5 +146,7 @@ _ = info.XML
 - `plugin.onStepResult` 会收到 crash/anr、截图、执行前后 XML 与页面名，适合做统计、状态记录和自定义恢复策略。
 - 截图以 `Uint8Array` 形式暴露在 `ctx.page.screenshot.bytes` 或 `ctx.result.screenshot.bytes`。
 - `CheckPointInBlackRects` 会复用已加载配置中的 `black_rects`。
+- `config.log.file_level` 可单独控制文件日志级别；命令行 `-log-level` 只控制控制台输出级别。
+- 通过 monkey 入口运行时，日志文件名格式为 `被测应用_年-月-日_时-分-秒.log`，例如 `com.demo.app_2026-04-19_20-05-31.log`。
 - `config.res_mapping`、`config.black_rects`、`config.skip_all_actions_from_model` 作为静态配置保留，复杂运行时行为建议放入 `plugin`。
 

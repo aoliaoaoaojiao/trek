@@ -8,6 +8,7 @@ import (
 	"time"
 	"trek/internal/engine/core/types"
 	"trek/internal/scripting"
+	"trek/logger"
 )
 
 type CustomAction struct {
@@ -175,6 +176,11 @@ func (m *Manager) LoadResourceMapping(resourceMappingPath string) error {
 	m.resMapping = staticConfig.ResMapping
 	m.blackRects = staticConfig.BlackRects
 	m.skipAllActionsFromModel = staticConfig.SkipAll
+	if staticConfig.Log.FileLevel != "" {
+		if err := logger.SetFileLevel(staticConfig.Log.FileLevel); err != nil {
+			return fmt.Errorf("设置文件日志级别失败: %w", err)
+		}
+	}
 
 	return nil
 }

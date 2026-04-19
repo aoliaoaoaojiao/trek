@@ -136,3 +136,17 @@ func TestManagerOnStepResultSeesCrashANRAndBeforeAfterPages(t *testing.T) {
 		t.Fatalf("after xml 不符合预期: %v", got)
 	}
 }
+
+func TestLoadStaticConfigReadsLogFileLevel(t *testing.T) {
+	cfg, err := LoadStaticConfig(`const config = {
+  log: {
+    file_level: "warn"
+  }
+}`)
+	if err != nil {
+		t.Fatalf("加载静态配置失败: %v", err)
+	}
+	if cfg.Log.FileLevel != "warn" {
+		t.Fatalf("文件日志级别不符合预期: %q", cfg.Log.FileLevel)
+	}
+}

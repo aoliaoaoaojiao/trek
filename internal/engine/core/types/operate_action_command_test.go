@@ -32,3 +32,41 @@ func TestActionCommandCompatibility(t *testing.T) {
 		t.Fatalf("String 语义名不正确，got=%s", got)
 	}
 }
+
+func TestActionCommandDetailLogString(t *testing.T) {
+	cmd := NewActionCommand()
+	cmd.Act = CLICK
+	cmd.Pos = *NewRect(1, 2, 3, 4)
+	cmd.Sid = "state-1"
+	cmd.Aid = "action-2"
+	cmd.Name = "login_btn"
+	cmd.Editable = true
+	cmd.Text = strings.Repeat("a", 100)
+	cmd.WaitTime = 500
+	cmd.Throttle = 120
+	cmd.Clear = true
+	cmd.AdbInput = true
+	cmd.AllowFuzzing = false
+	cmd.RawInput = true
+	cmd.WidgetInfo = "Widget{text:登录, bounds:[1,2,3,4], enabled:true}"
+
+	detail := cmd.DetailLogString()
+	expectedParts := []string{
+		"act=CLICK",
+		"pos=[1.000,2.000,3.000,4.000]",
+		"sid=state-1",
+		"aid=action-2",
+		"name=login_btn",
+		"wait_time=500",
+		"throttle=120.00",
+		"widget=Widget{text:登录, bounds:[1,2,3,4], enabled:true}",
+	}
+	for _, part := range expectedParts {
+		if !strings.Contains(detail, part) {
+			t.Fatalf("详情日志缺少字段: %s, detail=%s", part, detail)
+		}
+	}
+	if !strings.Contains(detail, "...") {
+		t.Fatalf("长文本应被截断: %s", detail)
+	}
+}

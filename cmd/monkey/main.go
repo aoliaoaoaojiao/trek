@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"time"
+	"trek/logger"
 	"trek/pkg/driver/android"
 	"trek/pkg/monkey"
 	"trek/pkg/session"
@@ -24,6 +25,7 @@ type cliOptions struct {
 	keepStepRecords   bool
 	probePageName     bool
 	autoCurrentApp    bool
+	logLevel          string
 }
 
 func main() {
@@ -47,11 +49,16 @@ func parseFlags() cliOptions {
 	flag.BoolVar(&opts.keepStepRecords, "keep-step-records", true, "是否保留每步记录")
 	flag.BoolVar(&opts.probePageName, "probe-page-name", false, "仅探测当前页面名后退出")
 	flag.BoolVar(&opts.autoCurrentApp, "auto-current-app", false, "自动使用当前前台应用进行测试")
+	flag.StringVar(&opts.logLevel, "log-level", "info", "日志级别: debug, info, warn, error")
 	flag.Parse()
 	return opts
 }
 
 func run(opts cliOptions) error {
+	if err := logger.SetLevel(opts.logLevel); err != nil {
+		return fmt.Errorf("设置日志级别失败: %w", err)
+	}
+
 	driver, err := android.NewAndroidDriverWith(opts.deviceSerial)
 	if err != nil {
 		return fmt.Errorf("创建设备驱动失败: %w", err)

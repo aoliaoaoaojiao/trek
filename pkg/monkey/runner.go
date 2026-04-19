@@ -278,6 +278,12 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		report.ActionCount[record.Action]++
 		report.StepsTotal++
 
+		widgetInfo := cmd.WidgetInfo
+		if widgetInfo == "" {
+			widgetInfo = "no widget info"
+		}
+		logger.Infof("monkey step=%d execute action=%s widget=%s", step, cmd.Act.String(), widgetInfo)
+
 		if err = r.execute(cmd); err != nil {
 			record.Err = err.Error()
 			afterPage := r.capturePageSnapshot(pageSource, pageName)

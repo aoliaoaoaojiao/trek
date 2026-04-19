@@ -217,7 +217,7 @@ func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID str
 			logger.Infof("selected custom action %s", a.ActionType.String())
 			operate = a.ToActionCommand()
 		case *types.StatefulAction:
-			logger.Infof("selected action %s", a.String())
+			logger.Debugf("selected action %s", a.String())
 			operate = a.ToOperate()
 		default:
 			logger.Errorf("unsupported action type: %T", action)

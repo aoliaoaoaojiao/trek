@@ -1,8 +1,10 @@
 package logger
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,9 +13,10 @@ import (
 )
 
 var (
-	logger *zap.Logger
-	sugar  *zap.SugaredLogger
-	once   sync.Once
+	logger   *zap.Logger
+	sugar    *zap.SugaredLogger
+	once     sync.Once
+	logLevel zapcore.Level = zapcore.InfoLevel
 )
 
 // InitLogger 初始化全局日志配置
@@ -56,7 +59,7 @@ func InitLogger(logDir string) error {
 		core := zapcore.NewCore(
 			zapcore.NewJSONEncoder(encoderConfig),
 			zapcore.NewMultiWriteSyncer(zapcore.AddSync(file), zapcore.AddSync(os.Stdout)),
-			zapcore.DebugLevel,
+			logLevel,
 		)
 
 		// 创建日志记录器
@@ -138,6 +141,27 @@ func Sync() error {
 	if logger != nil {
 		return logger.Sync()
 	}
+	return nil
+}
+
+// SetLevel 设置日志级别
+func SetLevel(level string) error {
+	var zapLevel zapcore.Level
+	switch strings.ToLower(level) {
+	case "debug":
+		zapLevel = zapcore.DebugLevel
+	case "info":
+		zapLevel = zapcore.InfoLevel
+	case "warn", "warning":
+		zapLevel = zapcore.WarnLevel
+	case "error":
+		zapLevel = zapcore.ErrorLevel
+	case "fatal":
+		zapLevel = zapcore.FatalLevel
+	default:
+		return fmt.Errorf("invalid log level: %s", level)
+	}
+	logLevel = zapLevel
 	return nil
 }
 

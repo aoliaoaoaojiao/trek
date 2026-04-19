@@ -205,7 +205,7 @@ func (asa *StatefulAction) ToOperate() *ActionCommand {
 	if asa.Target != nil {
 		opt.Pos = *asa.Target.GetBounds()
 		opt.Editable = asa.Target.IsEditable()
-
+		opt.WidgetInfo = asa.Target.String()
 	}
 	return opt
 }

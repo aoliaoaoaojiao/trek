@@ -22,6 +22,7 @@ type ActionCommand struct {
 	Text         string     `json:"text"`
 	Extra0       string     `json:"extra0"`
 	JAction      string     `json:"j_action"`
+	WidgetInfo   string     `json:"widget_info"`
 }
 
 // NewActionCommand 创建新的动作命令。
@@ -76,6 +77,7 @@ func NewActionCommandCopy(opt *ActionCommand) *ActionCommand {
 		Text:         opt.Text,
 		Extra0:       opt.Extra0,
 		JAction:      opt.JAction,
+		WidgetInfo:   opt.WidgetInfo,
 	}
 }
 

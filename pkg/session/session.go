@@ -5,6 +5,7 @@ import (
 	"strings"
 	"trek/internal/engine/core/types"
 	engineruntime "trek/internal/engine/runtime"
+	"trek/logger"
 )
 
 // Config 描述一次单线程会话初始化参数。
@@ -120,6 +121,13 @@ func (s *Session) NextActionWithInput(pageName string, input ActionInput) (*type
 	if operate == nil {
 		return nil, fmt.Errorf("未生成有效动作")
 	}
+
+	widgetInfo := operate.WidgetInfo
+	if widgetInfo == "" {
+		widgetInfo = "no widget info"
+	}
+	logger.Infof("session next action: page=%s action=%s widget=%s", pageName, operate.Act.String(), widgetInfo)
+
 	return operate, nil
 }
 

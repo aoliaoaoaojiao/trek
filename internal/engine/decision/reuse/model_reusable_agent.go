@@ -389,7 +389,7 @@ func (a *ModelReusableAgent) SelectNewAction() types.IAction {
 
 	action = a.selectUnperformedActionNotInReuseModel()
 	if action != nil {
-		logger.Infof("select action not in reuse model")
+		logger.Debugf("select action not in reuse model")
 		return action
 	}
 

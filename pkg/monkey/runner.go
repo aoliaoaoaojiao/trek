@@ -113,6 +113,11 @@ type WeightedDecider interface {
 	NextWeightedActionsWithInput(pageName string, input session.ActionInput) ([]WeightedCandidate, error)
 }
 
+// StepResultObserver 是可选接口，用于接收每步执行后的复盘信息。
+type StepResultObserver interface {
+	OnStepResult(result session.StepResultInput) error
+}
+
 // Runner 执行 Smart Monkey 真机闭环。
 type Runner struct {
 	decider Decider
@@ -234,6 +239,11 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		if r.cfg.CaptureScreenshot {
 			screenshot, _ = r.driver.Screenshot()
 		}
+		beforePage := session.PageSnapshot{
+			PageName:   pageName,
+			XML:        xml,
+			Screenshot: screenshot,
+		}
 
 		cmd, err := r.nextCommand(pageName, session.ActionInput{
 			XMLDescOfGuiTree: xml,
@@ -270,6 +280,10 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 
 		if err = r.execute(cmd); err != nil {
 			record.Err = err.Error()
+			afterPage := r.capturePageSnapshot(pageSource, pageName)
+			crash := r.cfg.StopOnCrash && r.detectCrashBySystem()
+			anr := r.cfg.StopOnANR && r.detectANRBySystem()
+			r.notifyStepResult(step, cmd, false, err.Error(), time.Since(stepStart).Milliseconds(), crash, anr, beforePage, afterPage)
 			r.markFailed(report, record, stepStart)
 			logger.Warnf("monkey step=%d execute action=%s failed: %v", step, cmd.Act.String(), err)
 			if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
@@ -283,6 +297,10 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 
 		report.StepsSucceeded++
 		report.ConsecutiveFailures = 0
+		afterPage := r.capturePageSnapshot(pageSource, pageName)
+		crash := r.cfg.StopOnCrash && r.detectCrashBySystem()
+		anr := r.cfg.StopOnANR && r.detectANRBySystem()
+		r.notifyStepResult(step, cmd, true, "", time.Since(stepStart).Milliseconds(), crash, anr, beforePage, afterPage)
 		r.appendRecord(report, record, stepStart)
 		logger.Debugf("monkey step=%d execute action=%s success", step, cmd.Act.String())
 		r.sleepStep(ctx, r.resolveStepDelay(cmd))
@@ -290,6 +308,47 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 
 	report.StopReason = StopCompleted
 	return report, nil
+}
+
+func (r *Runner) capturePageSnapshot(pageSource common.IPageSource, fallbackPageName string) *session.PageSnapshot {
+	if pageSource == nil {
+		return nil
+	}
+	xml, err := pageSource.DumpPageSource()
+	if err != nil {
+		return nil
+	}
+	pageName := r.cfg.PageNameResolver(xml)
+	if strings.TrimSpace(pageName) == "" {
+		pageName = fallbackPageName
+	}
+	var screenshot []byte
+	if r.cfg.CaptureScreenshot {
+		screenshot, _ = r.driver.Screenshot()
+	}
+	return &session.PageSnapshot{
+		PageName:   pageName,
+		XML:        xml,
+		Screenshot: screenshot,
+	}
+}
+
+func (r *Runner) notifyStepResult(step int, cmd *types.ActionCommand, success bool, errText string, durationMs int64, crash bool, anr bool, before session.PageSnapshot, after *session.PageSnapshot) {
+	observer, ok := r.decider.(StepResultObserver)
+	if !ok || observer == nil {
+		return
+	}
+	_ = observer.OnStepResult(session.StepResultInput{
+		Step:       step,
+		Action:     cmd,
+		Success:    success,
+		Error:      errText,
+		DurationMs: durationMs,
+		Crash:      crash,
+		ANR:        anr,
+		Before:     before,
+		After:      after,
+	})
 }
 
 func (r *Runner) execute(cmd *types.ActionCommand) error {

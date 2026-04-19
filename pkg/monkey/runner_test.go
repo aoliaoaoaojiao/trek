@@ -31,6 +31,16 @@ func (f *failingDecider) NextActionWithInput(pageName string, input session.Acti
 	return nil, errors.New("decide failed")
 }
 
+type observingDecider struct {
+	fakeDecider
+	results []session.StepResultInput
+}
+
+func (o *observingDecider) OnStepResult(result session.StepResultInput) error {
+	o.results = append(o.results, result)
+	return nil
+}
+
 type weightedDecider struct {
 	candidates []WeightedCandidate
 }
@@ -54,19 +64,30 @@ func (f *fakePageSource) DumpPageSource() (string, error) { return f.xml, nil }
 func (f *fakePageSource) Close() error                    { return nil }
 
 type fakeDriver struct {
-	pageSource    common.IPageSource
-	clickCount    int
-	startCount    int
-	activateCount int
-	clearCnt      int
-	envCheckCnt   int
-	crash         bool
-	anr           bool
-	envResult     *common.EnvironmentCheckResult
-	envErr        error
+	pageSource      common.IPageSource
+	clickCount      int
+	startCount      int
+	activateCount   int
+	clearCnt        int
+	envCheckCnt     int
+	crash           bool
+	anr             bool
+	envResult       *common.EnvironmentCheckResult
+	envErr          error
+	crashAfterClick bool
+	anrAfterClick   bool
 }
 
-func (f *fakeDriver) Click(point types.Point) error                     { f.clickCount++; return nil }
+func (f *fakeDriver) Click(point types.Point) error {
+	f.clickCount++
+	if f.crashAfterClick {
+		f.crash = true
+	}
+	if f.anrAfterClick {
+		f.anr = true
+	}
+	return nil
+}
 func (f *fakeDriver) LongClick(point types.Point, duration int64) error { return nil }
 func (f *fakeDriver) Swipe(startPoint types.Point, endPoint types.Point, step int64, duration int64) error {
 	return nil
@@ -141,6 +162,51 @@ func TestRunnerRunCompleted(t *testing.T) {
 	}
 	if report.Preflight == nil || !report.Preflight.ADBReady {
 		t.Fatalf("预期记录前置检测结果")
+	}
+}
+
+func TestRunnerReportsStepResultWithAfterPageCrashANRAndScreenshot(t *testing.T) {
+	decider := &observingDecider{
+		fakeDecider: fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}},
+	}
+	driver := &fakeDriver{
+		pageSource:      &fakePageSource{xml: `<node class="MainActivity"/>`},
+		crashAfterClick: true,
+		anrAfterClick:   true,
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		PackageName:       "com.example.app",
+		MaxSteps:          1,
+		StepInterval:      0,
+		KeepStepRecords:   true,
+		CaptureScreenshot: true,
+		StopOnCrash:       true,
+		StopOnANR:         true,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if len(decider.results) != 1 {
+		t.Fatalf("预期收到 1 条 step result，实际: %d", len(decider.results))
+	}
+	result := decider.results[0]
+	if !result.Success || !result.Crash || !result.ANR {
+		t.Fatalf("执行结果状态不符合预期: %+v", result)
+	}
+	if result.Before.XML == "" || result.After == nil || result.After.XML == "" {
+		t.Fatalf("预期包含执行前后 xml: %+v", result)
+	}
+	if len(result.Before.Screenshot) == 0 || len(result.After.Screenshot) == 0 {
+		t.Fatalf("预期包含执行前后截图: %+v", result)
 	}
 }
 

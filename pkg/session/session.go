@@ -20,6 +20,32 @@ type ActionInput struct {
 	Screenshot       []byte
 }
 
+// PageInfo 表示页面名称和对应 XML 信息。
+type PageInfo struct {
+	PageName string
+	XML      string
+}
+
+// PageSnapshot 描述脚本插件可见的页面快照。
+type PageSnapshot struct {
+	PageName   string
+	XML        string
+	Screenshot []byte
+}
+
+// StepResultInput 描述一步动作执行后的复盘信息。
+type StepResultInput struct {
+	Step       int
+	Action     *types.ActionCommand
+	Success    bool
+	Error      string
+	DurationMs int64
+	Crash      bool
+	ANR        bool
+	Before     PageSnapshot
+	After      *PageSnapshot
+}
+
 // Session 是对外稳定会话入口，屏蔽内部全局模型细节。
 type Session struct {
 	config Config
@@ -47,15 +73,10 @@ func (s *Session) Reset() {
 
 // LoadConfigFile 加载运行时配置文件（主入口）。
 func (s *Session) LoadConfigFile(path string) error {
-	model := engineruntime.GetModel()
-	if model == nil {
+	if engineruntime.GetModel() == nil {
 		s.Reset()
-		model = engineruntime.GetModel()
 	}
-	if model == nil || model.GetConfigManager() == nil {
-		return fmt.Errorf("配置实例不可用")
-	}
-	return model.GetConfigManager().LoadResourceMapping(path)
+	return engineruntime.LoadConfigFile(path)
 }
 
 // Deprecated: 请使用 LoadConfigFile。
@@ -120,4 +141,48 @@ func (s *Session) CheckPointInBlackRects(pageName string, point types.Point) boo
 // NativeVersion 返回当前引擎原生版本。
 func (s *Session) NativeVersion() string {
 	return engineruntime.GetNativeVersion()
+}
+
+// TransformPageInfo 使用 Goja 配置脚本改造页面信息并返回新结果。
+func (s *Session) TransformPageInfo(pageName string, xmlDescOfGuiTree string) (PageInfo, error) {
+	if strings.TrimSpace(pageName) == "" {
+		return PageInfo{}, fmt.Errorf("pageName 不能为空")
+	}
+	if strings.TrimSpace(xmlDescOfGuiTree) == "" {
+		return PageInfo{}, fmt.Errorf("xmlDescOfGuiTree 不能为空")
+	}
+	newPage, newXML, err := engineruntime.TransformPageInfo(pageName, xmlDescOfGuiTree)
+	if err != nil {
+		return PageInfo{}, err
+	}
+	return PageInfo{
+		PageName: newPage,
+		XML:      newXML,
+	}, nil
+}
+
+// OnStepResult 通知 Goja 插件一步执行结果。
+func (s *Session) OnStepResult(input StepResultInput) error {
+	runtimeInput := engineruntime.StepResultInput{
+		Step:       input.Step,
+		Action:     input.Action,
+		Success:    input.Success,
+		Error:      input.Error,
+		DurationMs: input.DurationMs,
+		Crash:      input.Crash,
+		ANR:        input.ANR,
+		Before: engineruntime.PageSnapshotInput{
+			PageName:   input.Before.PageName,
+			XML:        input.Before.XML,
+			Screenshot: input.Before.Screenshot,
+		},
+	}
+	if input.After != nil {
+		runtimeInput.After = &engineruntime.PageSnapshotInput{
+			PageName:   input.After.PageName,
+			XML:        input.After.XML,
+			Screenshot: input.After.Screenshot,
+		}
+	}
+	return engineruntime.OnStepResult(runtimeInput)
 }

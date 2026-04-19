@@ -2,17 +2,39 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	types2 "trek/internal/engine/core/types"
 	"trek/internal/engine/decision"
 	_ "trek/internal/engine/decision/reuse"
 	perceptionfusion "trek/internal/engine/perception/fusion"
+	engineplugin "trek/internal/engine/plugin"
+	"trek/internal/scripting"
 )
 
 const ENGINE_VERSION = "1.0.0"
 
+type PageSnapshotInput struct {
+	PageName   string
+	XML        string
+	Screenshot []byte
+}
+
+type StepResultInput struct {
+	Step       int
+	Action     *types2.ActionCommand
+	Success    bool
+	Error      string
+	DurationMs int64
+	Crash      bool
+	ANR        bool
+	Before     PageSnapshotInput
+	After      *PageSnapshotInput
+}
+
 var engineModel *decision.Model
 var observationMode = perceptionfusion.ModeXMLOnly
 var defaultOrchestrator = newDefaultOrchestrator()
+var scriptPlugin *engineplugin.Adapter
 
 func GetAction(activity string, xmlDescOfGuiTree string) string {
 	operate := GetActionOpt(activity, xmlDescOfGuiTree)
@@ -30,15 +52,140 @@ func GetActionOptWithInput(activity string, xmlDescOfGuiTree string, screenshot 
 	if defaultOrchestrator == nil {
 		defaultOrchestrator = newDefaultOrchestrator()
 	}
+	pluginCtx := buildPluginContext(activity, xmlDescOfGuiTree, screenshot)
+	page, _ := transformPageForDecision(pluginCtx)
+	pluginCtx.Page = page
+	if cmd, handled, err := beforeDecide(pluginCtx); err == nil && handled {
+		return cmd
+	}
 	operate := defaultOrchestrator.NextActionWithInput(context.Background(), decision.PerceptionInput{
-		PageName:   activity,
-		XMLDesc:    xmlDescOfGuiTree,
+		PageName:   page.Name,
+		XMLDesc:    page.XML,
 		Screenshot: screenshot,
 	})
 	if operate == nil {
 		return nil
 	}
+	if cmd, handled, err := afterDecide(pluginCtx, operate); err == nil && handled {
+		return cmd
+	}
 	return operate
+}
+
+// TransformPageInfo 使用配置脚本改造页面信息并返回新结果。
+func TransformPageInfo(activity string, xmlDescOfGuiTree string) (string, string, error) {
+	ctx := buildPluginContext(activity, xmlDescOfGuiTree, nil)
+	page, err := transformPageForDecision(ctx)
+	if err != nil {
+		return activity, xmlDescOfGuiTree, err
+	}
+	return page.Name, page.XML, nil
+}
+
+func LoadScriptPlugin(path string) error {
+	plugin, err := engineplugin.LoadFile(path)
+	if err != nil {
+		if errors.Is(err, scripting.ErrPluginNotFound) {
+			scriptPlugin = nil
+			return nil
+		}
+		scriptPlugin = nil
+		return err
+	}
+	scriptPlugin = plugin
+	return nil
+}
+
+func ClearScriptPlugin() {
+	scriptPlugin = nil
+}
+
+func HasScriptPlugin() bool {
+	return scriptPlugin != nil
+}
+
+func transformPageForDecision(ctx engineplugin.PluginContext) (engineplugin.PageSnapshot, error) {
+	if scriptPlugin == nil {
+		return ctx.Page, nil
+	}
+	return scriptPlugin.TransformPage(ctx)
+}
+
+func beforeDecide(ctx engineplugin.PluginContext) (*types2.ActionCommand, bool, error) {
+	if scriptPlugin == nil {
+		return nil, false, nil
+	}
+	return scriptPlugin.BeforeDecide(ctx)
+}
+
+func afterDecide(ctx engineplugin.PluginContext, cmd *types2.ActionCommand) (*types2.ActionCommand, bool, error) {
+	if scriptPlugin == nil {
+		return cmd, false, nil
+	}
+	return scriptPlugin.AfterDecide(ctx, cmd)
+}
+
+func buildPluginContext(activity string, xmlDescOfGuiTree string, screenshot []byte) engineplugin.PluginContext {
+	page := engineplugin.PageSnapshot{
+		Name: activity,
+		XML:  xmlDescOfGuiTree,
+	}
+	if len(screenshot) > 0 {
+		page.Screenshot = &engineplugin.Screenshot{
+			Bytes: append([]byte(nil), screenshot...),
+			MIME:  "image/png",
+		}
+	}
+	packageName := ""
+	if engineModel != nil {
+		packageName = engineModel.GetPackageName()
+	}
+	return engineplugin.PluginContext{
+		Page: page,
+		Runtime: engineplugin.RuntimeContext{
+			PackageName:    packageName,
+			PageSourceType: string(observationMode),
+		},
+	}
+}
+
+func LoadConfigFile(resourceMappingFilepath string) error {
+	ensureModel("")
+	if err := LoadScriptPlugin(resourceMappingFilepath); err != nil {
+		return err
+	}
+	configManager := engineModel.GetConfigManager()
+	if configManager == nil {
+		return nil
+	}
+	return configManager.LoadResourceMapping(resourceMappingFilepath)
+}
+
+func OnStepResult(input StepResultInput) error {
+	if scriptPlugin == nil {
+		return nil
+	}
+	before := pageSnapshotFromInput(input.Before)
+	ctx := engineplugin.StepResultContext{
+		PluginContext: engineplugin.PluginContext{
+			Page: before,
+			Runtime: engineplugin.RuntimeContext{
+				PackageName: packageName(),
+			},
+		},
+		Result: engineplugin.StepResult{
+			Step:       input.Step,
+			Action:     engineplugin.FromActionCommand(input.Action),
+			Success:    input.Success,
+			Error:      input.Error,
+			DurationMs: input.DurationMs,
+			Crash:      input.Crash,
+			ANR:        input.ANR,
+			Before:     before,
+			After:      pageSnapshotPtrFromInput(input.After),
+		},
+	}
+	return scriptPlugin.OnStepResult(ctx)
 }
 
 func InitAgent(agentType types2.AlgorithmType, packageName string, deviceType types2.DeviceType) {
@@ -49,11 +196,7 @@ func InitAgent(agentType types2.AlgorithmType, packageName string, deviceType ty
 
 // LoadResourceMapping 加载资源映射配置（主入口）。
 func LoadResourceMapping(resourceMappingFilepath string) {
-	ensureModel("")
-	configManager := engineModel.GetConfigManager()
-	if configManager != nil {
-		_ = configManager.LoadResourceMapping(resourceMappingFilepath)
-	}
+	_ = LoadConfigFile(resourceMappingFilepath)
 }
 
 // Deprecated: 请使用 LoadResourceMapping。
@@ -83,6 +226,7 @@ func GetModel() *decision.Model {
 func ResetModel() {
 	engineModel = nil
 	defaultOrchestrator = newDefaultOrchestrator()
+	ClearScriptPlugin()
 }
 
 // SetObservationMode 设置感知模式：xml-only / image-only / hybrid。
@@ -106,4 +250,33 @@ func ensureModel(packageName string) *decision.Model {
 		engineModel = decision.NewModel(packageName)
 	}
 	return engineModel
+}
+
+func pageSnapshotFromInput(input PageSnapshotInput) engineplugin.PageSnapshot {
+	page := engineplugin.PageSnapshot{
+		Name: input.PageName,
+		XML:  input.XML,
+	}
+	if len(input.Screenshot) > 0 {
+		page.Screenshot = &engineplugin.Screenshot{
+			Bytes: append([]byte(nil), input.Screenshot...),
+			MIME:  "image/png",
+		}
+	}
+	return page
+}
+
+func pageSnapshotPtrFromInput(input *PageSnapshotInput) *engineplugin.PageSnapshot {
+	if input == nil {
+		return nil
+	}
+	page := pageSnapshotFromInput(*input)
+	return &page
+}
+
+func packageName() string {
+	if engineModel == nil {
+		return ""
+	}
+	return engineModel.GetPackageName()
 }

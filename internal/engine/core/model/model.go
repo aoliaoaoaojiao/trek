@@ -212,8 +212,17 @@ func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID str
 
 	operate := types.ActionCommandNop
 	if action != nil {
-		logger.Infof("selected action %s", action.(*types.StatefulAction).String())
-		operate = action.(*types.StatefulAction).ToOperate()
+		switch a := action.(type) {
+		case *config.CustomAction:
+			logger.Infof("selected custom action %s", a.ActionType.String())
+			operate = a.ToActionCommand()
+		case *types.StatefulAction:
+			logger.Infof("selected action %s", a.String())
+			operate = a.ToOperate()
+		default:
+			logger.Errorf("unsupported action type: %T", action)
+			return types.ActionCommandNop
+		}
 		if m.configManager != nil {
 			m.patchOperate(operate)
 		}

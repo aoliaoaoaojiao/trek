@@ -1,15 +1,13 @@
 package config
 
 import (
-	"errors"
 	"fmt"
-	"github.com/dop251/goja"
 	"math/rand"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 	"trek/internal/engine/core/types"
+	"trek/internal/scripting"
 )
 
 type CustomAction struct {
@@ -159,6 +157,9 @@ func (m *Manager) PatchOperate(operate *types.ActionCommand) {
 func (m *Manager) LoadResourceMapping(resourceMappingPath string) error {
 	m.resMapping = make(map[string]string)
 	m.blackRects = make(map[string][][4]int)
+	m.customEvents = make([]*CustomEvent, 0)
+	m.currentActions = make([]types.IAction, 0)
+	m.skipAllActionsFromModel = false
 
 	if resourceMappingPath == "" {
 		return nil
@@ -167,87 +168,34 @@ func (m *Manager) LoadResourceMapping(resourceMappingPath string) error {
 		return fmt.Errorf("配置文件仅支持 Goja 脚本格式(.js): %s", resourceMappingPath)
 	}
 
-	scriptBytes, err := os.ReadFile(resourceMappingPath)
+	staticConfig, err := scripting.LoadStaticConfigFile(resourceMappingPath)
 	if err != nil {
 		return err
 	}
-
-	vm := goja.New()
-	if _, err = vm.RunString(string(scriptBytes)); err != nil {
-		return fmt.Errorf("执行 goja 配置脚本失败: %w", err)
-	}
-
-	cfgValue := vm.Get("config")
-	if isEmptyJSValue(cfgValue) {
-		cfgValue = vm.Get("CONFIG")
-	}
-	if isEmptyJSValue(cfgValue) {
-		return errors.New("配置脚本必须导出 config 或 CONFIG 对象")
-	}
-
-	cfgObj := cfgValue.ToObject(vm)
-
-	if resMappingValue := cfgObj.Get("res_mapping"); !isEmptyJSValue(resMappingValue) {
-		resMappingObj := resMappingValue.ToObject(vm)
-		for _, key := range resMappingObj.Keys() {
-			m.resMapping[key] = toStringValue(resMappingObj.Get(key))
-		}
-	}
-
-	blackRectsValue := cfgObj.Get("black_rects")
-	if isEmptyJSValue(blackRectsValue) {
-		return nil
-	}
-
-	blackRectsObj := blackRectsValue.ToObject(vm)
-	for _, pageName := range blackRectsObj.Keys() {
-		rectsValue := blackRectsObj.Get(pageName)
-		rectsArray := rectsValue.ToObject(vm)
-		rectKeys := rectsArray.Keys()
-		pageRects := make([][4]int, 0, len(rectKeys))
-		for _, rectKey := range rectKeys {
-			rectValue := rectsArray.Get(rectKey)
-			rectArray := rectValue.ToObject(vm)
-			rectItemKeys := rectArray.Keys()
-			if len(rectItemKeys) != 4 {
-				return fmt.Errorf("black_rects[%s][%s] 长度必须为4", pageName, rectKey)
-			}
-			var rect [4]int
-			for i, itemKey := range rectItemKeys {
-				intVal, convErr := toIntValue(rectArray.Get(itemKey))
-				if convErr != nil {
-					return fmt.Errorf("black_rects[%s][%s][%d] 非法: %w", pageName, rectKey, i, convErr)
-				}
-				rect[i] = intVal
-			}
-			pageRects = append(pageRects, rect)
-		}
-		m.blackRects[pageName] = pageRects
-	}
+	m.resMapping = staticConfig.ResMapping
+	m.blackRects = staticConfig.BlackRects
+	m.skipAllActionsFromModel = staticConfig.SkipAll
 
 	return nil
 }
 
-func toStringValue(v goja.Value) string {
-	if isEmptyJSValue(v) {
-		return ""
+func (m *CustomAction) ToActionCommand() *types.ActionCommand {
+	operate := m.StatefulAction.ToOperate()
+	operate.Text = m.Text
+	operate.Clear = m.ClearText
+	operate.AdbInput = m.AdbInput
+	operate.AllowFuzzing = m.AllowFuzzing
+	operate.WaitTime = m.WaitTime
+	operate.Throttle = float32(m.Throttle)
+	if len(m.Bounds) == 4 {
+		operate.Pos = types.Rect{
+			Left:   m.Bounds[0],
+			Top:    m.Bounds[1],
+			Right:  m.Bounds[2],
+			Bottom: m.Bounds[3],
+		}
 	}
-	return v.String()
-}
-
-func toIntValue(v goja.Value) (int, error) {
-	if isEmptyJSValue(v) {
-		return 0, errors.New("值不能为空")
-	}
-	f := v.ToFloat()
-	if f != float64(int(f)) {
-		return 0, fmt.Errorf("值必须是整数: %v", f)
-	}
-	return int(f), nil
-}
-
-func isEmptyJSValue(v goja.Value) bool {
-	return v == nil || goja.IsUndefined(v) || goja.IsNull(v)
+	return operate
 }
 
 // Deprecated: 请使用 LoadResourceMapping。

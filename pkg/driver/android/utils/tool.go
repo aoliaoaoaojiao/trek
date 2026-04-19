@@ -2,13 +2,13 @@ package utils
 
 import (
 	"errors"
-	gadb2 "trek/pkg/driver/android/gadb"
+	"trek/pkg/driver/android/adb"
 )
 
 // GetDevice 通过设备序列号获取device实例
-func GetDevice(deviceSerial string) (*gadb2.Device, error) {
+func GetDevice(deviceSerial string) (*adb.Device, error) {
 
-	adbClient, err := gadb2.NewClient()
+	adbClient, err := adb.NewClient()
 	if err != nil {
 		return nil, err
 	}

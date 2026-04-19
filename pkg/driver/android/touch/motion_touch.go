@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 	types2 "trek/internal/engine/core/types"
-	"trek/pkg/driver/android/gadb"
+	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/common"
 )
 
@@ -29,7 +29,7 @@ type MotionTouch struct {
 }
 
 // NewMotionTouch 初始化触摸工具，推送apk并建立shell循环连接
-func NewMotionTouch(device *gadb.Device) *MotionTouch {
+func NewMotionTouch(device *adb.Device) *MotionTouch {
 	var err error
 	// 推送触摸工具到设备
 	err = device.Push(bytes.NewReader(touchBytes), touchToolPath, time.Now())

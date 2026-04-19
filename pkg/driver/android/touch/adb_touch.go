@@ -5,20 +5,20 @@ import (
 	"fmt"
 	types2 "trek/internal/engine/core/types"
 	"trek/logger"
-	"trek/pkg/driver/android/gadb"
+	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/common"
 )
 
 var _ common.ITouch = (*ADBTouch)(nil)
 
-func NewADBTouch(device *gadb.Device) *ADBTouch {
+func NewADBTouch(device *adb.Device) *ADBTouch {
 	return &ADBTouch{
 		device: device,
 	}
 }
 
 type ADBTouch struct {
-	device *gadb.Device
+	device *adb.Device
 }
 
 func (a *ADBTouch) Close() error {

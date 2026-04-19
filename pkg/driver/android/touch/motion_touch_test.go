@@ -3,13 +3,13 @@ package touch_test
 import (
 	"testing"
 	"trek/internal/engine/core/types"
-	gadb2 "trek/pkg/driver/android/gadb"
+	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/android/touch"
 	"trek/pkg/driver/android/utils"
 )
 
 var (
-	device *gadb2.Device
+	device *adb.Device
 )
 
 func init() {

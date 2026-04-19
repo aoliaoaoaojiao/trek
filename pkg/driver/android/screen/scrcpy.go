@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 	"trek/logger"
-	"trek/pkg/driver/android/gadb"
+	"trek/pkg/driver/android/adb"
 )
 
 const (
@@ -25,7 +25,7 @@ const (
 var scrcpyBytes []byte
 
 type Scrcpy struct {
-	device            *gadb.Device
+	device            *adb.Device
 	scrcpyLn          net.Listener
 	localPort         int
 	videoSocket       net.Conn
@@ -35,7 +35,7 @@ type Scrcpy struct {
 	videoFrameHandler func([]byte, uint64, bool)
 }
 
-func NewScrcpy(device *gadb.Device) *Scrcpy {
+func NewScrcpy(device *adb.Device) *Scrcpy {
 	ln, err := net.Listen("tcp", ":0") // 0表示随机端口
 	if err != nil {
 		return nil
@@ -95,13 +95,13 @@ func (s *Scrcpy) Start(maxsize int) error {
 }
 
 func (s *Scrcpy) runBinary(maxSize int) error {
-	var output io.Reader
+	var output net.Conn
 
-	//output, err := s.device.RunShellLoopCommand(fmt.Sprintf("CLASSPATH=%s app_process / com.genymobile.scrcpy.Server v2.2  log_level=debug max_size=0 max_fps=60 control=false max_size=%d audio=false audio=false size_info=true",
+	//output, err := s.device.RunShellLoopCommandSock(fmt.Sprintf("CLASSPATH=%s app_process / com.genymobile.scrcpy.Server v2.2  log_level=debug max_size=0 max_fps=60 control=false max_size=%d audio=false audio=false size_info=true",
 	//	deviceServerPath,
 	//	maxSize))
 
-	output, err := s.device.RunShellLoopCommand(
+	output, err := s.device.RunShellLoopCommandSock(
 		fmt.Sprintf("CLASSPATH=%s", deviceServerPath),
 		"app_process",
 		"/",

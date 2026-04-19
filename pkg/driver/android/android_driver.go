@@ -12,7 +12,7 @@ import (
 	"time"
 	"trek/internal/engine/core/types"
 	"trek/logger"
-	"trek/pkg/driver/android/gadb"
+	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/android/page"
 	"trek/pkg/driver/android/screen"
 	"trek/pkg/driver/android/touch"
@@ -49,7 +49,7 @@ const (
 )
 
 type AndroidDriver struct {
-	device        *gadb.Device
+	device        *adb.Device
 	touch         common.ITouch
 	screenCapture common.IScreenCapture
 	pageSources   map[PageType]common.IPageSource
@@ -502,7 +502,7 @@ func (a *AndroidDriver) CheckEnvironment(pageSourceType string) (*common.Environ
 func (a *AndroidDriver) initPoco() error {
 	a.frowardPocoPort = common.GetRandomPort()
 	logger.Infof("Starting Poco port forwarding, localPort=%d remotePort=%d", a.frowardPocoPort, a.pocoPort)
-	err := a.device.FrowardTcp(a.frowardPocoPort, a.pocoPort)
+	err := a.device.ForwardTcp(a.frowardPocoPort, a.pocoPort)
 	if err != nil {
 		return err
 	}
@@ -585,7 +585,7 @@ func (a *AndroidDriver) initUIA() error {
 
 func (a *AndroidDriver) startUIAServer(uiaPort int) error {
 	logger.Infof("Starting UIA instrumentation, localPort=%d remotePort=%d", uiaPort, uiaServerPort)
-	if err := a.device.FrowardTcp(uiaPort, uiaServerPort); err != nil {
+	if err := a.device.ForwardTcp(uiaPort, uiaServerPort); err != nil {
 		return fmt.Errorf("forward uia port failed: %w", err)
 	}
 	logger.Infof("UIA port forwarding established, localPort=%d", uiaPort)

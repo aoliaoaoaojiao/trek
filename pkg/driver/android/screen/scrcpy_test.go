@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 	"time"
-	gadb2 "trek/pkg/driver/android/gadb"
+	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/android/utils"
 
 	"github.com/yapingcat/gomedia/go-codec"
@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	device *gadb2.Device
+	device *adb.Device
 )
 
 func init() {

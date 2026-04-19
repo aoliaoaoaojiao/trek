@@ -7,7 +7,7 @@ import (
 	"os"
 	"sync"
 	"trek/logger"
-	"trek/pkg/driver/android/gadb"
+	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/common"
 
 	"github.com/google/uuid"
@@ -18,7 +18,7 @@ import (
 var _ common.IScreenCapture = (*ScreenCapture)(nil)
 
 type ScreenCapture struct {
-	device *gadb.Device
+	device *adb.Device
 
 	mu          sync.Mutex
 	scrcpy      *Scrcpy
@@ -31,7 +31,7 @@ type ScreenCapture struct {
 	isRecording bool
 }
 
-func NewScreenCapture(device *gadb.Device) *ScreenCapture {
+func NewScreenCapture(device *adb.Device) *ScreenCapture {
 	return &ScreenCapture{device: device}
 }
 

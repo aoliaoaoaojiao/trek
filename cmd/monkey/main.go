@@ -23,6 +23,7 @@ type cliOptions struct {
 	captureScreenshot bool
 	keepStepRecords   bool
 	probePageName     bool
+	autoCurrentApp    bool
 }
 
 func main() {
@@ -45,17 +46,34 @@ func parseFlags() cliOptions {
 	flag.BoolVar(&opts.captureScreenshot, "capture-screenshot", false, "是否采集截图给决策层")
 	flag.BoolVar(&opts.keepStepRecords, "keep-step-records", true, "是否保留每步记录")
 	flag.BoolVar(&opts.probePageName, "probe-page-name", false, "仅探测当前页面名后退出")
+	flag.BoolVar(&opts.autoCurrentApp, "auto-current-app", false, "自动使用当前前台应用进行测试")
 	flag.Parse()
 	return opts
 }
 
 func run(opts cliOptions) error {
-	if opts.packageName == "" {
-		return fmt.Errorf("参数 -package 不能为空")
+	driver, err := android.NewAndroidDriverWith(opts.deviceSerial)
+	if err != nil {
+		return fmt.Errorf("创建设备驱动失败: %w", err)
+	}
+	defer func() { _ = driver.Close() }()
+
+	packageName := opts.packageName
+	if opts.autoCurrentApp {
+		pkg, err := driver.GetCurrentPackage()
+		if err != nil {
+			return fmt.Errorf("获取当前前台应用失败: %w", err)
+		}
+		packageName = pkg
+		fmt.Printf("自动检测到前台应用: %s\n", packageName)
+	}
+
+	if packageName == "" {
+		return fmt.Errorf("参数 -package 不能为空，或使用 -auto-current-app 自动获取")
 	}
 
 	sess := session.NewSession(session.Config{
-		PackageName: opts.packageName,
+		PackageName: packageName,
 	})
 	if opts.configPath != "" {
 		if err := sess.LoadConfigFile(opts.configPath); err != nil {
@@ -64,14 +82,8 @@ func run(opts cliOptions) error {
 		fmt.Printf("配置加载成功: %s\n", opts.configPath)
 	}
 
-	driver, err := android.NewAndroidDriverWith(opts.deviceSerial)
-	if err != nil {
-		return fmt.Errorf("创建设备驱动失败: %w", err)
-	}
-	defer func() { _ = driver.Close() }()
-
 	cfg := monkey.Config{
-		PackageName:       opts.packageName,
+		PackageName:       packageName,
 		MaxSteps:          opts.maxSteps,
 		MaxDuration:       opts.maxDuration,
 		StepInterval:      opts.stepInterval,

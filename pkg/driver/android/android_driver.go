@@ -175,6 +175,13 @@ func (a *AndroidDriver) Back() error {
 	return err
 }
 
+func (a *AndroidDriver) GetCurrentPackage() (string, error) {
+	if a.device == nil {
+		return "", fmt.Errorf("device is nil")
+	}
+	return a.device.GetCurrentPackage()
+}
+
 // StartApp 启动指定包名应用。
 func (a *AndroidDriver) StartApp(packageName string) error {
 	if strings.TrimSpace(packageName) == "" {
@@ -234,36 +241,36 @@ func (a *AndroidDriver) CheckCrash(packageName string) (bool, error) {
 		return false, fmt.Errorf("device is nil")
 	}
 
-	logcatOut, err := a.device.RunShellCommand("logcat", "-d", "-t", "200")
+	pkgLower := strings.ToLower(strings.TrimSpace(packageName))
+
+	dropboxOut, err := a.device.RunShellCommand("dumpsys", "dropbox", "--print")
+	if err == nil {
+		dropLower := strings.ToLower(dropboxOut)
+		if strings.Contains(dropLower, "crash") || strings.Contains(dropLower, "native_crash") {
+			if pkgLower == "" || strings.Contains(dropLower, pkgLower) {
+				return true, nil
+			}
+		}
+	}
+
+	logcatOut, err := a.device.RunShellCommand("logcat", "-d", "-b", "main", "-t", "50", "AndroidRuntime:E", "*:S")
 	if err != nil {
 		return false, err
 	}
 	logLower := strings.ToLower(logcatOut)
-	pkgLower := strings.ToLower(strings.TrimSpace(packageName))
 	if strings.Contains(logLower, "fatal exception") {
 		if pkgLower == "" || strings.Contains(logLower, pkgLower) {
 			return true, nil
 		}
 	}
-	if pkgLower != "" && strings.Contains(logLower, "process "+pkgLower+" has died") {
-		return true, nil
-	}
-	if strings.Contains(logLower, "am_crash") {
-		if pkgLower == "" || strings.Contains(logLower, pkgLower) {
+
+	if pkgLower != "" {
+		pidOut, err := a.device.RunShellCommand("pidof", packageName)
+		if err == nil && strings.TrimSpace(pidOut) == "" {
 			return true, nil
 		}
 	}
 
-	dumpsysOut, err := a.device.RunShellCommand("dumpsys", "activity")
-	if err != nil {
-		return false, err
-	}
-	dumpLower := strings.ToLower(dumpsysOut)
-	if strings.Contains(dumpLower, "crash") {
-		if pkgLower == "" || strings.Contains(dumpLower, pkgLower) {
-			return true, nil
-		}
-	}
 	return false, nil
 }
 
@@ -273,25 +280,15 @@ func (a *AndroidDriver) CheckANR(packageName string) (bool, error) {
 		return false, fmt.Errorf("device is nil")
 	}
 
-	logcatOut, err := a.device.RunShellCommand("logcat", "-d", "-t", "200")
-	if err != nil {
-		return false, err
-	}
-	logLower := strings.ToLower(logcatOut)
 	pkgLower := strings.ToLower(strings.TrimSpace(packageName))
-	if strings.Contains(logLower, "am_anr") {
-		if pkgLower == "" || strings.Contains(logLower, pkgLower) {
-			return true, nil
-		}
-	}
-	if strings.Contains(logLower, "anr in ") {
-		if pkgLower == "" || strings.Contains(logLower, pkgLower) {
-			return true, nil
-		}
-	}
-	if strings.Contains(logLower, "isn't responding") || strings.Contains(logLower, "not responding") {
-		if pkgLower == "" || strings.Contains(logLower, pkgLower) {
-			return true, nil
+
+	dropboxOut, err := a.device.RunShellCommand("dumpsys", "dropbox", "--print")
+	if err == nil {
+		dropLower := strings.ToLower(dropboxOut)
+		if strings.Contains(dropLower, "anr") {
+			if pkgLower == "" || strings.Contains(dropLower, pkgLower) {
+				return true, nil
+			}
 		}
 	}
 

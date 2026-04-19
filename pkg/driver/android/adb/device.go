@@ -198,6 +198,38 @@ func (d Device) RunShellCommandWithBytes(cmd string, args ...string) ([]byte, er
 	return output, nil
 }
 
+func (d Device) GetCurrentPackage() (string, error) {
+	output, err := d.RunShellCommand("dumpsys", "activity", "top")
+	if err != nil {
+		return "", err
+	}
+
+	lines := strings.Split(output, "\n")
+	var lastActivity string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "ACTIVITY") {
+			lastActivity = line
+		}
+	}
+
+	if lastActivity == "" {
+		return "", errors.New("no current package found")
+	}
+
+	parts := strings.Fields(lastActivity)
+	for _, part := range parts {
+		if strings.Contains(part, "/") {
+			pkg := strings.Split(part, "/")[0]
+			if pkg != "" {
+				return pkg, nil
+			}
+		}
+	}
+
+	return "", errors.New("no current package found")
+}
+
 func (d Device) RunShellLoopCommandSock(cmd string, args ...string) (net.Conn, error) {
 	if len(args) > 0 {
 		cmd = fmt.Sprintf("%s %s", cmd, strings.Join(args, " "))

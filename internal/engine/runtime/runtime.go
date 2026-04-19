@@ -72,9 +72,9 @@ func GetActionOptWithInput(activity string, xmlDescOfGuiTree string, screenshot 
 	return operate
 }
 
-// TransformPageInfo 使用配置脚本改造页面信息并返回新结果。
-func TransformPageInfo(activity string, xmlDescOfGuiTree string) (string, string, error) {
-	ctx := buildPluginContext(activity, xmlDescOfGuiTree, nil)
+// TransformPageInfoWithInput 使用配置脚本改造页面信息并返回新结果（支持截图输入）。
+func TransformPageInfoWithInput(activity string, xmlDescOfGuiTree string, screenshot []byte) (string, string, error) {
+	ctx := buildPluginContext(activity, xmlDescOfGuiTree, screenshot)
 	page, err := transformPageForDecision(ctx)
 	if err != nil {
 		return activity, xmlDescOfGuiTree, err

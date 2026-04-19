@@ -14,9 +14,13 @@ import (
 type fakeDecider struct {
 	commands []*types.ActionCommand
 	idx      int
+	lastPage string
+	lastXML  string
 }
 
 func (f *fakeDecider) NextActionWithInput(pageName string, input session.ActionInput) (*types.ActionCommand, error) {
+	f.lastPage = pageName
+	f.lastXML = input.XMLDescOfGuiTree
 	if len(f.commands) == 0 {
 		return types.NewActionCommand(), nil
 	}
@@ -45,6 +49,27 @@ type weightedDecider struct {
 	candidates []WeightedCandidate
 }
 
+type transformingDecider struct {
+	fakeDecider
+	pageName       string
+	xml            string
+	sawScreenshot  bool
+	transformError error
+}
+
+func (d *transformingDecider) TransformPageInfoWithInput(pageName string, input session.ActionInput) (session.PageInfo, error) {
+	if len(input.Screenshot) > 0 {
+		d.sawScreenshot = true
+	}
+	if d.transformError != nil {
+		return session.PageInfo{}, d.transformError
+	}
+	return session.PageInfo{
+		PageName: d.pageName,
+		XML:      d.xml,
+	}, nil
+}
+
 func (w *weightedDecider) NextActionWithInput(pageName string, input session.ActionInput) (*types.ActionCommand, error) {
 	if len(w.candidates) == 0 {
 		return nil, nil
@@ -64,18 +89,25 @@ func (f *fakePageSource) DumpPageSource() (string, error) { return f.xml, nil }
 func (f *fakePageSource) Close() error                    { return nil }
 
 type fakeDriver struct {
-	pageSource      common.IPageSource
-	clickCount      int
-	startCount      int
-	activateCount   int
-	clearCnt        int
-	envCheckCnt     int
-	crash           bool
-	anr             bool
-	envResult       *common.EnvironmentCheckResult
-	envErr          error
-	crashAfterClick bool
-	anrAfterClick   bool
+	pageSource       common.IPageSource
+	clickCount       int
+	startCount       int
+	activateCount    int
+	activateErr      error
+	currentPkgErr    error
+	clearCnt         int
+	envCheckCnt      int
+	crash            bool
+	anr              bool
+	currentPackage   string
+	targetOnActivate string
+	currentPkgCalls  int
+	envResult        *common.EnvironmentCheckResult
+	envErr           error
+	crashAfterClick  bool
+	anrAfterClick    bool
+	currentActivity  string
+	currentActErr    error
 }
 
 func (f *fakeDriver) Click(point types.Point) error {
@@ -114,10 +146,31 @@ func (f *fakeDriver) GetInfo() map[string]interface{} {
 func (f *fakeDriver) Back() error                                     { return nil }
 func (f *fakeDriver) StartApp(packageName string) error               { f.startCount++; return nil }
 func (f *fakeDriver) RestartApp(packageName string, clean bool) error { return nil }
-func (f *fakeDriver) ActivateApp(packageName string) error            { f.activateCount++; return nil }
-func (f *fakeDriver) InputText(text string, clear bool) error         { return nil }
-func (f *fakeDriver) CheckCrash(packageName string) (bool, error)     { return f.crash, nil }
-func (f *fakeDriver) CheckANR(packageName string) (bool, error)       { return f.anr, nil }
+func (f *fakeDriver) ActivateApp(packageName string) error {
+	f.activateCount++
+	if f.activateErr != nil {
+		return f.activateErr
+	}
+	f.currentPackage = packageName
+	f.targetOnActivate = packageName
+	return nil
+}
+func (f *fakeDriver) GetCurrentPackage() (string, error) {
+	f.currentPkgCalls++
+	if f.currentPkgErr != nil {
+		return "", f.currentPkgErr
+	}
+	return f.currentPackage, nil
+}
+func (f *fakeDriver) GetCurrentActivity() (string, error) {
+	if f.currentActErr != nil {
+		return "", f.currentActErr
+	}
+	return f.currentActivity, nil
+}
+func (f *fakeDriver) InputText(text string, clear bool) error     { return nil }
+func (f *fakeDriver) CheckCrash(packageName string) (bool, error) { return f.crash, nil }
+func (f *fakeDriver) CheckANR(packageName string) (bool, error)   { return f.anr, nil }
 func (f *fakeDriver) ClearLogcat() error {
 	f.clearCnt++
 	return nil
@@ -289,6 +342,117 @@ func TestRunnerAutoStartOnRunDisabled(t *testing.T) {
 	}
 	if driver.envCheckCnt == 0 {
 		t.Fatalf("关闭自动启动后仍应执行前置检测")
+	}
+}
+
+func TestRunnerRecoversWhenOutOfTargetPackage(t *testing.T) {
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
+	driver := &fakeDriver{
+		pageSource:     &fakePageSource{xml: `<node class="MainActivity"/>`},
+		currentPackage: "com.android.settings",
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		PackageName:     "com.example.app",
+		AutoStartOnRun:  boolPtr(false),
+		MaxSteps:        2,
+		StepInterval:    0,
+		KeepStepRecords: true,
+		StopOnCrash:     true,
+		StopOnANR:       true,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if report.OutOfAppRecoveries != 1 {
+		t.Fatalf("预期发生一次离开应用恢复，实际: %d", report.OutOfAppRecoveries)
+	}
+	if driver.activateCount != 1 || driver.targetOnActivate != "com.example.app" {
+		t.Fatalf("预期激活被测应用一次，实际 activateCount=%d target=%s", driver.activateCount, driver.targetOnActivate)
+	}
+	if driver.clickCount != 1 {
+		t.Fatalf("预期恢复后执行一次点击，实际: %d", driver.clickCount)
+	}
+}
+
+func TestRunnerOutOfTargetPackageActivationFailed(t *testing.T) {
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
+	driver := &fakeDriver{
+		pageSource:     &fakePageSource{xml: `<node class="MainActivity"/>`},
+		currentPackage: "com.android.settings",
+		activateErr:    errors.New("activate failed"),
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		PackageName:            "com.example.app",
+		AutoStartOnRun:         boolPtr(false),
+		MaxSteps:               1,
+		MaxConsecutiveFailures: 1,
+		StepInterval:           0,
+		KeepStepRecords:        true,
+		StopOnCrash:            true,
+		StopOnANR:              true,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopMaxConsecutiveFailures {
+		t.Fatalf("预期恢复失败触发最大连续失败停止，实际: %s", report.StopReason)
+	}
+	if report.StepsFailed != 1 {
+		t.Fatalf("预期记录 1 次失败，实际: %d", report.StepsFailed)
+	}
+	if driver.clickCount != 0 {
+		t.Fatalf("激活失败时不应继续执行点击，实际: %d", driver.clickCount)
+	}
+}
+
+func TestRunnerCurrentPackageMonitorError(t *testing.T) {
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
+	driver := &fakeDriver{
+		pageSource:    &fakePageSource{xml: `<node class="MainActivity"/>`},
+		currentPkgErr: errors.New("pkg query failed"),
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		PackageName:            "com.example.app",
+		AutoStartOnRun:         boolPtr(false),
+		MaxSteps:               1,
+		MaxConsecutiveFailures: 1,
+		StepInterval:           0,
+		KeepStepRecords:        true,
+		StopOnCrash:            true,
+		StopOnANR:              true,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopMaxConsecutiveFailures {
+		t.Fatalf("预期前台包监控异常触发连续失败停止，实际: %s", report.StopReason)
+	}
+	if report.StepsFailed != 1 {
+		t.Fatalf("预期记录 1 次失败，实际: %d", report.StepsFailed)
+	}
+	if driver.clickCount != 0 {
+		t.Fatalf("前台包获取失败时不应继续执行点击，实际: %d", driver.clickCount)
 	}
 }
 
@@ -482,3 +646,85 @@ func TestResolvePageNameWithCustomResolver(t *testing.T) {
 		t.Fatalf("自定义解析页面名错误: %s", page)
 	}
 }
+
+func TestRunnerUsesGojaTransformedPageInfoInWholeChain(t *testing.T) {
+	decider := &transformingDecider{
+		fakeDecider: fakeDecider{
+			commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}},
+		},
+		pageName: "Goja.Custom.Page",
+		xml:      `<node class="Goja.Custom.Page"/>`,
+	}
+	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}
+
+	runner, err := NewRunner(decider, driver, Config{
+		MaxSteps:          1,
+		StepInterval:      0,
+		KeepStepRecords:   true,
+		CaptureScreenshot: true,
+		StopOnCrash:       true,
+		StopOnANR:         true,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if decider.lastPage != "Goja.Custom.Page" {
+		t.Fatalf("预期决策链路使用 goja 页面名，实际: %s", decider.lastPage)
+	}
+	if decider.lastXML != `<node class="Goja.Custom.Page"/>` {
+		t.Fatalf("预期决策链路使用 goja 页面 xml，实际: %s", decider.lastXML)
+	}
+	if report.PageVisitCount["Goja.Custom.Page"] != 1 {
+		t.Fatalf("预期统计链路使用 goja 页面名，实际: %+v", report.PageVisitCount)
+	}
+	if len(report.Records) != 1 || report.Records[0].PageName != "Goja.Custom.Page" {
+		t.Fatalf("预期记录链路使用 goja 页面名，实际: %+v", report.Records)
+	}
+	if !decider.sawScreenshot {
+		t.Fatalf("预期 transformPage 能收到截图输入")
+	}
+}
+
+func TestRunnerUsesCurrentActivityAsPageNameWhenUIA(t *testing.T) {
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
+	driver := &fakeDriver{
+		pageSource:      &fakePageSource{xml: `<node class="android.widget.FrameLayout"/>`},
+		currentActivity: "com.demo.LoginActivity",
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		MaxSteps:        1,
+		StepInterval:    0,
+		PageSourceType:  "uia",
+		KeepStepRecords: true,
+		StopOnCrash:     true,
+		StopOnANR:       true,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if decider.lastPage != "com.demo.LoginActivity" {
+		t.Fatalf("预期使用当前 Activity 作为页面名，实际: %s", decider.lastPage)
+	}
+	if report.PageVisitCount["com.demo.LoginActivity"] != 1 {
+		t.Fatalf("预期使用 Activity 名参与页面统计，实际: %+v", report.PageVisitCount)
+	}
+}
+
+func boolPtr(v bool) *bool { return &v }

@@ -203,31 +203,68 @@ func (d Device) GetCurrentPackage() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	token, err := parseTopActivityToken(output)
+	if err != nil {
+		return "", err
+	}
+	pkg, _, err := splitActivityToken(token)
+	if err != nil {
+		return "", err
+	}
+	return pkg, nil
+}
 
+func (d Device) GetCurrentActivity() (string, error) {
+	output, err := d.RunShellCommand("dumpsys", "activity", "top")
+	if err != nil {
+		return "", err
+	}
+	token, err := parseTopActivityToken(output)
+	if err != nil {
+		return "", err
+	}
+	_, activity, err := splitActivityToken(token)
+	if err != nil {
+		return "", err
+	}
+	return activity, nil
+}
+
+func parseTopActivityToken(output string) (string, error) {
 	lines := strings.Split(output, "\n")
-	var lastActivity string
+	var lastActivityLine string
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.Contains(line, "ACTIVITY") {
-			lastActivity = line
+			lastActivityLine = line
 		}
 	}
-
-	if lastActivity == "" {
-		return "", errors.New("no current package found")
+	if lastActivityLine == "" {
+		return "", errors.New("no current activity found")
 	}
-
-	parts := strings.Fields(lastActivity)
+	parts := strings.Fields(lastActivityLine)
 	for _, part := range parts {
 		if strings.Contains(part, "/") {
-			pkg := strings.Split(part, "/")[0]
-			if pkg != "" {
-				return pkg, nil
-			}
+			return part, nil
 		}
 	}
+	return "", errors.New("no current activity found")
+}
 
-	return "", errors.New("no current package found")
+func splitActivityToken(token string) (pkg string, activity string, err error) {
+	parts := strings.SplitN(token, "/", 2)
+	if len(parts) != 2 {
+		return "", "", errors.New("invalid activity token")
+	}
+	pkg = strings.TrimSpace(parts[0])
+	activity = strings.TrimSpace(parts[1])
+	if pkg == "" || activity == "" {
+		return "", "", errors.New("invalid activity token")
+	}
+	if strings.HasPrefix(activity, ".") {
+		activity = pkg + activity
+	}
+	return pkg, activity, nil
 }
 
 func (d Device) RunShellLoopCommandSock(cmd string, args ...string) (net.Conn, error) {

@@ -50,7 +50,7 @@ func TestSessionCheckPointInBlackRects(t *testing.T) {
 	}
 }
 
-func TestSessionTransformPageInfo(t *testing.T) {
+func TestSessionTransformPageInfoWithInput(t *testing.T) {
 	session := NewSession(Config{PackageName: "com.demo"})
 
 	configPath := filepath.Join(t.TempDir(), "mix.js")
@@ -69,9 +69,9 @@ func TestSessionTransformPageInfo(t *testing.T) {
 		t.Fatalf("加载配置失败: %v", err)
 	}
 
-	info, err := session.TransformPageInfo("MainActivity", `<node text="foo"/>`)
+	info, err := session.TransformPageInfoWithInput("MainActivity", ActionInput{XMLDescOfGuiTree: `<node text="foo"/>`})
 	if err != nil {
-		t.Fatalf("TransformPageInfo 失败: %v", err)
+		t.Fatalf("TransformPageInfoWithInput 失败: %v", err)
 	}
 	if info.PageName != "MainActivity_v2" {
 		t.Fatalf("页面名改造结果不符合预期: %s", info.PageName)

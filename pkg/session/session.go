@@ -147,15 +147,15 @@ func (s *Session) NativeVersion() string {
 	return engineruntime.GetNativeVersion()
 }
 
-// TransformPageInfo 使用 Goja 配置脚本改造页面信息并返回新结果。
-func (s *Session) TransformPageInfo(pageName string, xmlDescOfGuiTree string) (PageInfo, error) {
+// TransformPageInfoWithInput 使用 Goja 配置脚本改造页面信息并返回新结果（支持截图输入）。
+func (s *Session) TransformPageInfoWithInput(pageName string, input ActionInput) (PageInfo, error) {
 	if strings.TrimSpace(pageName) == "" {
 		return PageInfo{}, fmt.Errorf("pageName 不能为空")
 	}
-	if strings.TrimSpace(xmlDescOfGuiTree) == "" {
-		return PageInfo{}, fmt.Errorf("xmlDescOfGuiTree 不能为空")
+	if strings.TrimSpace(input.XMLDescOfGuiTree) == "" && len(input.Screenshot) == 0 {
+		return PageInfo{}, fmt.Errorf("xmlDescOfGuiTree 和 screenshot 不能同时为空")
 	}
-	newPage, newXML, err := engineruntime.TransformPageInfo(pageName, xmlDescOfGuiTree)
+	newPage, newXML, err := engineruntime.TransformPageInfoWithInput(pageName, input.XMLDescOfGuiTree, input.Screenshot)
 	if err != nil {
 		return PageInfo{}, err
 	}

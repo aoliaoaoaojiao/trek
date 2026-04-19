@@ -130,7 +130,9 @@ const plugin = {
 如需单独获取改造后的页面信息，可调用：
 
 ```go
-info, err := session.TransformPageInfo(pageName, xmlContent)
+info, err := session.TransformPageInfoWithInput(pageName, session.ActionInput{
+    XMLDescOfGuiTree: xmlContent,
+})
 if err != nil {
     return err
 }

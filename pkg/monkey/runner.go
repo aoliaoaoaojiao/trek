@@ -1,4 +1,4 @@
-package monkey
+﻿package monkey
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 	"trek/internal/engine/core/types"
 	"trek/logger"
@@ -14,16 +15,18 @@ import (
 )
 
 const (
-	defaultMaxSteps                      = 300
-	defaultMaxDuration                   = 10 * time.Minute
-	defaultStepInterval                  = 300 * time.Millisecond
-	defaultMaxConsecutiveFailures        = 8
-	defaultFailureRecoveryInterval       = 3
-	defaultLongClickDuration             = 800 * time.Millisecond
-	defaultScrollDuration                = 350 * time.Millisecond
-	defaultScrollSteps             int64 = 20
-	defaultScrollRepeat                  = 3
-	defaultPageSourceType                = "uia"
+	defaultMaxSteps                          = 300
+	defaultMaxDuration                       = 10 * time.Minute
+	defaultStepInterval                      = 300 * time.Millisecond
+	defaultMaxConsecutiveFailures            = 8
+	defaultFailureRecoveryInterval           = 3
+	defaultLongClickDuration                 = 800 * time.Millisecond
+	defaultScrollDuration                    = 350 * time.Millisecond
+	defaultScrollSteps                 int64 = 20
+	defaultScrollRepeat                      = 3
+	defaultPageSourceType                    = "uia"
+	defaultForegroundMonitorInterval         = 300 * time.Millisecond
+	defaultHealthSignalMonitorInterval       = 500 * time.Millisecond
 )
 
 // StopReason 表示 Monkey 运行停止原因。
@@ -48,26 +51,28 @@ type PageNameResolver func(xml string) string
 
 // Config 是 Smart Monkey Runner 配置。
 type Config struct {
-	PackageName             string
-	AutoStartOnRun          *bool
-	ActionThrottleEnabled   *bool
-	RandomizeThrottle       bool
-	EnableFailureRecovery   *bool
-	FailureRecoveryInterval int
-	MaxSteps                int
-	MaxDuration             time.Duration
-	StepInterval            time.Duration
-	MaxConsecutiveFailures  int
-	PageSourceType          string
-	CaptureScreenshot       bool
-	LongClickDuration       time.Duration
-	ScrollDuration          time.Duration
-	ScrollSteps             int64
-	ScrollRepeat            int
-	StopOnCrash             bool
-	StopOnANR               bool
-	KeepStepRecords         bool
-	PageNameResolver        PageNameResolver
+	PackageName                 string
+	AutoStartOnRun              *bool
+	ActionThrottleEnabled       *bool
+	RandomizeThrottle           bool
+	EnableFailureRecovery       *bool
+	FailureRecoveryInterval     int
+	MaxSteps                    int
+	MaxDuration                 time.Duration
+	StepInterval                time.Duration
+	MaxConsecutiveFailures      int
+	PageSourceType              string
+	CaptureScreenshot           bool
+	LongClickDuration           time.Duration
+	ScrollDuration              time.Duration
+	ScrollSteps                 int64
+	ScrollRepeat                int
+	StopOnCrash                 bool
+	StopOnANR                   bool
+	KeepStepRecords             bool
+	PageNameResolver            PageNameResolver
+	ForegroundMonitorInterval   time.Duration
+	HealthSignalMonitorInterval time.Duration
 }
 
 // StepRecord 是每一步执行记录。
@@ -94,12 +99,18 @@ type Report struct {
 	ConsecutiveFailures int
 	ActionCount         map[string]int
 	PageVisitCount      map[string]int
+	OutOfAppRecoveries  int
 	Records             []StepRecord
 }
 
 // Decider 是动作决策接口，*session.Session 可直接满足。
 type Decider interface {
 	NextActionWithInput(pageName string, input session.ActionInput) (*types.ActionCommand, error)
+}
+
+// PageInfoTransformer 是可选接口：允许决策层按 XML/截图自定义页面名与页面内容。
+type PageInfoTransformer interface {
+	TransformPageInfoWithInput(pageName string, input session.ActionInput) (session.PageInfo, error)
 }
 
 // WeightedCandidate 表示一个带权重的候选动作。
@@ -118,12 +129,155 @@ type StepResultObserver interface {
 	OnStepResult(result session.StepResultInput) error
 }
 
+type currentPackageProvider interface {
+	GetCurrentPackage() (string, error)
+}
+
+type currentActivityProvider interface {
+	GetCurrentActivity() (string, error)
+}
+
+type foregroundPackageMonitor struct {
+	provider currentPackageProvider
+	interval time.Duration
+	stopCh   chan struct{}
+	doneCh   chan struct{}
+	mu       sync.RWMutex
+	pkg      string
+	err      error
+	updated  bool
+}
+
+type healthSignalMonitor struct {
+	driver      common.IDriver
+	packageName string
+	interval    time.Duration
+	stopCh      chan struct{}
+	doneCh      chan struct{}
+	mu          sync.RWMutex
+	crash       bool
+	anr         bool
+	updated     bool
+}
+
+func newHealthSignalMonitor(driver common.IDriver, packageName string, interval time.Duration) *healthSignalMonitor {
+	return &healthSignalMonitor{
+		driver:      driver,
+		packageName: packageName,
+		interval:    interval,
+		stopCh:      make(chan struct{}),
+		doneCh:      make(chan struct{}),
+	}
+}
+
+func (m *healthSignalMonitor) start() {
+	m.refresh()
+	go func() {
+		ticker := time.NewTicker(m.interval)
+		defer func() {
+			ticker.Stop()
+			close(m.doneCh)
+		}()
+		for {
+			select {
+			case <-m.stopCh:
+				return
+			case <-ticker.C:
+				m.refresh()
+			}
+		}
+	}()
+}
+
+func (m *healthSignalMonitor) stop() {
+	close(m.stopCh)
+	<-m.doneCh
+}
+
+func (m *healthSignalMonitor) refresh() {
+	crash, crashErr := m.driver.CheckCrash(m.packageName)
+	anr, anrErr := m.driver.CheckANR(m.packageName)
+	m.mu.Lock()
+	if crashErr == nil {
+		m.crash = crash
+	}
+	if anrErr == nil {
+		m.anr = anr
+	}
+	m.updated = true
+	m.mu.Unlock()
+}
+
+func (m *healthSignalMonitor) snapshot() (crash bool, anr bool, updated bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.crash, m.anr, m.updated
+}
+
+func newForegroundPackageMonitor(provider currentPackageProvider, interval time.Duration) *foregroundPackageMonitor {
+	return &foregroundPackageMonitor{
+		provider: provider,
+		interval: interval,
+		stopCh:   make(chan struct{}),
+		doneCh:   make(chan struct{}),
+	}
+}
+
+func (m *foregroundPackageMonitor) start() {
+	m.refresh()
+	go func() {
+		ticker := time.NewTicker(m.interval)
+		defer func() {
+			ticker.Stop()
+			close(m.doneCh)
+		}()
+		for {
+			select {
+			case <-m.stopCh:
+				return
+			case <-ticker.C:
+				m.refresh()
+			}
+		}
+	}()
+}
+
+func (m *foregroundPackageMonitor) stop() {
+	close(m.stopCh)
+	<-m.doneCh
+}
+
+func (m *foregroundPackageMonitor) refresh() {
+	pkg, err := m.provider.GetCurrentPackage()
+	m.mu.Lock()
+	m.pkg = strings.TrimSpace(pkg)
+	m.err = err
+	m.updated = true
+	m.mu.Unlock()
+}
+
+func (m *foregroundPackageMonitor) snapshot() (string, error, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.pkg, m.err, m.updated
+}
+
+func (m *foregroundPackageMonitor) setCurrentPackage(pkg string) {
+	m.mu.Lock()
+	m.pkg = strings.TrimSpace(pkg)
+	m.err = nil
+	m.updated = true
+	m.mu.Unlock()
+}
+
 // Runner 执行 Smart Monkey 真机闭环。
 type Runner struct {
-	decider Decider
-	driver  common.IDriver
-	cfg     Config
-	rng     *rand.Rand
+	decider       Decider
+	driver        common.IDriver
+	cfg           Config
+	rng           *rand.Rand
+	monitor       *foregroundPackageMonitor
+	healthMonitor *healthSignalMonitor
 }
 
 // NewRunner 创建 Monkey Runner。
@@ -185,6 +339,10 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	}
 
 	_ = r.driver.ClearLogcat()
+	r.startForegroundPackageMonitor()
+	defer r.stopForegroundPackageMonitor()
+	r.startHealthSignalMonitor()
+	defer r.stopHealthSignalMonitor()
 	deadline := report.StartedAt.Add(r.cfg.MaxDuration)
 
 	for step := 1; step <= r.cfg.MaxSteps; step++ {
@@ -202,6 +360,26 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		stepStart := time.Now()
 		record := StepRecord{Step: step}
 
+		recovered, recoverErr := r.ensureTargetPackageForeground(step)
+		if recoverErr != nil {
+			record.Err = recoverErr.Error()
+			r.markFailed(report, record, stepStart)
+			logger.Warnf("monkey step=%d ensure target package failed: %v", step, recoverErr)
+			if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
+				report.StopReason = StopMaxConsecutiveFailures
+				return report, nil
+			}
+			r.sleepStep(ctx, r.cfg.StepInterval)
+			continue
+		}
+		if recovered {
+			report.OutOfAppRecoveries++
+			record.Err = "检测到已离开被测应用，已自动拉回前台"
+			r.appendRecord(report, record, stepStart)
+			r.sleepStep(ctx, r.cfg.StepInterval)
+			continue
+		}
+
 		xml, err := pageSource.DumpPageSource()
 		if err != nil {
 			record.Err = err.Error()
@@ -216,14 +394,15 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			continue
 		}
 
-		if r.cfg.StopOnCrash && r.detectCrashBySystem() {
+		cachedCrash, cachedANR, cachedReady := r.snapshotHealthSignals()
+		if r.cfg.StopOnCrash && cachedReady && cachedCrash {
 			report.StopReason = StopCrashDetectedLogcat
 			record.Err = "检测到系统 crash 信号"
 			r.appendRecord(report, record, stepStart)
 			logger.Errorf("monkey stop on crash signal at step=%d", step)
 			return report, nil
 		}
-		if r.cfg.StopOnANR && r.detectANRBySystem() {
+		if r.cfg.StopOnANR && cachedReady && cachedANR {
 			report.StopReason = StopANRDetectedLogcat
 			record.Err = "检测到系统 ANR 信号"
 			r.appendRecord(report, record, stepStart)
@@ -231,19 +410,20 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			return report, nil
 		}
 
-		pageName := r.cfg.PageNameResolver(xml)
-		record.PageName = pageName
-		report.PageVisitCount[pageName]++
-
 		var screenshot []byte
 		if r.cfg.CaptureScreenshot {
 			screenshot, _ = r.driver.Screenshot()
 		}
+		pageName, xml := r.resolvePageInfo(xml, screenshot)
+
 		beforePage := session.PageSnapshot{
 			PageName:   pageName,
 			XML:        xml,
 			Screenshot: screenshot,
 		}
+
+		record.PageName = pageName
+		report.PageVisitCount[pageName]++
 
 		cmd, err := r.nextCommand(pageName, session.ActionInput{
 			XMLDescOfGuiTree: xml,
@@ -283,8 +463,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		if err = r.execute(cmd); err != nil {
 			record.Err = err.Error()
 			afterPage := r.capturePageSnapshot(pageSource, pageName)
-			crash := r.cfg.StopOnCrash && r.detectCrashBySystem()
-			anr := r.cfg.StopOnANR && r.detectANRBySystem()
+			crash, anr := r.currentHealthSignals()
 			r.notifyStepResult(step, cmd, false, err.Error(), time.Since(stepStart).Milliseconds(), crash, anr, beforePage, afterPage)
 			r.markFailed(report, record, stepStart)
 			logger.Warnf("monkey step=%d execute action=%s failed: %v", step, cmd.Act.String(), err)
@@ -300,8 +479,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		report.StepsSucceeded++
 		report.ConsecutiveFailures = 0
 		afterPage := r.capturePageSnapshot(pageSource, pageName)
-		crash := r.cfg.StopOnCrash && r.detectCrashBySystem()
-		anr := r.cfg.StopOnANR && r.detectANRBySystem()
+		crash, anr := r.currentHealthSignals()
 		r.notifyStepResult(step, cmd, true, "", time.Since(stepStart).Milliseconds(), crash, anr, beforePage, afterPage)
 		r.appendRecord(report, record, stepStart)
 		logger.Debugf("monkey step=%d execute action=%s success", step, cmd.Act.String())
@@ -328,9 +506,13 @@ func (r *Runner) capturePageSnapshot(pageSource common.IPageSource, fallbackPage
 	if r.cfg.CaptureScreenshot {
 		screenshot, _ = r.driver.Screenshot()
 	}
+	nextPageName, nextXML := r.resolvePageInfo(xml, screenshot)
+	if strings.TrimSpace(nextPageName) == "" {
+		nextPageName = pageName
+	}
 	return &session.PageSnapshot{
-		PageName:   pageName,
-		XML:        xml,
+		PageName:   nextPageName,
+		XML:        nextXML,
 		Screenshot: screenshot,
 	}
 }
@@ -587,6 +769,12 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.PageNameResolver == nil {
 		cfg.PageNameResolver = defaultPageNameResolver
 	}
+	if cfg.ForegroundMonitorInterval <= 0 {
+		cfg.ForegroundMonitorInterval = defaultForegroundMonitorInterval
+	}
+	if cfg.HealthSignalMonitorInterval <= 0 {
+		cfg.HealthSignalMonitorInterval = defaultHealthSignalMonitorInterval
+	}
 	if !cfg.StopOnCrash && !cfg.StopOnANR {
 		cfg.StopOnCrash = true
 		cfg.StopOnANR = true
@@ -656,4 +844,133 @@ func (r *Runner) detectCrashBySystem() bool {
 func (r *Runner) detectANRBySystem() bool {
 	anr, err := r.driver.CheckANR(r.cfg.PackageName)
 	return err == nil && anr
+}
+
+func (r *Runner) ensureTargetPackageForeground(step int) (bool, error) {
+	targetPackage := strings.TrimSpace(r.cfg.PackageName)
+	if targetPackage == "" {
+		return false, nil
+	}
+	if r.monitor == nil {
+		return false, nil
+	}
+	currentPackage, err, ok := r.monitor.snapshot()
+	if !ok {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("获取当前前台应用失败: %w", err)
+	}
+	if currentPackage == "" || currentPackage == targetPackage {
+		return false, nil
+	}
+	logger.Warnf("monkey step=%d out of target package: current=%s target=%s, activating target app", step, currentPackage, targetPackage)
+	if err := r.driver.ActivateApp(targetPackage); err != nil {
+		return false, fmt.Errorf("拉回被测应用失败: %w", err)
+	}
+	r.monitor.setCurrentPackage(targetPackage)
+	return true, nil
+}
+
+func (r *Runner) startForegroundPackageMonitor() {
+	targetPackage := strings.TrimSpace(r.cfg.PackageName)
+	if targetPackage == "" {
+		return
+	}
+	provider, ok := r.driver.(currentPackageProvider)
+	if !ok || provider == nil {
+		return
+	}
+	monitor := newForegroundPackageMonitor(provider, r.cfg.ForegroundMonitorInterval)
+	monitor.start()
+	r.monitor = monitor
+}
+
+func (r *Runner) stopForegroundPackageMonitor() {
+	if r.monitor == nil {
+		return
+	}
+	r.monitor.stop()
+	r.monitor = nil
+}
+
+func (r *Runner) startHealthSignalMonitor() {
+	if !r.cfg.StopOnCrash && !r.cfg.StopOnANR {
+		return
+	}
+	targetPackage := strings.TrimSpace(r.cfg.PackageName)
+	monitor := newHealthSignalMonitor(r.driver, targetPackage, r.cfg.HealthSignalMonitorInterval)
+	monitor.start()
+	r.healthMonitor = monitor
+}
+
+func (r *Runner) stopHealthSignalMonitor() {
+	if r.healthMonitor == nil {
+		return
+	}
+	r.healthMonitor.stop()
+	r.healthMonitor = nil
+}
+
+func (r *Runner) snapshotHealthSignals() (crash bool, anr bool, ready bool) {
+	if r.healthMonitor == nil {
+		return false, false, false
+	}
+	return r.healthMonitor.snapshot()
+}
+
+func (r *Runner) resolvePageInfo(xml string, screenshot []byte) (string, string) {
+	pageName := r.resolveBasePageName(xml)
+	transformer, ok := r.decider.(PageInfoTransformer)
+	if !ok || transformer == nil {
+		return pageName, xml
+	}
+	pageInfo, err := transformer.TransformPageInfoWithInput(pageName, session.ActionInput{
+		XMLDescOfGuiTree: xml,
+		Screenshot:       screenshot,
+	})
+	if err != nil {
+		logger.Warnf("transform page info failed, use fallback: %v", err)
+		return pageName, xml
+	}
+	nextPageName := strings.TrimSpace(pageInfo.PageName)
+	if nextPageName == "" {
+		nextPageName = pageName
+	}
+	nextXML := strings.TrimSpace(pageInfo.XML)
+	if nextXML == "" {
+		nextXML = xml
+	}
+	return nextPageName, nextXML
+}
+
+func (r *Runner) resolveBasePageName(xml string) string {
+	if strings.EqualFold(strings.TrimSpace(r.cfg.PageSourceType), string(defaultPageSourceType)) {
+		if provider, ok := r.driver.(currentActivityProvider); ok && provider != nil {
+			activity, err := provider.GetCurrentActivity()
+			if err == nil && strings.TrimSpace(activity) != "" {
+				return strings.TrimSpace(activity)
+			}
+		}
+	}
+	return ResolvePageName(xml, r.cfg.PageNameResolver)
+}
+
+func (r *Runner) currentHealthSignals() (crash bool, anr bool) {
+	cachedCrash, cachedANR, ready := r.snapshotHealthSignals()
+	if ready {
+		if r.cfg.StopOnCrash {
+			crash = cachedCrash
+		}
+		if r.cfg.StopOnANR {
+			anr = cachedANR
+		}
+	}
+	if r.cfg.StopOnCrash && !crash {
+		crash = r.detectCrashBySystem()
+	}
+	if r.cfg.StopOnANR && !anr {
+		anr = r.detectANRBySystem()
+	}
+	return crash, anr
 }

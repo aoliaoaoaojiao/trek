@@ -182,6 +182,13 @@ func (a *AndroidDriver) GetCurrentPackage() (string, error) {
 	return a.device.GetCurrentPackage()
 }
 
+func (a *AndroidDriver) GetCurrentActivity() (string, error) {
+	if a.device == nil {
+		return "", fmt.Errorf("device is nil")
+	}
+	return a.device.GetCurrentActivity()
+}
+
 // StartApp 启动指定包名应用。
 func (a *AndroidDriver) StartApp(packageName string) error {
 	if strings.TrimSpace(packageName) == "" {

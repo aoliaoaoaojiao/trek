@@ -13,6 +13,7 @@
                 "GO111MODULE": "on"
             },
             "args": [
+                "run",
                 "-auto-current-app",
                 "-serial",
                 "${input:deviceSerial}",
@@ -40,6 +41,7 @@
                 "GO111MODULE": "on"
             },
             "args": [
+                "run",
                 "-package",
                 "${input:packageName}",
                 "-serial",
@@ -68,6 +70,7 @@
                 "GO111MODULE": "on"
             },
             "args": [
+                "run",
                 "-auto-current-app",
                 "-serial",
                 "${input:deviceSerial}",
@@ -75,6 +78,25 @@
                 "${input:configPath}",
                 "-probe-page-name",
                 "-log-level",
+                "${input:logLevel}"
+            ]
+        },
+        {
+            "name": "Monkey: 启动 Web 配置界面",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/cmd/monkey",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "env": {
+                "GO111MODULE": "on"
+            },
+            "args": [
+                "web",
+                "--addr",
+                "${input:webAddr}",
+                "--log-level",
                 "${input:logLevel}"
             ]
         }
@@ -126,6 +148,12 @@
                 "error"
             ],
             "default": "info"
+        },
+        {
+            "id": "webAddr",
+            "type": "promptString",
+            "description": "Web 服务监听地址",
+            "default": ":17888"
         }
     ]
 }

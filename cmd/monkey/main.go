@@ -2,21 +2,22 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"strings"
 	"time"
+	webcmd "trek/cmd/web"
 	"trek/internal/scripting"
 	"trek/logger"
 	"trek/pkg/driver/android"
 	"trek/pkg/driver/common/page/poco"
 	"trek/pkg/monkey"
 	"trek/pkg/session"
+
+	"github.com/spf13/cobra"
 )
 
-// cliOptions 定义 monkey 主入口参数。
-type cliOptions struct {
+type runOptions struct {
 	packageName       string
 	deviceSerial      string
 	configPath        string
@@ -27,36 +28,87 @@ type cliOptions struct {
 	keepStepRecords   bool
 	probePageName     bool
 	autoCurrentApp    bool
-	logLevel          string
+}
+
+type webOptions struct {
+	addr string
+}
+
+type rootOptions struct {
+	logLevel string
+	run      runOptions
+	web      webOptions
 }
 
 func main() {
-	opts := parseFlags()
-	if err := run(opts); err != nil {
+	opts := &rootOptions{}
+	cmd := newRootCommand(opts)
+	if err := cmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "运行失败: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func parseFlags() cliOptions {
-	var opts cliOptions
-	flag.StringVar(&opts.packageName, "package", "", "被测应用包名（必填）")
-	flag.StringVar(&opts.deviceSerial, "serial", "", "设备序列号（可选，默认自动选择）")
-	flag.StringVar(&opts.configPath, "config", "", "配置文件路径（可选，仅支持 .js，支持绝对/相对路径）")
-	flag.IntVar(&opts.maxSteps, "max-steps", 300, "最大执行步数")
-	flag.DurationVar(&opts.maxDuration, "max-duration", 10*time.Minute, "最大运行时长")
-	flag.DurationVar(&opts.stepInterval, "step-interval", 300*time.Millisecond, "基础步进间隔")
-	flag.BoolVar(&opts.captureScreenshot, "capture-screenshot", false, "是否采集截图给决策层")
-	flag.BoolVar(&opts.keepStepRecords, "keep-step-records", true, "是否保留每步记录")
-	flag.BoolVar(&opts.probePageName, "probe-page-name", false, "仅探测当前页面名后退出")
-	flag.BoolVar(&opts.autoCurrentApp, "auto-current-app", false, "自动使用当前前台应用进行测试")
-	flag.StringVar(&opts.logLevel, "log-level", "info", "控制台日志级别: debug, info, warn, error")
-	flag.Parse()
-	return opts
+func newRootCommand(opts *rootOptions) *cobra.Command {
+	rootCmd := &cobra.Command{
+		Use:   "monkey",
+		Short: "Trek Monkey 执行入口",
+		Long:  "支持 run/web 两种模式：run 用于执行 monkey，web 用于启动配置界面。",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runMonkey(opts.logLevel, opts.run)
+		},
+	}
+	rootCmd.PersistentFlags().StringVar(&opts.logLevel, "log-level", "info", "控制台日志级别: debug, info, warn, error")
+
+	bindRunFlags(rootCmd, &opts.run)
+	rootCmd.AddCommand(newRunCommand(opts))
+	rootCmd.AddCommand(newWebCommand(opts))
+	return rootCmd
 }
 
-func run(opts cliOptions) error {
-	if err := logger.SetLevel(opts.logLevel); err != nil {
+func newRunCommand(opts *rootOptions) *cobra.Command {
+	runCmd := &cobra.Command{
+		Use:   "run",
+		Short: "执行 monkey 测试",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runMonkey(opts.logLevel, opts.run)
+		},
+	}
+	bindRunFlags(runCmd, &opts.run)
+	return runCmd
+}
+
+func newWebCommand(opts *rootOptions) *cobra.Command {
+	webCmd := &cobra.Command{
+		Use:   "web",
+		Short: "启动 web 配置界面",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := logger.SetLevel(opts.logLevel); err != nil {
+				return fmt.Errorf("设置日志级别失败: %w", err)
+			}
+			return webcmd.Serve(opts.web.addr)
+		},
+	}
+	webCmd.Flags().StringVar(&opts.web.addr, "addr", ":17888", "web 模式监听地址")
+	webCmd.Flags().StringVar(&opts.web.addr, "web-addr", ":17888", "web 模式监听地址（兼容旧参数）")
+	return webCmd
+}
+
+func bindRunFlags(cmd *cobra.Command, opts *runOptions) {
+	cmd.Flags().StringVar(&opts.packageName, "package", "", "被测应用包名（必填）")
+	cmd.Flags().StringVar(&opts.deviceSerial, "serial", "", "设备序列号（可选，默认自动选择）")
+	cmd.Flags().StringVar(&opts.configPath, "config", "", "配置文件路径（可选，仅支持 .js，支持绝对/相对路径）")
+	cmd.Flags().IntVar(&opts.maxSteps, "max-steps", 300, "最大执行步数")
+	cmd.Flags().DurationVar(&opts.maxDuration, "max-duration", 10*time.Minute, "最大运行时长")
+	cmd.Flags().DurationVar(&opts.stepInterval, "step-interval", 300*time.Millisecond, "基础步进间隔")
+	cmd.Flags().BoolVar(&opts.captureScreenshot, "capture-screenshot", false, "是否采集截图给决策层")
+	cmd.Flags().BoolVar(&opts.keepStepRecords, "keep-step-records", true, "是否保留每步记录")
+	cmd.Flags().BoolVar(&opts.probePageName, "probe-page-name", false, "仅探测当前页面名后退出")
+	cmd.Flags().BoolVar(&opts.autoCurrentApp, "auto-current-app", false, "自动使用当前前台应用进行测试")
+}
+
+func runMonkey(logLevel string, opts runOptions) error {
+	if err := logger.SetLevel(logLevel); err != nil {
 		return fmt.Errorf("设置日志级别失败: %w", err)
 	}
 

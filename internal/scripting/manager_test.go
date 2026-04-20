@@ -233,26 +233,3 @@ func TestLoadStaticConfigReadsEffectiveTouchAreaBySerialAndPackage(t *testing.T)
 		t.Fatalf("range 不符合预期: %+v", cfg.EffectiveTouchArea.Range)
 	}
 }
-
-func TestLoadStaticConfigReadsEffectiveTouchAreaFromLegacyKey(t *testing.T) {
-	cfg, err := LoadStaticConfig(`const config = {
-  effective_touch_area: {
-    key: "abc::com.demo",
-    range: {
-      left: 0,
-      top: 0,
-      right: 1,
-      bottom: 1
-    }
-  }
-}`)
-	if err != nil {
-		t.Fatalf("加载静态配置失败: %v", err)
-	}
-	if cfg.EffectiveTouchArea == nil {
-		t.Fatalf("预期解析到 effective_touch_area")
-	}
-	if cfg.EffectiveTouchArea.Serial != "abc" || cfg.EffectiveTouchArea.PackageName != "com.demo" {
-		t.Fatalf("legacy key 拆分不符合预期: %+v", cfg.EffectiveTouchArea)
-	}
-}

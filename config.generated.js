@@ -7,4 +7,14 @@ const config = {
   log: {
     file_level: "info",
   },
+  effective_touch_area: {
+    serial: "192.168.2.198:5555",
+    package_name: "com.NetEase",
+    range: {
+      left: 0.043,
+      top: 0,
+      right: 1,
+      bottom: 1,
+    },
+  },
 }

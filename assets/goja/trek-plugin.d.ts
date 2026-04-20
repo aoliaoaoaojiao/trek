@@ -207,8 +207,6 @@ interface TrekStaticConfig {
     serial?: string
     /** 命中包名（可选，空表示不限制包名） */
     package_name?: string
-    /** 兼容旧配置：serial::package_name（建议改用 serial + package_name） */
-    key?: string
     range: {
       left: number
       top: number

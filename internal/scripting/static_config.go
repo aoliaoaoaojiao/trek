@@ -178,18 +178,6 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 		if packageValue := areaObj.Get("package"); area.PackageName == "" && !isEmptyJSValue(packageValue) {
 			area.PackageName = strings.TrimSpace(packageValue.String())
 		}
-		if keyValue := areaObj.Get("key"); !isEmptyJSValue(keyValue) {
-			key := strings.TrimSpace(keyValue.String())
-			if key != "" {
-				parts := strings.SplitN(key, "::", 2)
-				if area.Serial == "" && len(parts) >= 1 {
-					area.Serial = strings.TrimSpace(parts[0])
-				}
-				if area.PackageName == "" && len(parts) == 2 {
-					area.PackageName = strings.TrimSpace(parts[1])
-				}
-			}
-		}
 		if rangeValue := areaObj.Get("range"); !isEmptyJSValue(rangeValue) {
 			rangeObj := rangeValue.ToObject(vm)
 			left, err := floatFromJSValue(rangeObj.Get("left"))

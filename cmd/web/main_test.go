@@ -42,3 +42,33 @@ func TestBuildConfigJS_InvalidTouchMode(t *testing.T) {
 		t.Fatalf("预期触控模式校验失败，但返回成功")
 	}
 }
+
+func TestBuildConfigJS_WithEffectiveTouchArea(t *testing.T) {
+	cfg := webConfigPayload{
+		PageSource: "uia",
+		TouchMode:  "motion",
+	}
+	cfg.EffectiveTouchArea.Serial = "192.168.2.198:5555"
+	cfg.EffectiveTouchArea.PackageName = "com.NetEase"
+	cfg.EffectiveTouchArea.Range.Left = 0.043
+	cfg.EffectiveTouchArea.Range.Top = 0
+	cfg.EffectiveTouchArea.Range.Right = 1
+	cfg.EffectiveTouchArea.Range.Bottom = 1
+
+	js, err := buildConfigJS(cfg)
+	if err != nil {
+		t.Fatalf("buildConfigJS effective_touch_area 失败: %v", err)
+	}
+	if !strings.Contains(js, `effective_touch_area`) {
+		t.Fatalf("未输出 effective_touch_area: %s", js)
+	}
+	if !strings.Contains(js, `serial: "192.168.2.198:5555"`) {
+		t.Fatalf("未输出 serial: %s", js)
+	}
+	if !strings.Contains(js, `package_name: "com.NetEase"`) {
+		t.Fatalf("未输出 package_name: %s", js)
+	}
+	if !strings.Contains(js, `left: 0.043`) {
+		t.Fatalf("未输出 left: %s", js)
+	}
+}

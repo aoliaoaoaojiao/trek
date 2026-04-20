@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+﻿import { useEffect, useMemo, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -14,6 +14,11 @@ type ConfigPayload = {
   uia: { server_port: number }
   poco: { engine: string; port: number }
   log: { file_level: string }
+  effective_touch_area: {
+    serial: string
+    package_name: string
+    range: EffectiveRange
+  }
 }
 
 type DeviceOption = {
@@ -37,10 +42,30 @@ type DumpTreeNode = {
 }
 
 type ClickPoint = {
+  imagePercentX: number
+  imagePercentY: number
   percentX: number
   percentY: number
   absoluteX: number
   absoluteY: number
+}
+
+type EffectiveRange = {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
+type ActionType = "click" | "scroll" | "long_press" | "custom_touch"
+
+type PageActionRule = {
+  page_name: string
+  action_type: ActionType
+  path?: string
+  point?: { x: number; y: number }
+  start?: { x: number; y: number }
+  end?: { x: number; y: number }
 }
 
 const DEV_API_BASE = "http://127.0.0.1:17888"
@@ -153,6 +178,8 @@ export function App() {
   const [xmlPreview, setXmlPreview] = useState("")
   const [screenshotBase64, setScreenshotBase64] = useState("")
   const [usedSerial, setUsedSerial] = useState("")
+  const [currentPackageName, setCurrentPackageName] = useState("")
+  const [currentPageName, setCurrentPageName] = useState("")
   const [status, setStatus] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
@@ -162,7 +189,22 @@ export function App() {
   const [highlightLog, setHighlightLog] = useState("未选中控件")
   const [clickPoint, setClickPoint] = useState<ClickPoint | null>(null)
   const [clickLog, setClickLog] = useState("未点击图片")
-  const [copyStatus, setCopyStatus] = useState("")
+  const [rangeLeftInput, setRangeLeftInput] = useState("0")
+  const [rangeTopInput, setRangeTopInput] = useState("0")
+  const [rangeRightInput, setRangeRightInput] = useState("1")
+  const [rangeBottomInput, setRangeBottomInput] = useState("1")
+  const [rangeLog, setRangeLog] = useState("当前范围仅内存生效（不持久化）")
+  const [configTab, setConfigTab] = useState<"base" | "action" | "preview">("base")
+  const [actionType, setActionType] = useState<ActionType>("click")
+  const [actionPath, setActionPath] = useState("")
+  const [actionX, setActionX] = useState("")
+  const [actionY, setActionY] = useState("")
+  const [actionStartX, setActionStartX] = useState("")
+  const [actionStartY, setActionStartY] = useState("")
+  const [actionEndX, setActionEndX] = useState("")
+  const [actionEndY, setActionEndY] = useState("")
+  const [actionRules, setActionRules] = useState<PageActionRule[]>([])
+  const [actionLog, setActionLog] = useState("暂无页面动作配置")
 
   const fetchDevices = async () => {
     setLoadingDevices(true)
@@ -196,18 +238,6 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const payload: ConfigPayload = useMemo(
-    () => ({
-      page_source: pageSource,
-      touch_mode: touchMode,
-      skip_all_actions_from_model: skipAll,
-      uia: { server_port: Number(uiaPort || 0) },
-      poco: { engine: pocoEngine, port: Number(pocoPort || 0) },
-      log: { file_level: fileLevel },
-    }),
-    [fileLevel, pageSource, pocoEngine, pocoPort, skipAll, touchMode, uiaPort]
-  )
-
   const parsedDump = useMemo(() => parseDumpTree(xmlPreview), [xmlPreview])
 
   useEffect(() => {
@@ -226,6 +256,41 @@ export function App() {
   const selectedDumpNode = useMemo(
     () => parsedDump.nodeMap.get(selectedDumpNodeId) ?? null,
     [parsedDump.nodeMap, selectedDumpNodeId]
+  )
+
+  const effectiveRange = useMemo<EffectiveRange>(() => {
+    const parseWithDefault = (raw: string, fallback: number) => {
+      const num = Number(raw)
+      if (Number.isNaN(num)) {
+        return fallback
+      }
+      return Math.min(Math.max(num, 0), 1)
+    }
+    const left = parseWithDefault(rangeLeftInput, 0)
+    const top = parseWithDefault(rangeTopInput, 0)
+    const right = parseWithDefault(rangeRightInput, 1)
+    const bottom = parseWithDefault(rangeBottomInput, 1)
+    return { left, top, right, bottom }
+  }, [rangeBottomInput, rangeLeftInput, rangeRightInput, rangeTopInput])
+
+  const rangeWidth = Math.max(effectiveRange.right - effectiveRange.left, 0.0001)
+  const rangeHeight = Math.max(effectiveRange.bottom - effectiveRange.top, 0.0001)
+
+  const payload: ConfigPayload = useMemo(
+    () => ({
+      page_source: pageSource,
+      touch_mode: touchMode,
+      skip_all_actions_from_model: skipAll,
+      uia: { server_port: Number(uiaPort || 0) },
+      poco: { engine: pocoEngine, port: Number(pocoPort || 0) },
+      log: { file_level: fileLevel },
+      effective_touch_area: {
+        serial: usedSerial || deviceSerial || "",
+        package_name: currentPackageName || "",
+        range: effectiveRange,
+      },
+    }),
+    [currentPackageName, deviceSerial, effectiveRange, fileLevel, pageSource, pocoEngine, pocoPort, skipAll, touchMode, uiaPort, usedSerial]
   )
 
   const selectedBounds = selectedDumpNode?.bounds ?? null
@@ -253,25 +318,53 @@ export function App() {
       return null
     }
     const left = Math.min(
-      Math.max(isNormalizedBounds ? selectedBounds.left * 100 : (selectedBounds.left / coordWidth) * 100, 0),
+      Math.max(
+        isNormalizedBounds
+          ? (effectiveRange.left + rangeWidth * selectedBounds.left) * 100
+          : (selectedBounds.left / coordWidth) * 100,
+        0
+      ),
       100
     )
     const top = Math.min(
-      Math.max(isNormalizedBounds ? selectedBounds.top * 100 : (selectedBounds.top / coordHeight) * 100, 0),
+      Math.max(
+        isNormalizedBounds
+          ? (effectiveRange.top + rangeHeight * selectedBounds.top) * 100
+          : (selectedBounds.top / coordHeight) * 100,
+        0
+      ),
       100
     )
     const right = Math.min(
-      Math.max(isNormalizedBounds ? selectedBounds.right * 100 : (selectedBounds.right / coordWidth) * 100, 0),
+      Math.max(
+        isNormalizedBounds
+          ? (effectiveRange.left + rangeWidth * selectedBounds.right) * 100
+          : (selectedBounds.right / coordWidth) * 100,
+        0
+      ),
       100
     )
     const bottom = Math.min(
-      Math.max(isNormalizedBounds ? selectedBounds.bottom * 100 : (selectedBounds.bottom / coordHeight) * 100, 0),
+      Math.max(
+        isNormalizedBounds
+          ? (effectiveRange.top + rangeHeight * selectedBounds.bottom) * 100
+          : (selectedBounds.bottom / coordHeight) * 100,
+        0
+      ),
       100
     )
     const width = Math.max(right - left, 0.4)
     const height = Math.max(bottom - top, 0.4)
     return { left, top, width, height, coordWidth, coordHeight, isNormalizedBounds }
-  }, [imageNaturalSize.height, imageNaturalSize.width, selectedBounds])
+  }, [
+    effectiveRange.left,
+    effectiveRange.top,
+    imageNaturalSize.height,
+    imageNaturalSize.width,
+    rangeHeight,
+    rangeWidth,
+    selectedBounds,
+  ])
 
   useEffect(() => {
     if (selectedDumpNode === null) {
@@ -296,16 +389,27 @@ export function App() {
       `映射(left=${highlightRect.left.toFixed(2)}%, top=${highlightRect.top.toFixed(2)}%, ` +
       `width=${highlightRect.width.toFixed(2)}%, height=${highlightRect.height.toFixed(2)}%) ` +
       `bounds模式=${highlightRect.isNormalizedBounds ? "归一化(0~1)" : "像素"} ` +
+      `有效范围=[${effectiveRange.left.toFixed(3)},${effectiveRange.top.toFixed(3)}]-[${effectiveRange.right.toFixed(3)},${effectiveRange.bottom.toFixed(3)}] ` +
       `坐标系=${highlightRect.coordWidth.toFixed(3)}x${highlightRect.coordHeight.toFixed(3)} ` +
       `截图原始=${imageNaturalSize.width}x${imageNaturalSize.height}`
     setHighlightLog(message)
     console.info("[trek-web] highlight", message)
-  }, [highlightRect, imageNaturalSize.height, imageNaturalSize.width, selectedBounds, selectedDumpNode])
+  }, [
+    effectiveRange.bottom,
+    effectiveRange.left,
+    effectiveRange.right,
+    effectiveRange.top,
+    highlightRect,
+    imageNaturalSize.height,
+    imageNaturalSize.width,
+    selectedBounds,
+    selectedDumpNode,
+  ])
 
   useEffect(() => {
     setClickPoint(null)
     setClickLog("未点击图片")
-    setCopyStatus("")
+    setRangeLog("当前范围仅内存生效（不持久化）")
   }, [screenshotBase64])
 
   const copyText = async (text: string) => {
@@ -323,10 +427,17 @@ export function App() {
         document.execCommand("copy")
         document.body.removeChild(textArea)
       }
-      setCopyStatus("已复制")
     } catch {
-      setCopyStatus("复制失败")
+      // ignore
     }
+  }
+
+  const handleClearRange = () => {
+    setRangeLeftInput("0")
+    setRangeTopInput("0")
+    setRangeRightInput("1")
+    setRangeBottomInput("1")
+    setRangeLog("已恢复整图默认范围（0,0,1,1）")
   }
 
   const handlePreview = async () => {
@@ -376,6 +487,8 @@ export function App() {
         used_serial: string
         xml: string
         screenshot_base64: string
+        package_name?: string
+        page_name?: string
       }>(
         "/api/preview",
         {
@@ -384,6 +497,8 @@ export function App() {
         }
       )
       setUsedSerial(data.used_serial || "")
+      setCurrentPackageName(data.package_name || "")
+      setCurrentPageName(data.page_name || "")
       setXmlPreview(data.xml)
       setScreenshotBase64(data.screenshot_base64)
       setStatus(`预览已刷新，当前设备序列号: ${data.used_serial || "未知"}`)
@@ -471,19 +586,39 @@ export function App() {
                 const rawY = (event.clientY - rect.top) / rect.height
                 const ratioX = Math.min(Math.max(rawX, 0), 1)
                 const ratioY = Math.min(Math.max(rawY, 0), 1)
+                const normalizedX = Math.min(
+                  Math.max((ratioX - effectiveRange.left) / rangeWidth, 0),
+                  1
+                )
+                const normalizedY = Math.min(
+                  Math.max((ratioY - effectiveRange.top) / rangeHeight, 0),
+                  1
+                )
                 const point: ClickPoint = {
-                  percentX: ratioX,
-                  percentY: ratioY,
+                  imagePercentX: ratioX,
+                  imagePercentY: ratioY,
+                  percentX: normalizedX,
+                  percentY: normalizedY,
                   absoluteX: ratioX * imageNaturalSize.width,
                   absoluteY: ratioY * imageNaturalSize.height,
                 }
                 setClickPoint(point)
                 const message =
-                  `百分比(0~1)=(${point.percentX.toFixed(6)}, ${point.percentY.toFixed(6)}), ` +
+                  `有效区百分比(0~1)=(${point.percentX.toFixed(6)}, ${point.percentY.toFixed(6)}), ` +
+                  `整图百分比(0~1)=(${point.imagePercentX.toFixed(6)}, ${point.imagePercentY.toFixed(6)}), ` +
                   `绝对坐标(设备原始)=(${point.absoluteX.toFixed(1)}, ${point.absoluteY.toFixed(1)}), ` +
-                  `坐标基准=截图原始像素(${imageNaturalSize.width.toFixed(1)}x${imageNaturalSize.height.toFixed(1)})`
+                  `映射公式=x'=${effectiveRange.left.toFixed(3)}+(${(rangeWidth).toFixed(3)})*x, y'=${effectiveRange.top.toFixed(3)}+(${(rangeHeight).toFixed(3)})*y`
                 setClickLog(message)
                 console.info("[trek-web] click-point", message)
+              }}
+            />
+            <div
+              className="pointer-events-none absolute z-[5] border border-yellow-400"
+              style={{
+                left: `${effectiveRange.left * 100}%`,
+                top: `${effectiveRange.top * 100}%`,
+                width: `${rangeWidth * 100}%`,
+                height: `${rangeHeight * 100}%`,
               }}
             />
             {highlightRect !== null ? (
@@ -501,105 +636,14 @@ export function App() {
               <div
                 className="pointer-events-none absolute z-20 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-blue-600 bg-blue-300/80"
                 style={{
-                  left: `${clickPoint.percentX * 100}%`,
-                  top: `${clickPoint.percentY * 100}%`,
+                  left: `${clickPoint.imagePercentX * 100}%`,
+                  top: `${clickPoint.imagePercentY * 100}%`,
                 }}
               />
             ) : null}
           </div>
           </div>
-          <p className="break-all font-mono text-[11px] text-muted-foreground">
-            高亮日志: {highlightLog}
-          </p>
-          <div className="rounded-md border bg-background p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-sm font-medium">点击坐标</p>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={clickPoint === null}
-                  onClick={() =>
-                    void copyText(
-                      clickPoint === null
-                        ? ""
-                        : JSON.stringify(
-                            {
-                              percent: {
-                                x: Number(clickPoint.percentX.toFixed(6)),
-                                y: Number(clickPoint.percentY.toFixed(6)),
-                              },
-                              absolute: {
-                                x: Number(clickPoint.absoluteX.toFixed(1)),
-                                y: Number(clickPoint.absoluteY.toFixed(1)),
-                              },
-                            },
-                            null,
-                            2
-                          )
-                    )
-                  }
-                >
-                  复制全部
-                </Button>
-                {copyStatus !== "" ? (
-                  <span className="text-xs text-muted-foreground">{copyStatus}</span>
-                ) : null}
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-2 text-xs md:grid-cols-[1fr_auto] md:items-center">
-              <p className="break-all font-mono">
-                百分比(0~1):{" "}
-                {clickPoint === null
-                  ? "-"
-                  : `x=${clickPoint.percentX.toFixed(6)}, y=${clickPoint.percentY.toFixed(6)}`}
-              </p>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={clickPoint === null}
-                onClick={() =>
-                  void copyText(
-                    clickPoint === null
-                      ? ""
-                      : `${clickPoint.percentX.toFixed(6)},${clickPoint.percentY.toFixed(6)}`
-                  )
-                }
-              >
-                复制百分比
-              </Button>
-              <p className="break-all font-mono">
-                绝对坐标(设备原始):{" "}
-                {clickPoint === null
-                  ? "-"
-                  : `x=${clickPoint.absoluteX.toFixed(1)}, y=${clickPoint.absoluteY.toFixed(1)}`}
-              </p>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={clickPoint === null}
-                onClick={() =>
-                  void copyText(
-                    clickPoint === null
-                      ? ""
-                      : `${clickPoint.absoluteX.toFixed(1)},${clickPoint.absoluteY.toFixed(1)}`
-                  )
-                }
-              >
-                复制绝对坐标
-              </Button>
-            </div>
-            <p className="mt-2 break-all font-mono text-[11px] text-muted-foreground">
-              调试日志: {clickLog}
-            </p>
-            <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
-              当前坐标基准: 截图原始像素
-              ({absoluteSpace.width.toFixed(1)}x{absoluteSpace.height.toFixed(1)})
-            </p>
-          </div>
+          {renderCoordinateInfoPanel()}
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">暂无截图，请先刷新预览。</p>
@@ -614,6 +658,360 @@ export function App() {
       ) : (
         <p className="font-mono text-xs text-muted-foreground">暂无 XML，请先刷新预览。</p>
       )}
+    </div>
+  )
+
+  const renderEffectiveRangePanel = () => (
+    <div className="space-y-2">
+      <div className="rounded-md border bg-background p-3">
+        <p className="mb-2 text-sm font-medium">有效触控区域</p>
+        <div className="mb-3 grid grid-cols-1 gap-2 rounded-md border p-2 text-xs md:grid-cols-2">
+          <label className="flex flex-col gap-1">
+            left
+            <input
+              className="rounded border bg-background px-2 py-1 font-mono"
+              value={rangeLeftInput}
+              onChange={(event) => setRangeLeftInput(event.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            top
+            <input
+              className="rounded border bg-background px-2 py-1 font-mono"
+              value={rangeTopInput}
+              onChange={(event) => setRangeTopInput(event.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            right
+            <input
+              className="rounded border bg-background px-2 py-1 font-mono"
+              value={rangeRightInput}
+              onChange={(event) => setRangeRightInput(event.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            bottom
+            <input
+              className="rounded border bg-background px-2 py-1 font-mono"
+              value={rangeBottomInput}
+              onChange={(event) => setRangeBottomInput(event.target.value)}
+            />
+          </label>
+          <div className="flex flex-wrap gap-2 md:col-span-2">
+            <Button type="button" size="sm" variant="outline" onClick={handleClearRange}>
+              恢复默认
+            </Button>
+          </div>
+          <p className="break-all font-mono text-[11px] text-muted-foreground md:col-span-2">
+            范围匹配: serial={usedSerial || deviceSerial || "<empty>"}，package={currentPackageName || "<empty>"}，当前公式: x' = left + (right-left) * x，y' = top + (bottom-top) * y
+          </p>
+          <p className="break-all font-mono text-[11px] text-muted-foreground md:col-span-2">
+            范围状态: {rangeLog}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+
+  const renderCoordinateInfoPanel = () => (
+    <div className="rounded-md border bg-background p-3">
+      <p className="break-all font-mono text-[11px] text-muted-foreground">
+        高亮日志: {highlightLog}
+      </p>
+      <div className="mt-2 grid grid-cols-1 gap-2 text-xs md:grid-cols-[1fr_auto] md:items-center">
+          <p className="break-all font-mono">
+            有效区百分比(0~1):{" "}
+            {clickPoint === null
+              ? "-"
+              : `x=${clickPoint.percentX.toFixed(6)}, y=${clickPoint.percentY.toFixed(6)}`}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={clickPoint === null}
+            onClick={() =>
+              void copyText(
+                clickPoint === null
+                  ? ""
+                  : `${clickPoint.percentX.toFixed(6)},${clickPoint.percentY.toFixed(6)}`
+              )
+            }
+          >
+            复制百分比
+          </Button>
+          <p className="break-all font-mono">
+            整图百分比(0~1):{" "}
+            {clickPoint === null
+              ? "-"
+              : `x=${clickPoint.imagePercentX.toFixed(6)}, y=${clickPoint.imagePercentY.toFixed(6)}`}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={clickPoint === null}
+            onClick={() =>
+              void copyText(
+                clickPoint === null
+                  ? ""
+                  : `${clickPoint.imagePercentX.toFixed(6)},${clickPoint.imagePercentY.toFixed(6)}`
+              )
+            }
+          >
+            复制整图百分比
+          </Button>
+          <p className="break-all font-mono">
+            绝对坐标(设备原始):{" "}
+            {clickPoint === null
+              ? "-"
+              : `x=${clickPoint.absoluteX.toFixed(1)}, y=${clickPoint.absoluteY.toFixed(1)}`}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={clickPoint === null}
+            onClick={() =>
+              void copyText(
+                clickPoint === null
+                  ? ""
+                  : `${clickPoint.absoluteX.toFixed(1)},${clickPoint.absoluteY.toFixed(1)}`
+              )
+            }
+          >
+            复制绝对坐标
+          </Button>
+      </div>
+      <p className="mt-2 break-all font-mono text-[11px] text-muted-foreground">调试日志: {clickLog}</p>
+      <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">当前坐标基准: 截图原始像素 ({absoluteSpace.width.toFixed(1)}x{absoluteSpace.height.toFixed(1)})</p>
+    </div>
+  )
+
+  const handleAddActionRule = () => {
+    const page = currentPageName.trim()
+    if (page === "") {
+      setActionLog("添加失败：请先点击当前界面获取页面名")
+      return
+    }
+    const path = actionPath.trim()
+    const toNum = (raw: string) => {
+      const n = Number(raw)
+      return Number.isNaN(n) ? null : n
+    }
+    let rule: PageActionRule | null = null
+    if (actionType === "scroll") {
+      const sx = toNum(actionStartX)
+      const sy = toNum(actionStartY)
+      const ex = toNum(actionEndX)
+      const ey = toNum(actionEndY)
+      if (sx === null || sy === null || ex === null || ey === null) {
+        setActionLog("添加失败：滑动必须填写开始/结束坐标")
+        return
+      }
+      rule = { page_name: page, action_type: actionType, path: path || undefined, start: { x: sx, y: sy }, end: { x: ex, y: ey } }
+    } else {
+      const x = toNum(actionX)
+      const y = toNum(actionY)
+      if (path === "" && (x === null || y === null)) {
+        setActionLog("添加失败：path 和 坐标必须至少填写一个")
+        return
+      }
+      rule = { page_name: page, action_type: actionType, path: path || undefined }
+      if (x !== null && y !== null) {
+        rule.point = { x, y }
+      }
+    }
+    const next = [...actionRules, rule]
+    setActionRules(next)
+    setActionLog(`已添加动作，当前共 ${next.length} 条`)
+  }
+
+  const previewConfigText = useMemo(() => {
+    const currentPageActions = actionRules.filter(
+      (item) => item.page_name === currentPageName
+    )
+    const preview = {
+      scope: {
+        serial: usedSerial || deviceSerial || "",
+        package_name: currentPackageName || "",
+        page_name: currentPageName || "",
+      },
+      base: {
+        page_source: pageSource,
+        touch_mode: touchMode,
+        uia: {
+          server_port: Number(uiaPort || 0),
+        },
+        log: {
+          file_level: fileLevel,
+        },
+        poco:
+          pageSource === "poco"
+            ? {
+                engine: pocoEngine,
+                port: Number(pocoPort || 0),
+              }
+            : undefined,
+        skip_all_actions_from_model: skipAll,
+      },
+      effective_touch_area: {
+        serial: usedSerial || deviceSerial || "",
+        package_name: currentPackageName || "",
+        range: effectiveRange,
+      },
+      actions: {
+        current_page: currentPageActions,
+        all: actionRules,
+      },
+    }
+    return JSON.stringify(preview, null, 2)
+  }, [
+    actionRules,
+    currentPackageName,
+    currentPageName,
+    effectiveRange,
+    fileLevel,
+    pageSource,
+    pocoEngine,
+    pocoPort,
+    skipAll,
+    touchMode,
+    uiaPort,
+    usedSerial,
+  ])
+
+  const renderActionPanel = () => (
+    <div className="rounded-md border bg-background p-3">
+      <p className="mb-3 text-sm font-medium">动作配置</p>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <label className="flex flex-col gap-1 text-sm">
+          页面名（当前界面）
+          <input
+            className="rounded-md border bg-background px-3 py-2 font-mono"
+            value={currentPageName}
+            readOnly
+            placeholder="点击当前界面后自动填充"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          动作类型
+          <select
+            className="rounded-md border bg-background px-3 py-2 font-mono"
+            value={actionType}
+            onChange={(event) => setActionType(event.target.value as ActionType)}
+          >
+            <option value="click">点击</option>
+            <option value="scroll">滑动</option>
+            <option value="long_press">长按</option>
+            <option value="custom_touch">自定义触控</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-sm md:col-span-2">
+          path（可选；与坐标至少填一个）
+          <input
+            className="rounded-md border bg-background px-3 py-2 font-mono"
+            value={actionPath}
+            onChange={(event) => setActionPath(event.target.value)}
+            placeholder="/hierarchy/..."
+          />
+        </label>
+        {actionType === "scroll" ? (
+          <>
+            <label className="flex flex-col gap-1 text-sm">
+              开始坐标X
+              <input className="rounded-md border bg-background px-3 py-2 font-mono" value={actionStartX} onChange={(event) => setActionStartX(event.target.value)} />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              开始坐标Y
+              <input className="rounded-md border bg-background px-3 py-2 font-mono" value={actionStartY} onChange={(event) => setActionStartY(event.target.value)} />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              结束坐标X
+              <input className="rounded-md border bg-background px-3 py-2 font-mono" value={actionEndX} onChange={(event) => setActionEndX(event.target.value)} />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              结束坐标Y
+              <input className="rounded-md border bg-background px-3 py-2 font-mono" value={actionEndY} onChange={(event) => setActionEndY(event.target.value)} />
+            </label>
+          </>
+        ) : (
+          <>
+            <label className="flex flex-col gap-1 text-sm">
+              坐标X
+              <input className="rounded-md border bg-background px-3 py-2 font-mono" value={actionX} onChange={(event) => setActionX(event.target.value)} />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              坐标Y
+              <input className="rounded-md border bg-background px-3 py-2 font-mono" value={actionY} onChange={(event) => setActionY(event.target.value)} />
+            </label>
+          </>
+        )}
+        <div className="md:col-span-2">
+          <Button type="button" size="sm" variant="outline" onClick={handleAddActionRule}>
+            添加动作
+          </Button>
+        </div>
+        <p className="break-all font-mono text-[11px] text-muted-foreground md:col-span-2">{actionLog}</p>
+        <div className="md:col-span-2 rounded border p-2">
+          <p className="mb-1 text-sm font-medium">页面动作配置</p>
+          <textarea
+            className="min-h-40 w-full rounded-md border bg-background p-2 font-mono text-xs"
+            readOnly
+            value={JSON.stringify(actionRules, null, 2)}
+          />
+        </div>
+      </div>
+    </div>
+  )
+
+  const renderPreviewPanel = () => (
+    <div className="rounded-md border bg-background p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-sm font-medium">当前界面配置预览</p>
+        <Button type="button" size="sm" variant="outline" onClick={() => void copyText(previewConfigText)}>
+          复制预览
+        </Button>
+      </div>
+      <p className="mb-2 break-all font-mono text-[11px] text-muted-foreground">
+        范围匹配: serial={usedSerial || deviceSerial || "<empty>"}，package={currentPackageName || "<empty>"}；页面: {currentPageName || "<empty>"}
+      </p>
+      <textarea
+        className="min-h-[460px] w-full rounded-md border bg-background p-2 font-mono text-xs"
+        readOnly
+        value={previewConfigText}
+      />
+      <label className="mt-3 flex flex-col gap-1 text-sm">
+        输出路径
+        <input
+          className="rounded-md border bg-background px-3 py-2"
+          value={outputPath}
+          onChange={(e) => setOutputPath(e.target.value)}
+        />
+      </label>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button onClick={handlePreview} disabled={loading}>
+          预览配置
+        </Button>
+        <Button variant="outline" onClick={handleSave} disabled={loading}>
+          保存到文件
+        </Button>
+      </div>
+      {status !== "" ? (
+        <p className="mt-2 text-sm text-emerald-700">{status}</p>
+      ) : null}
+      {error !== "" ? (
+        <p className="mt-2 text-sm text-red-700">{error}</p>
+      ) : null}
+      <div className="mt-3">
+        <label className="text-sm font-medium">生成结果</label>
+        <textarea
+          className="mt-2 min-h-72 w-full rounded-md border bg-background p-3 font-mono text-sm"
+          readOnly
+          value={resultText}
+        />
+      </div>
     </div>
   )
 
@@ -648,9 +1046,33 @@ export function App() {
               onClick={handleRefreshPreview}
               disabled={loading}
             >
-              打印界面
+              当前界面
             </Button>
           </div>
+          <div className="mb-3 flex gap-2">
+            <Button
+              type="button"
+              variant={configTab === "base" ? "default" : "outline"}
+              onClick={() => setConfigTab("base")}
+            >
+              基础配置
+            </Button>
+            <Button
+              type="button"
+              variant={configTab === "action" ? "default" : "outline"}
+              onClick={() => setConfigTab("action")}
+            >
+              动作配置
+            </Button>
+            <Button
+              type="button"
+              variant={configTab === "preview" ? "default" : "outline"}
+              onClick={() => setConfigTab("preview")}
+            >
+              预览配置
+            </Button>
+          </div>
+          {configTab === "base" ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="flex flex-col gap-1 text-sm md:col-span-2">
               <label>设备列表</label>
@@ -680,6 +1102,15 @@ export function App() {
             <p className="text-sm text-muted-foreground md:col-span-2">
               当前预览设备序列号：{usedSerial !== "" ? usedSerial : "尚未确定（先点刷新预览）"}
             </p>
+            <label className="flex flex-col gap-1 text-sm">
+              包名（当前界面）
+              <input
+                className="rounded-md border bg-background px-3 py-2 font-mono"
+                value={currentPackageName}
+                readOnly
+                placeholder="点击当前界面后自动填充"
+              />
+            </label>
 
             <label className="flex flex-col gap-1 text-sm">
               页面源 page_source
@@ -766,6 +1197,9 @@ export function App() {
                 </label>
               </>
             ) : null}
+            <div className="md:col-span-2">
+              {renderEffectiveRangePanel()}
+            </div>
 
             <label className="flex items-center gap-2 text-sm md:col-span-2">
               <input
@@ -776,40 +1210,12 @@ export function App() {
               跳过模型动作 skip_all_actions_from_model
             </label>
 
-            <label className="flex flex-col gap-1 text-sm md:col-span-2">
-              输出路径
-              <input
-                className="rounded-md border bg-background px-3 py-2"
-                value={outputPath}
-                onChange={(e) => setOutputPath(e.target.value)}
-              />
-            </label>
-
-            <div className="mt-4 flex flex-wrap gap-2 md:col-span-2">
-              <Button onClick={handlePreview} disabled={loading}>
-                预览配置
-              </Button>
-              <Button variant="outline" onClick={handleSave} disabled={loading}>
-                保存到文件
-              </Button>
-            </div>
-
-            {status !== "" ? (
-              <p className="text-sm text-emerald-700 md:col-span-2">{status}</p>
-            ) : null}
-            {error !== "" ? (
-              <p className="text-sm text-red-700 md:col-span-2">{error}</p>
-            ) : null}
-
-            <div className="md:col-span-2">
-              <label className="text-sm font-medium">生成结果</label>
-              <textarea
-                className="mt-2 min-h-72 w-full rounded-md border bg-background p-3 font-mono text-sm"
-                readOnly
-                value={resultText}
-              />
-            </div>
           </div>
+          ) : (
+            <div className="mt-2">
+              {configTab === "action" ? renderActionPanel() : renderPreviewPanel()}
+            </div>
+          )}
         </div>
       </section>
 
@@ -846,6 +1252,30 @@ export function App() {
                   当前界面
                 </Button>
               </div>
+              <div className="mb-3 flex gap-2">
+                <Button
+                  type="button"
+                  variant={configTab === "base" ? "default" : "outline"}
+                  onClick={() => setConfigTab("base")}
+                >
+                  基础配置
+                </Button>
+                <Button
+                  type="button"
+                  variant={configTab === "action" ? "default" : "outline"}
+                  onClick={() => setConfigTab("action")}
+                >
+                  动作配置
+                </Button>
+                <Button
+                  type="button"
+                  variant={configTab === "preview" ? "default" : "outline"}
+                  onClick={() => setConfigTab("preview")}
+                >
+                  预览配置
+                </Button>
+              </div>
+              {configTab === "base" ? (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="flex flex-col gap-1 text-sm md:col-span-2">
                   <label>设备列表</label>
@@ -876,6 +1306,15 @@ export function App() {
                   当前预览设备序列号：
                   {usedSerial !== "" ? usedSerial : "尚未确定（先点当前界面）"}
                 </p>
+                <label className="flex flex-col gap-1 text-sm">
+                  包名（当前界面）
+                  <input
+                    className="rounded-md border bg-background px-3 py-2 font-mono"
+                    value={currentPackageName}
+                    readOnly
+                    placeholder="点击当前界面后自动填充"
+                  />
+                </label>
 
                 <label className="flex flex-col gap-1 text-sm">
                   页面源 page_source
@@ -964,6 +1403,9 @@ export function App() {
                     </label>
                   </>
                 ) : null}
+                <div className="md:col-span-2">
+                  {renderEffectiveRangePanel()}
+                </div>
 
                 <label className="flex items-center gap-2 text-sm md:col-span-2">
                   <input
@@ -974,40 +1416,12 @@ export function App() {
                   跳过模型动作 skip_all_actions_from_model
                 </label>
 
-                <label className="flex flex-col gap-1 text-sm md:col-span-2">
-                  输出路径
-                  <input
-                    className="rounded-md border bg-background px-3 py-2"
-                    value={outputPath}
-                    onChange={(e) => setOutputPath(e.target.value)}
-                  />
-                </label>
-
-                <div className="mt-4 flex flex-wrap gap-2 md:col-span-2">
-                  <Button onClick={handlePreview} disabled={loading}>
-                    预览配置
-                  </Button>
-                  <Button variant="outline" onClick={handleSave} disabled={loading}>
-                    保存到文件
-                  </Button>
-                </div>
-
-                {status !== "" ? (
-                  <p className="text-sm text-emerald-700 md:col-span-2">{status}</p>
-                ) : null}
-                {error !== "" ? (
-                  <p className="text-sm text-red-700 md:col-span-2">{error}</p>
-                ) : null}
-
-                <div className="md:col-span-2">
-                  <label className="text-sm font-medium">生成结果</label>
-                  <textarea
-                    className="mt-2 min-h-72 w-full rounded-md border bg-background p-3 font-mono text-sm"
-                    readOnly
-                    value={resultText}
-                  />
-                </div>
               </div>
+              ) : (
+                <div className="mt-2">
+                  {configTab === "action" ? renderActionPanel() : renderPreviewPanel()}
+                </div>
+              )}
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>

@@ -203,3 +203,56 @@ func TestLoadStaticConfigReadsUIAAndPocoSettings(t *testing.T) {
 		t.Fatalf("poco 配置不符合预期: %+v", cfg.Poco)
 	}
 }
+
+func TestLoadStaticConfigReadsEffectiveTouchAreaBySerialAndPackage(t *testing.T) {
+	cfg, err := LoadStaticConfig(`const config = {
+  effective_touch_area: {
+    serial: "192.168.2.198:5555",
+    package_name: "com.NetEase",
+    range: {
+      left: 0.043,
+      top: 0,
+      right: 1,
+      bottom: 1
+    }
+  }
+}`)
+	if err != nil {
+		t.Fatalf("加载静态配置失败: %v", err)
+	}
+	if cfg.EffectiveTouchArea == nil {
+		t.Fatalf("预期解析到 effective_touch_area")
+	}
+	if cfg.EffectiveTouchArea.Serial != "192.168.2.198:5555" {
+		t.Fatalf("serial 不符合预期: %q", cfg.EffectiveTouchArea.Serial)
+	}
+	if cfg.EffectiveTouchArea.PackageName != "com.NetEase" {
+		t.Fatalf("package_name 不符合预期: %q", cfg.EffectiveTouchArea.PackageName)
+	}
+	if cfg.EffectiveTouchArea.Range.Left != 0.043 || cfg.EffectiveTouchArea.Range.Right != 1 {
+		t.Fatalf("range 不符合预期: %+v", cfg.EffectiveTouchArea.Range)
+	}
+}
+
+func TestLoadStaticConfigReadsEffectiveTouchAreaFromLegacyKey(t *testing.T) {
+	cfg, err := LoadStaticConfig(`const config = {
+  effective_touch_area: {
+    key: "abc::com.demo",
+    range: {
+      left: 0,
+      top: 0,
+      right: 1,
+      bottom: 1
+    }
+  }
+}`)
+	if err != nil {
+		t.Fatalf("加载静态配置失败: %v", err)
+	}
+	if cfg.EffectiveTouchArea == nil {
+		t.Fatalf("预期解析到 effective_touch_area")
+	}
+	if cfg.EffectiveTouchArea.Serial != "abc" || cfg.EffectiveTouchArea.PackageName != "com.demo" {
+		t.Fatalf("legacy key 拆分不符合预期: %+v", cfg.EffectiveTouchArea)
+	}
+}

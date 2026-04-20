@@ -34,6 +34,16 @@ type webConfigPayload struct {
 	Log struct {
 		FileLevel string `json:"file_level"`
 	} `json:"log"`
+	EffectiveTouchArea struct {
+		Serial      string `json:"serial"`
+		PackageName string `json:"package_name"`
+		Range       struct {
+			Left   float64 `json:"left"`
+			Top    float64 `json:"top"`
+			Right  float64 `json:"right"`
+			Bottom float64 `json:"bottom"`
+		} `json:"range"`
+	} `json:"effective_touch_area"`
 }
 
 type saveRequest struct {
@@ -54,6 +64,8 @@ type previewResponse struct {
 	UsedSerial       string `json:"used_serial"`
 	XML              string `json:"xml"`
 	ScreenshotBase64 string `json:"screenshot_base64"`
+	PackageName      string `json:"package_name"`
+	PageName         string `json:"page_name"`
 }
 
 type errorResponse struct {
@@ -275,10 +287,21 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	packageName := ""
+	if pkg, err := driver.GetCurrentPackage(); err == nil {
+		packageName = strings.TrimSpace(pkg)
+	}
+	pageName := ""
+	if activity, err := driver.GetCurrentActivity(); err == nil {
+		pageName = strings.TrimSpace(activity)
+	}
+
 	writeJSON(w, http.StatusOK, previewResponse{
 		UsedSerial:       strings.TrimSpace(driver.Name()),
 		XML:              xml,
 		ScreenshotBase64: base64.StdEncoding.EncodeToString(screenshot),
+		PackageName:      packageName,
+		PageName:         pageName,
 	})
 }
 
@@ -400,6 +423,10 @@ func buildConfigJS(cfg webConfigPayload) (string, error) {
 	if cfg.UIA.ServerPort < 0 || cfg.Poco.Port < 0 {
 		return "", fmt.Errorf("端口不能为负数")
 	}
+	if cfg.EffectiveTouchArea.Range.Right < cfg.EffectiveTouchArea.Range.Left ||
+		cfg.EffectiveTouchArea.Range.Bottom < cfg.EffectiveTouchArea.Range.Top {
+		return "", fmt.Errorf("effective_touch_area.range 要求 right>=left 且 bottom>=top")
+	}
 
 	pocoEngine := strings.TrimSpace(strings.ToUpper(cfg.Poco.Engine))
 	if pageSource == "poco" && pocoEngine == "" {
@@ -455,6 +482,33 @@ func buildConfigJS(cfg webConfigPayload) (string, error) {
 		default:
 			return "", fmt.Errorf("log.file_level 仅支持 debug/info/warn/error")
 		}
+	}
+
+	areaSerial := strings.TrimSpace(cfg.EffectiveTouchArea.Serial)
+	areaPackage := strings.TrimSpace(cfg.EffectiveTouchArea.PackageName)
+	areaRange := cfg.EffectiveTouchArea.Range
+	hasAreaRange := areaRange.Left != 0 || areaRange.Top != 0 || areaRange.Right != 0 || areaRange.Bottom != 0
+	if hasAreaRange || areaSerial != "" || areaPackage != "" {
+		if !hasAreaRange {
+			areaRange.Left = 0
+			areaRange.Top = 0
+			areaRange.Right = 1
+			areaRange.Bottom = 1
+		}
+		b.WriteString("  effective_touch_area: {\n")
+		if areaSerial != "" {
+			b.WriteString(fmt.Sprintf("    serial: %q,\n", areaSerial))
+		}
+		if areaPackage != "" {
+			b.WriteString(fmt.Sprintf("    package_name: %q,\n", areaPackage))
+		}
+		b.WriteString("    range: {\n")
+		b.WriteString(fmt.Sprintf("      left: %s,\n", strconv.FormatFloat(areaRange.Left, 'f', -1, 64)))
+		b.WriteString(fmt.Sprintf("      top: %s,\n", strconv.FormatFloat(areaRange.Top, 'f', -1, 64)))
+		b.WriteString(fmt.Sprintf("      right: %s,\n", strconv.FormatFloat(areaRange.Right, 'f', -1, 64)))
+		b.WriteString(fmt.Sprintf("      bottom: %s,\n", strconv.FormatFloat(areaRange.Bottom, 'f', -1, 64)))
+		b.WriteString("    },\n")
+		b.WriteString("  },\n")
 	}
 
 	b.WriteString("}\n")

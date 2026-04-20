@@ -91,6 +91,7 @@ func (f *fakePageSource) Close() error                    { return nil }
 type fakeDriver struct {
 	pageSource       common.IPageSource
 	clickCount       int
+	lastClickPoint   types.Point
 	startCount       int
 	activateCount    int
 	activateErr      error
@@ -102,6 +103,8 @@ type fakeDriver struct {
 	currentPackage   string
 	targetOnActivate string
 	currentPkgCalls  int
+	lastSwipeStart   types.Point
+	lastSwipeEnd     types.Point
 	envResult        *common.EnvironmentCheckResult
 	envErr           error
 	crashAfterClick  bool
@@ -112,6 +115,7 @@ type fakeDriver struct {
 
 func (f *fakeDriver) Click(point types.Point) error {
 	f.clickCount++
+	f.lastClickPoint = point
 	if f.crashAfterClick {
 		f.crash = true
 	}
@@ -122,6 +126,8 @@ func (f *fakeDriver) Click(point types.Point) error {
 }
 func (f *fakeDriver) LongClick(point types.Point, duration int64) error { return nil }
 func (f *fakeDriver) Swipe(startPoint types.Point, endPoint types.Point, step int64, duration int64) error {
+	f.lastSwipeStart = startPoint
+	f.lastSwipeEnd = endPoint
 	return nil
 }
 func (f *fakeDriver) Pinch(centerPoint types.Point, startDistance float64, endDistance float64, duration int64) error {
@@ -753,6 +759,91 @@ func TestNormalizePocoScrollCommandFallbackToAncestorBounds(t *testing.T) {
 	if cmd.Pos.Left != 0 || cmd.Pos.Top != 0 || cmd.Pos.Right != 1 || cmd.Pos.Bottom != 1 {
 		t.Fatalf("预期回退到父节点区域 [0,0,1,1]，实际: %s", cmd.Pos.String())
 	}
+}
+
+func TestRunnerApplyEffectiveTouchAreaToClick(t *testing.T) {
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0.4, 0.4, 0.6, 0.6)}}}
+	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}
+
+	runner, err := NewRunner(decider, driver, Config{
+		PackageName:     "com.example.app",
+		DeviceSerial:    "192.168.2.198:5555",
+		MaxSteps:        1,
+		StepInterval:    0,
+		KeepStepRecords: true,
+		StopOnCrash:     true,
+		StopOnANR:       true,
+		EffectiveTouchArea: &EffectiveTouchArea{
+			Serial:      "192.168.2.198:5555",
+			PackageName: "com.example.app",
+			Range: EffectiveTouchRange{
+				Left: 0.04, Top: 0, Right: 1, Bottom: 1,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+
+	const expectX = 0.52
+	const expectY = 0.5
+	if abs(driver.lastClickPoint.X-expectX) > 1e-6 || abs(driver.lastClickPoint.Y-expectY) > 1e-6 {
+		t.Fatalf("点击坐标映射不符合预期: got=(%.6f, %.6f) expect=(%.6f, %.6f)", driver.lastClickPoint.X, driver.lastClickPoint.Y, expectX, expectY)
+	}
+}
+
+func TestRunnerSkipEffectiveTouchAreaWhenSerialMismatch(t *testing.T) {
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0.4, 0.4, 0.6, 0.6)}}}
+	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}
+
+	runner, err := NewRunner(decider, driver, Config{
+		PackageName:     "com.example.app",
+		DeviceSerial:    "serial-A",
+		MaxSteps:        1,
+		StepInterval:    0,
+		KeepStepRecords: true,
+		StopOnCrash:     true,
+		StopOnANR:       true,
+		EffectiveTouchArea: &EffectiveTouchArea{
+			Serial:      "serial-B",
+			PackageName: "com.example.app",
+			Range: EffectiveTouchRange{
+				Left: 0.04, Top: 0, Right: 1, Bottom: 1,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+
+	const expectX = 0.5
+	const expectY = 0.5
+	if abs(driver.lastClickPoint.X-expectX) > 1e-6 || abs(driver.lastClickPoint.Y-expectY) > 1e-6 {
+		t.Fatalf("序列号不匹配时不应映射: got=(%.6f, %.6f) expect=(%.6f, %.6f)", driver.lastClickPoint.X, driver.lastClickPoint.Y, expectX, expectY)
+	}
+}
+
+func abs(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 func boolPtr(v bool) *bool { return &v }

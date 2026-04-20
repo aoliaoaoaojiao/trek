@@ -134,7 +134,15 @@ func runMonkey(logLevel string, opts runOptions) error {
 	if err != nil {
 		return err
 	}
-	driver, err := android.NewAndroidDriverWith(opts.deviceSerial, driverOptions...)
+	deviceSerial := strings.TrimSpace(opts.deviceSerial)
+	if deviceSerial == "" && staticCfg.EffectiveTouchArea != nil {
+		if scopedSerial := strings.TrimSpace(staticCfg.EffectiveTouchArea.Serial); scopedSerial != "" {
+			deviceSerial = scopedSerial
+			fmt.Printf("未指定 -serial，使用 effective_touch_area.serial: %s\n", deviceSerial)
+		}
+	}
+
+	driver, err := android.NewAndroidDriverWith(deviceSerial, driverOptions...)
 	if err != nil {
 		return fmt.Errorf("创建设备驱动失败: %w", err)
 	}
@@ -167,6 +175,7 @@ func runMonkey(logLevel string, opts runOptions) error {
 
 	cfg := monkey.Config{
 		PackageName:       packageName,
+		DeviceSerial:      deviceSerial,
 		MaxSteps:          opts.maxSteps,
 		MaxDuration:       opts.maxDuration,
 		StepInterval:      opts.stepInterval,
@@ -175,6 +184,11 @@ func runMonkey(logLevel string, opts runOptions) error {
 		KeepStepRecords:   opts.keepStepRecords,
 		StopOnCrash:       true,
 		StopOnANR:         true,
+		EffectiveTouchArea: buildEffectiveTouchAreaConfig(
+			staticCfg,
+			packageName,
+			deviceSerial,
+		),
 	}
 
 	if opts.probePageName {
@@ -298,4 +312,28 @@ func parsePocoEngine(text string) (poco.Engine, error) {
 	default:
 		return "", fmt.Errorf("不支持的 Poco 引擎: %s", raw)
 	}
+}
+
+func buildEffectiveTouchAreaConfig(staticCfg scripting.StaticConfig, packageName string, deviceSerial string) *monkey.EffectiveTouchArea {
+	if staticCfg.EffectiveTouchArea == nil {
+		return nil
+	}
+	rangeCfg := staticCfg.EffectiveTouchArea.Range
+	area := &monkey.EffectiveTouchArea{
+		Serial:      strings.TrimSpace(staticCfg.EffectiveTouchArea.Serial),
+		PackageName: strings.TrimSpace(staticCfg.EffectiveTouchArea.PackageName),
+		Range: monkey.EffectiveTouchRange{
+			Left:   rangeCfg.Left,
+			Top:    rangeCfg.Top,
+			Right:  rangeCfg.Right,
+			Bottom: rangeCfg.Bottom,
+		},
+	}
+	if area.Serial == "" {
+		area.Serial = strings.TrimSpace(deviceSerial)
+	}
+	if area.PackageName == "" {
+		area.PackageName = strings.TrimSpace(packageName)
+	}
+	return area
 }

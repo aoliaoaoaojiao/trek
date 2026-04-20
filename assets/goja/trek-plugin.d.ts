@@ -201,6 +201,21 @@ interface TrekStaticConfig {
     /** 文件日志级别；控制台日志级别由命令行 -log-level 控制 */
     file_level?: LogLevel
   }
+  /** 有效触控区域映射（坐标映射公式：x' = left + (right-left) * x） */
+  effective_touch_area?: {
+    /** 命中设备序列号（可选，空表示不限制设备） */
+    serial?: string
+    /** 命中包名（可选，空表示不限制包名） */
+    package_name?: string
+    /** 兼容旧配置：serial::package_name（建议改用 serial + package_name） */
+    key?: string
+    range: {
+      left: number
+      top: number
+      right: number
+      bottom: number
+    }
+  }
 }
 
 interface TrekActionAPI {

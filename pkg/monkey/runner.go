@@ -1,4 +1,4 @@
-﻿package monkey
+package monkey
 
 import (
 	"context"
@@ -56,6 +56,7 @@ type PageNameResolver func(xml string) string
 // Config 是 Smart Monkey Runner 配置。
 type Config struct {
 	PackageName                 string
+	DeviceSerial                string
 	AutoStartOnRun              *bool
 	ActionThrottleEnabled       *bool
 	RandomizeThrottle           bool
@@ -77,6 +78,20 @@ type Config struct {
 	PageNameResolver            PageNameResolver
 	ForegroundMonitorInterval   time.Duration
 	HealthSignalMonitorInterval time.Duration
+	EffectiveTouchArea          *EffectiveTouchArea
+}
+
+type EffectiveTouchArea struct {
+	Serial      string
+	PackageName string
+	Range       EffectiveTouchRange
+}
+
+type EffectiveTouchRange struct {
+	Left   float64
+	Top    float64
+	Right  float64
+	Bottom float64
 }
 
 // StepRecord 是每一步执行记录。
@@ -458,6 +473,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			continue
 		}
 		r.normalizePocoScrollCommand(step, cmd, xml)
+		r.applyEffectiveTouchArea(step, cmd)
 
 		record.Action = cmd.Act.String()
 		report.ActionCount[record.Action]++
@@ -609,6 +625,40 @@ func (r *Runner) normalizePocoScrollCommand(step int, cmd *types.ActionCommand, 
 			logger.Warnf("monkey step=%d action=%s bounds empty under poco, fallback to normalized full-screen rect", step, cmd.Act.String())
 		}
 	}
+}
+
+func (r *Runner) applyEffectiveTouchArea(step int, cmd *types.ActionCommand) {
+	if cmd == nil || r.cfg.EffectiveTouchArea == nil {
+		return
+	}
+	if !matchesEffectiveTouchScope(r.cfg.EffectiveTouchArea, r.cfg.DeviceSerial, r.cfg.PackageName) {
+		return
+	}
+	switch cmd.Act {
+	case types.CLICK, types.LONG_CLICK, types.SCROLL_TOP_DOWN, types.SCROLL_BOTTOM_UP, types.SCROLL_LEFT_RIGHT, types.SCROLL_RIGHT_LEFT, types.SCROLL_BOTTOM_UP_N:
+	default:
+		return
+	}
+	if cmd.Pos.IsEmpty() {
+		return
+	}
+	if !isNormalizedRect(cmd.Pos) {
+		return
+	}
+	oldRect := cmd.Pos
+	mapped, ok := mapRectToEffectiveRange(cmd.Pos, r.cfg.EffectiveTouchArea.Range)
+	if !ok {
+		return
+	}
+	cmd.Pos = mapped
+	logger.Debugf(
+		"monkey step=%d apply effective_touch_area scope=%s::%s from=%s to=%s",
+		step,
+		strings.TrimSpace(r.cfg.EffectiveTouchArea.Serial),
+		strings.TrimSpace(r.cfg.EffectiveTouchArea.PackageName),
+		oldRect.String(),
+		cmd.Pos.String(),
+	)
 }
 
 var widgetPathRegex = regexp.MustCompile(`path:([^,}]+)`)
@@ -848,6 +898,7 @@ func (r *Runner) pickWeightedCandidate(candidates []WeightedCandidate) *types.Ac
 }
 
 func normalizeConfig(cfg Config) Config {
+	cfg.DeviceSerial = strings.TrimSpace(cfg.DeviceSerial)
 	if cfg.MaxSteps <= 0 {
 		cfg.MaxSteps = defaultMaxSteps
 	}
@@ -893,6 +944,14 @@ func normalizeConfig(cfg Config) Config {
 		cfg.StopOnCrash = true
 		cfg.StopOnANR = true
 	}
+	if cfg.EffectiveTouchArea != nil {
+		cfg.EffectiveTouchArea.Serial = strings.TrimSpace(cfg.EffectiveTouchArea.Serial)
+		cfg.EffectiveTouchArea.PackageName = strings.TrimSpace(cfg.EffectiveTouchArea.PackageName)
+		if cfg.EffectiveTouchArea.Range.Right <= cfg.EffectiveTouchArea.Range.Left ||
+			cfg.EffectiveTouchArea.Range.Bottom <= cfg.EffectiveTouchArea.Range.Top {
+			cfg.EffectiveTouchArea = nil
+		}
+	}
 	return cfg
 }
 
@@ -927,6 +986,39 @@ func pointByRatio(rect types.Rect, rx, ry float64) types.Point {
 		X: rect.Left + (rect.Right-rect.Left)*rx,
 		Y: rect.Top + (rect.Bottom-rect.Top)*ry,
 	}
+}
+
+func matchesEffectiveTouchScope(area *EffectiveTouchArea, serial string, packageName string) bool {
+	if area == nil {
+		return false
+	}
+	areaSerial := strings.TrimSpace(area.Serial)
+	if areaSerial != "" && !strings.EqualFold(areaSerial, strings.TrimSpace(serial)) {
+		return false
+	}
+	areaPackage := strings.TrimSpace(area.PackageName)
+	if areaPackage != "" && !strings.EqualFold(areaPackage, strings.TrimSpace(packageName)) {
+		return false
+	}
+	return true
+}
+
+func isNormalizedRect(rect types.Rect) bool {
+	return rect.Left >= 0 && rect.Top >= 0 && rect.Right <= 1 && rect.Bottom <= 1
+}
+
+func mapRectToEffectiveRange(rect types.Rect, area EffectiveTouchRange) (types.Rect, bool) {
+	width := area.Right - area.Left
+	height := area.Bottom - area.Top
+	if width <= 0 || height <= 0 {
+		return rect, false
+	}
+	return types.Rect{
+		Left:   area.Left + width*rect.Left,
+		Top:    area.Top + height*rect.Top,
+		Right:  area.Left + width*rect.Right,
+		Bottom: area.Top + height*rect.Bottom,
+	}, true
 }
 
 func isAutoStartOnRunEnabled(cfg Config) bool {

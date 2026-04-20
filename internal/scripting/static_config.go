@@ -11,14 +11,15 @@ import (
 )
 
 type StaticConfig struct {
-	ResMapping map[string]string
-	BlackRects map[string][][4]int
-	SkipAll    bool
-	PageSource string
-	TouchMode  string
-	UIA        StaticUIAConfig
-	Poco       StaticPocoConfig
-	Log        StaticLogConfig
+	ResMapping         map[string]string
+	BlackRects         map[string][][4]int
+	SkipAll            bool
+	PageSource         string
+	TouchMode          string
+	UIA                StaticUIAConfig
+	Poco               StaticPocoConfig
+	Log                StaticLogConfig
+	EffectiveTouchArea *StaticEffectiveTouchArea
 }
 
 type StaticLogConfig struct {
@@ -32,6 +33,19 @@ type StaticUIAConfig struct {
 type StaticPocoConfig struct {
 	Engine string
 	Port   int
+}
+
+type StaticEffectiveTouchArea struct {
+	Serial      string
+	PackageName string
+	Range       StaticTouchRange
+}
+
+type StaticTouchRange struct {
+	Left   float64
+	Top    float64
+	Right  float64
+	Bottom float64
 }
 
 func LoadStaticConfigFile(path string) (StaticConfig, error) {
@@ -150,6 +164,65 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 			cfg.Log.FileLevel = strings.TrimSpace(fileLevelValue.String())
 		}
 	}
+	if areaValue := obj.Get("effective_touch_area"); !isEmptyJSValue(areaValue) {
+		areaObj := areaValue.ToObject(vm)
+		area := &StaticEffectiveTouchArea{
+			Range: StaticTouchRange{Left: 0, Top: 0, Right: 1, Bottom: 1},
+		}
+		if serialValue := areaObj.Get("serial"); !isEmptyJSValue(serialValue) {
+			area.Serial = strings.TrimSpace(serialValue.String())
+		}
+		if packageValue := areaObj.Get("package_name"); !isEmptyJSValue(packageValue) {
+			area.PackageName = strings.TrimSpace(packageValue.String())
+		}
+		if packageValue := areaObj.Get("package"); area.PackageName == "" && !isEmptyJSValue(packageValue) {
+			area.PackageName = strings.TrimSpace(packageValue.String())
+		}
+		if keyValue := areaObj.Get("key"); !isEmptyJSValue(keyValue) {
+			key := strings.TrimSpace(keyValue.String())
+			if key != "" {
+				parts := strings.SplitN(key, "::", 2)
+				if area.Serial == "" && len(parts) >= 1 {
+					area.Serial = strings.TrimSpace(parts[0])
+				}
+				if area.PackageName == "" && len(parts) == 2 {
+					area.PackageName = strings.TrimSpace(parts[1])
+				}
+			}
+		}
+		if rangeValue := areaObj.Get("range"); !isEmptyJSValue(rangeValue) {
+			rangeObj := rangeValue.ToObject(vm)
+			left, err := floatFromJSValue(rangeObj.Get("left"))
+			if err != nil {
+				return cfg, fmt.Errorf("effective_touch_area.range.left 非法: %w", err)
+			}
+			top, err := floatFromJSValue(rangeObj.Get("top"))
+			if err != nil {
+				return cfg, fmt.Errorf("effective_touch_area.range.top 非法: %w", err)
+			}
+			right, err := floatFromJSValue(rangeObj.Get("right"))
+			if err != nil {
+				return cfg, fmt.Errorf("effective_touch_area.range.right 非法: %w", err)
+			}
+			bottom, err := floatFromJSValue(rangeObj.Get("bottom"))
+			if err != nil {
+				return cfg, fmt.Errorf("effective_touch_area.range.bottom 非法: %w", err)
+			}
+			area.Range = StaticTouchRange{
+				Left:   left,
+				Top:    top,
+				Right:  right,
+				Bottom: bottom,
+			}
+		}
+		if area.Range.Left < 0 || area.Range.Top < 0 || area.Range.Right > 1 || area.Range.Bottom > 1 {
+			return cfg, fmt.Errorf("effective_touch_area.range 必须在 0~1 范围内")
+		}
+		if area.Range.Right <= area.Range.Left || area.Range.Bottom <= area.Range.Top {
+			return cfg, fmt.Errorf("effective_touch_area.range 要求 right>left 且 bottom>top")
+		}
+		cfg.EffectiveTouchArea = area
+	}
 	return cfg, nil
 }
 
@@ -162,4 +235,15 @@ func intFromJSValue(v goja.Value) (int, error) {
 		return 0, fmt.Errorf("值必须是整数: %v", f)
 	}
 	return int(f), nil
+}
+
+func floatFromJSValue(v goja.Value) (float64, error) {
+	if isEmptyJSValue(v) {
+		return 0, errors.New("值不能为空")
+	}
+	f := v.ToFloat()
+	if f != f {
+		return 0, errors.New("值不能为 NaN")
+	}
+	return f, nil
 }

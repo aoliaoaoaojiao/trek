@@ -705,6 +705,22 @@ func TestResolvePageNameFingerprintIgnoresRuntimeAttrs(t *testing.T) {
 	}
 }
 
+func TestResolvePageNameByStrategyStructureFingerprintIgnoresActivity(t *testing.T) {
+	xml := `<hierarchy><node widget="button"/></hierarchy>`
+	page := ResolvePageNameByStrategy(xml, nil, PageNameStrategyStructureFingerprint, "poco", "com.unity3d.player")
+	if !strings.HasPrefix(page, pageFingerprintPrefix+":") {
+		t.Fatalf("结构指纹策略不应返回 Activity，实际: %s", page)
+	}
+}
+
+func TestResolvePageNameByStrategyUIAActivityFirstUsesActivity(t *testing.T) {
+	xml := `<hierarchy><node widget="button"/></hierarchy>`
+	page := ResolvePageNameByStrategy(xml, nil, PageNameStrategyUIAActivityFirst, "uia", "com.demo.MainActivity")
+	if page != "com.demo.MainActivity" {
+		t.Fatalf("UIA Activity 优先策略应返回 Activity，实际: %s", page)
+	}
+}
+
 func TestRunnerUsesGojaTransformedPageInfoInWholeChain(t *testing.T) {
 	decider := &transformingDecider{
 		fakeDecider: fakeDecider{

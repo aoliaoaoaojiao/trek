@@ -18,10 +18,12 @@ import type {
   DeviceOption,
   EffectiveRange,
   PageActionRule,
+  PageNameStrategy,
 } from "@/monkey-config/types"
 
 export function App() {
   const [pageSource, setPageSource] = useState<"uia" | "poco">("uia")
+  const [pageNameStrategy, setPageNameStrategy] = useState<PageNameStrategy>("structure_fingerprint")
   const [touchMode, setTouchMode] = useState<"motion" | "uia" | "adb">("motion")
   const [deviceSerial, setDeviceSerial] = useState("")
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([])
@@ -137,6 +139,7 @@ export function App() {
   const payload: ConfigPayload = useMemo(
     () => ({
       page_source: pageSource,
+      page_name_strategy: pageNameStrategy,
       touch_mode: touchMode,
       skip_all_actions_from_model: skipAll,
       uia: { server_port: Number(uiaPort || 0) },
@@ -148,7 +151,7 @@ export function App() {
         range: effectiveRange,
       },
     }),
-    [currentPackageName, deviceSerial, effectiveRange, fileLevel, pageSource, pocoEngine, pocoPort, skipAll, touchMode, uiaPort, usedSerial]
+    [currentPackageName, deviceSerial, effectiveRange, fileLevel, pageNameStrategy, pageSource, pocoEngine, pocoPort, skipAll, touchMode, uiaPort, usedSerial]
   )
 
   const selectedBounds = selectedDumpNode?.bounds ?? null
@@ -434,6 +437,7 @@ export function App() {
       },
       base: {
         page_source: pageSource,
+        page_name_strategy: pageNameStrategy,
         touch_mode: touchMode,
         uia: {
           server_port: Number(uiaPort || 0),
@@ -467,6 +471,7 @@ export function App() {
     currentPageName,
     effectiveRange,
     fileLevel,
+    pageNameStrategy,
     pageSource,
     pocoEngine,
     pocoPort,
@@ -492,6 +497,8 @@ export function App() {
       currentPageName={currentPageName}
       pageSource={pageSource}
       setPageSource={setPageSource}
+      pageNameStrategy={pageNameStrategy}
+      setPageNameStrategy={setPageNameStrategy}
       touchMode={touchMode}
       setTouchMode={setTouchMode}
       uiaPort={uiaPort}

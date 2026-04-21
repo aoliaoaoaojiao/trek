@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button"
 
-import type { ActionType, DeviceOption, PageActionRule } from "./types"
+import type { ActionType, DeviceOption, PageActionRule, PageNameStrategy } from "./types"
 
 type ConfigTab = "base" | "action" | "preview"
 
@@ -19,6 +19,8 @@ type Props = {
   currentPageName: string
   pageSource: "uia" | "poco"
   setPageSource: (value: "uia" | "poco") => void
+  pageNameStrategy: PageNameStrategy
+  setPageNameStrategy: (value: PageNameStrategy) => void
   touchMode: "motion" | "uia" | "adb"
   setTouchMode: (value: "motion" | "uia" | "adb") => void
   uiaPort: string
@@ -123,14 +125,29 @@ export function ConfigPanel(props: Props) {
             <input className="rounded-md border bg-background px-3 py-2 font-mono" value={props.currentPackageName} readOnly placeholder="点击当前界面后自动填充" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            页面源 page_source
+            页面源
             <select className="rounded-md border bg-background px-3 py-2" value={props.pageSource} onChange={(e) => props.setPageSource(e.target.value as "uia" | "poco")}>
               <option value="uia">uia</option>
               <option value="poco">poco</option>
             </select>
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            触控模式 touch_mode
+            页面名策略
+            <select
+              className="rounded-md border bg-background px-3 py-2"
+              value={props.pageNameStrategy}
+              onChange={(e) => props.setPageNameStrategy(e.target.value as PageNameStrategy)}
+            >
+              <option value="">不指定（按页面源自动）</option>
+              <option value="structure_fingerprint">structure_fingerprint（结构指纹）</option>
+              <option value="uia_activity_first">uia_activity_first（UIA 优先 Activity）</option>
+              <option value="xml_only">xml_only（XML 指纹）</option>
+              <option value="xml_fingerprint">xml_fingerprint（XML 指纹）</option>
+              <option value="activity_only">activity_only（仅 Activity）</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            触控模式
             <select className="rounded-md border bg-background px-3 py-2" value={props.touchMode} onChange={(e) => props.setTouchMode(e.target.value as "motion" | "uia" | "adb")}>
               <option value="motion">motion</option>
               <option value="uia">uia</option>
@@ -138,11 +155,11 @@ export function ConfigPanel(props: Props) {
             </select>
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            UIA 端口 uia.server_port
+            UIA 端口
             <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} value={props.uiaPort} onChange={(e) => props.setUiaPort(e.target.value)} placeholder="默认空" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            日志文件级别 log.file_level
+            日志文件级别
             <select className="rounded-md border bg-background px-3 py-2" value={props.fileLevel} onChange={(e) => props.setFileLevel(e.target.value)}>
               <option value="">空（不输出）</option>
               <option value="debug">debug</option>
@@ -154,7 +171,7 @@ export function ConfigPanel(props: Props) {
           {props.pageSource === "poco" ? (
             <>
               <label className="flex flex-col gap-1 text-sm">
-                Poco 引擎 poco.engine
+                Poco 引擎
                 <select className="rounded-md border bg-background px-3 py-2" value={props.pocoEngine} onChange={(e) => props.setPocoEngine(e.target.value)}>
                   <option value="UNITY_3D">UNITY_3D</option>
                   <option value="UE4">UE4</option>
@@ -166,7 +183,7 @@ export function ConfigPanel(props: Props) {
                 </select>
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                Poco 端口 poco.port
+                Poco 端口
                 <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} value={props.pocoPort} onChange={(e) => props.setPocoPort(e.target.value)} placeholder="默认空（走引擎默认端口）" />
               </label>
             </>
@@ -175,19 +192,19 @@ export function ConfigPanel(props: Props) {
             <p className="mb-2 text-sm font-medium">有效触控区域</p>
             <div className="mb-3 grid grid-cols-1 gap-2 rounded-md border p-2 text-xs md:grid-cols-2">
               <label className="flex flex-col gap-1">
-                left
+                左边界
                 <input className="rounded border bg-background px-2 py-1 font-mono" value={props.rangeLeftInput} onChange={(event) => props.setRangeLeftInput(event.target.value)} />
               </label>
               <label className="flex flex-col gap-1">
-                top
+                上边界
                 <input className="rounded border bg-background px-2 py-1 font-mono" value={props.rangeTopInput} onChange={(event) => props.setRangeTopInput(event.target.value)} />
               </label>
               <label className="flex flex-col gap-1">
-                right
+                右边界
                 <input className="rounded border bg-background px-2 py-1 font-mono" value={props.rangeRightInput} onChange={(event) => props.setRangeRightInput(event.target.value)} />
               </label>
               <label className="flex flex-col gap-1">
-                bottom
+                下边界
                 <input className="rounded border bg-background px-2 py-1 font-mono" value={props.rangeBottomInput} onChange={(event) => props.setRangeBottomInput(event.target.value)} />
               </label>
               <div className="flex flex-wrap gap-2 md:col-span-2">
@@ -196,14 +213,14 @@ export function ConfigPanel(props: Props) {
                 </Button>
               </div>
               <p className="break-all font-mono text-[11px] text-muted-foreground md:col-span-2">
-                范围匹配: {rangeMatchText}，当前公式: x' = left + (right-left) * x，y' = top + (bottom-top) * y
+                范围匹配: {rangeMatchText}，当前映射: 横向 = 左边界 + (右边界 - 左边界) * x，纵向 = 上边界 + (下边界 - 上边界) * y
               </p>
               <p className="break-all font-mono text-[11px] text-muted-foreground md:col-span-2">范围状态: {props.rangeLog}</p>
             </div>
           </div>
           <label className="flex items-center gap-2 text-sm md:col-span-2">
             <input type="checkbox" checked={props.skipAll} onChange={(e) => props.setSkipAll(e.target.checked)} />
-            跳过模型动作 skip_all_actions_from_model
+            跳过模型动作
           </label>
         </div>
       ) : null}
@@ -307,4 +324,3 @@ export function ConfigPanel(props: Props) {
     </>
   )
 }
-

@@ -1,5 +1,6 @@
 export type ConfigPayload = {
   page_source: "uia" | "poco"
+  page_name_strategy: PageNameStrategy
   touch_mode: "motion" | "uia" | "adb"
   skip_all_actions_from_model: boolean
   uia: { server_port: number }
@@ -11,6 +12,14 @@ export type ConfigPayload = {
     range: EffectiveRange
   }
 }
+
+export type PageNameStrategy =
+  | ""
+  | "uia_activity_first"
+  | "xml_only"
+  | "xml_fingerprint"
+  | "structure_fingerprint"
+  | "activity_only"
 
 export type DeviceOption = {
   serial: string
@@ -58,4 +67,3 @@ export type PageActionRule = {
   start?: { x: number; y: number }
   end?: { x: number; y: number }
 }
-

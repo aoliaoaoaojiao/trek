@@ -32,6 +32,35 @@ func TestBuildConfigJS_PocoDefaultEngine(t *testing.T) {
 	}
 }
 
+func TestBuildConfigJS_WithPageNameStrategy(t *testing.T) {
+	cfg := webConfigPayload{
+		PageSource:       "poco",
+		TouchMode:        "motion",
+		PageNameStrategy: "structure_fingerprint",
+	}
+	js, err := buildConfigJS(cfg)
+	if err != nil {
+		t.Fatalf("buildConfigJS 页面名策略失败: %v", err)
+	}
+	if !strings.Contains(js, `page_name_strategy: "structure_fingerprint"`) {
+		t.Fatalf("未输出 page_name_strategy: %s", js)
+	}
+}
+
+func TestResolvePreviewPageNameUsesSelectedStrategy(t *testing.T) {
+	cfg := webConfigPayload{
+		PageSource:       "poco",
+		PageNameStrategy: "structure_fingerprint",
+	}
+	pageName := resolvePreviewPageName(cfg, "poco", `<hierarchy><node widget="button"/></hierarchy>`, "com.unity3d.player")
+	if strings.HasPrefix(pageName, "com.unity3d") {
+		t.Fatalf("预览页面名不应绕过结构指纹策略返回 Activity: %s", pageName)
+	}
+	if !strings.HasPrefix(pageName, "XMLPage:") {
+		t.Fatalf("预期结构指纹页面名，实际: %s", pageName)
+	}
+}
+
 func TestBuildConfigJS_InvalidTouchMode(t *testing.T) {
 	cfg := webConfigPayload{
 		PageSource: "uia",

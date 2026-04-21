@@ -21,19 +21,41 @@ func resolveBasePageNameByStrategy(r *Runner, xml string) string {
 	strategy := normalizePageNameStrategy(r.cfg.PageNameStrategy, r.cfg.PageSourceType)
 	switch strategy {
 	case PageNameStrategyXMLOnly, PageNameStrategyXMLFingerprint, PageNameStrategyStructureFingerprint:
-		return ResolvePageName(xml, r.cfg.PageNameResolver)
+		return ResolvePageNameByStrategy(xml, r.cfg.PageNameResolver, strategy, r.cfg.PageSourceType, "")
 	case PageNameStrategyActivityOnly:
 		if activity, ok := resolveCurrentActivityName(r.driver); ok {
+			return ResolvePageNameByStrategy(xml, r.cfg.PageNameResolver, strategy, r.cfg.PageSourceType, activity)
+		}
+		return ResolvePageNameByStrategy(xml, r.cfg.PageNameResolver, strategy, r.cfg.PageSourceType, "")
+	case PageNameStrategyUIAActivityFirst:
+		if activity, ok := resolveCurrentActivityName(r.driver); ok {
+			return ResolvePageNameByStrategy(xml, r.cfg.PageNameResolver, strategy, r.cfg.PageSourceType, activity)
+		}
+		return ResolvePageNameByStrategy(xml, r.cfg.PageNameResolver, strategy, r.cfg.PageSourceType, "")
+	default:
+		return ResolvePageNameByStrategy(xml, r.cfg.PageNameResolver, strategy, r.cfg.PageSourceType, "")
+	}
+}
+
+// ResolvePageNameByStrategy 使用 monkey 运行时同款策略解析页面名，供 web 预览等外部调试入口复用。
+func ResolvePageNameByStrategy(xml string, resolver PageNameResolver, strategy string, pageSourceType string, currentActivity string) string {
+	normalized := normalizePageNameStrategy(strategy, pageSourceType)
+	activity := strings.TrimSpace(currentActivity)
+	switch normalized {
+	case PageNameStrategyXMLOnly, PageNameStrategyXMLFingerprint, PageNameStrategyStructureFingerprint:
+		return ResolvePageName(xml, resolver)
+	case PageNameStrategyActivityOnly:
+		if activity != "" {
 			return activity
 		}
 		return "UnknownPage"
 	case PageNameStrategyUIAActivityFirst:
-		if activity, ok := resolveCurrentActivityName(r.driver); ok {
+		if activity != "" {
 			return activity
 		}
-		return ResolvePageName(xml, r.cfg.PageNameResolver)
+		return ResolvePageName(xml, resolver)
 	default:
-		return ResolvePageName(xml, r.cfg.PageNameResolver)
+		return ResolvePageName(xml, resolver)
 	}
 }
 

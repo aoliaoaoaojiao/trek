@@ -15,16 +15,18 @@ import (
 	"trek/pkg/driver/android"
 	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/common/page/poco"
+	"trek/pkg/monkey"
 )
 
 //go:embed ui/dist/*
 var uiDistFS embed.FS
 
 type webConfigPayload struct {
-	PageSource string `json:"page_source"`
-	TouchMode  string `json:"touch_mode"`
-	SkipAll    bool   `json:"skip_all_actions_from_model"`
-	UIA        struct {
+	PageSource       string `json:"page_source"`
+	PageNameStrategy string `json:"page_name_strategy"`
+	TouchMode        string `json:"touch_mode"`
+	SkipAll          bool   `json:"skip_all_actions_from_model"`
+	UIA              struct {
 		ServerPort int `json:"server_port"`
 	} `json:"uia"`
 	Poco struct {
@@ -291,10 +293,13 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 	if pkg, err := driver.GetCurrentPackage(); err == nil {
 		packageName = strings.TrimSpace(pkg)
 	}
-	pageName := ""
-	if activity, err := driver.GetCurrentActivity(); err == nil {
-		pageName = strings.TrimSpace(activity)
+	activityName := ""
+	if previewPageNameStrategyNeedsActivity(req.Config, pageSourceType) {
+		if activity, err := driver.GetCurrentActivity(); err == nil {
+			activityName = strings.TrimSpace(activity)
+		}
 	}
+	pageName := resolvePreviewPageName(req.Config, pageSourceType, xml, activityName)
 
 	writeJSON(w, http.StatusOK, previewResponse{
 		UsedSerial:       strings.TrimSpace(driver.Name()),
@@ -303,6 +308,18 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 		PackageName:      packageName,
 		PageName:         pageName,
 	})
+}
+
+func resolvePreviewPageName(cfg webConfigPayload, pageSourceType string, xml string, activityName string) string {
+	return monkey.ResolvePageNameByStrategy(xml, nil, cfg.PageNameStrategy, pageSourceType, activityName)
+}
+
+func previewPageNameStrategyNeedsActivity(cfg webConfigPayload, pageSourceType string) bool {
+	strategy := strings.ToLower(strings.TrimSpace(cfg.PageNameStrategy))
+	if strategy == "" || strategy == "auto" {
+		return strings.EqualFold(strings.TrimSpace(pageSourceType), "uia")
+	}
+	return strategy == monkey.PageNameStrategyUIAActivityFirst || strategy == monkey.PageNameStrategyActivityOnly
 }
 
 func decodePayload(r *http.Request) (webConfigPayload, error) {
@@ -420,6 +437,15 @@ func buildConfigJS(cfg webConfigPayload) (string, error) {
 		return "", fmt.Errorf("touch_mode 仅支持 motion/uia/adb")
 	}
 
+	pageNameStrategy := strings.ToLower(strings.TrimSpace(cfg.PageNameStrategy))
+	if pageNameStrategy != "" {
+		switch pageNameStrategy {
+		case "uia_activity_first", "xml_only", "xml_fingerprint", "structure_fingerprint", "activity_only":
+		default:
+			return "", fmt.Errorf("page_name_strategy 不合法: %s", pageNameStrategy)
+		}
+	}
+
 	if cfg.UIA.ServerPort < 0 || cfg.Poco.Port < 0 {
 		return "", fmt.Errorf("端口不能为负数")
 	}
@@ -450,6 +476,9 @@ func buildConfigJS(cfg webConfigPayload) (string, error) {
 	var b strings.Builder
 	b.WriteString("const config = {\n")
 	b.WriteString(fmt.Sprintf("  page_source: %q,\n", pageSource))
+	if pageNameStrategy != "" {
+		b.WriteString(fmt.Sprintf("  page_name_strategy: %q,\n", pageNameStrategy))
+	}
 	b.WriteString(fmt.Sprintf("  touch_mode: %q,\n", touchMode))
 	if cfg.SkipAll {
 		b.WriteString("  skip_all_actions_from_model: true,\n")

@@ -183,6 +183,18 @@ func TestLoadStaticConfigReadsCamelCasePageSourceAndTouchMode(t *testing.T) {
 	}
 }
 
+func TestLoadStaticConfigReadsPageNameStrategy(t *testing.T) {
+	cfg, err := LoadStaticConfig(`const config = {
+  page_name_strategy: "xml_only"
+}`)
+	if err != nil {
+		t.Fatalf("加载静态配置失败: %v", err)
+	}
+	if cfg.PageNameStrategy != "xml_only" {
+		t.Fatalf("页面名策略配置不符合预期: %q", cfg.PageNameStrategy)
+	}
+}
+
 func TestLoadStaticConfigReadsUIAAndPocoSettings(t *testing.T) {
 	cfg, err := LoadStaticConfig(`const config = {
   uia: {

@@ -180,6 +180,7 @@ func runMonkey(logLevel string, opts runOptions) error {
 		MaxDuration:       opts.maxDuration,
 		StepInterval:      opts.stepInterval,
 		PageSourceType:    pageSourceType,
+		PageNameStrategy:  strings.TrimSpace(staticCfg.PageNameStrategy),
 		CaptureScreenshot: opts.captureScreenshot,
 		KeepStepRecords:   opts.keepStepRecords,
 		StopOnCrash:       true,

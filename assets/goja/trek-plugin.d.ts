@@ -168,6 +168,12 @@ interface TrekPlugin {
 type LogLevel = "debug" | "info" | "warn" | "warning" | "error" | "fatal"
 type PageSourceType = "uia" | "poco"
 type TouchMode = "adb" | "motion" | "uia"
+type PageNameStrategy =
+  | "uia_activity_first"
+  | "xml_only"
+  | "xml_fingerprint"
+  | "structure_fingerprint"
+  | "activity_only"
 type PocoEngine =
   | "COCOS_2DX_JS"
   | "COCOS_2DX_C++"
@@ -185,6 +191,8 @@ interface TrekStaticConfig {
   page_source?: PageSourceType
   /** 指定 monkey 运行使用的触控模式 */
   touch_mode?: TouchMode
+  /** 指定页面名生成策略（不填时按页面源自动选择） */
+  page_name_strategy?: PageNameStrategy
   /** UIA 端口相关配置 */
   uia?: {
     /** 设备端 UIA server 端口（默认 6790） */

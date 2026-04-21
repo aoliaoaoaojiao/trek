@@ -76,6 +76,7 @@ type Config struct {
 	StopOnANR                   bool
 	KeepStepRecords             bool
 	PageNameResolver            PageNameResolver
+	PageNameStrategy            string
 	ForegroundMonitorInterval   time.Duration
 	HealthSignalMonitorInterval time.Duration
 	EffectiveTouchArea          *EffectiveTouchArea
@@ -955,16 +956,6 @@ func normalizeConfig(cfg Config) Config {
 	return cfg
 }
 
-func defaultPageNameResolver(xml string) string {
-	if classIdx := strings.Index(xml, `class="`); classIdx >= 0 {
-		rest := xml[classIdx+len(`class="`):]
-		if end := strings.Index(rest, `"`); end > 0 {
-			return rest[:end]
-		}
-	}
-	return "UnknownPage"
-}
-
 // ResolvePageName 使用 Runner 同款逻辑解析页面名，便于调试和外部调用。
 func ResolvePageName(xml string, resolver PageNameResolver) string {
 	if resolver == nil {
@@ -1151,15 +1142,7 @@ func (r *Runner) resolvePageInfo(xml string, screenshot []byte) (string, string)
 }
 
 func (r *Runner) resolveBasePageName(xml string) string {
-	if strings.EqualFold(strings.TrimSpace(r.cfg.PageSourceType), string(defaultPageSourceType)) {
-		if provider, ok := r.driver.(currentActivityProvider); ok && provider != nil {
-			activity, err := provider.GetCurrentActivity()
-			if err == nil && strings.TrimSpace(activity) != "" {
-				return strings.TrimSpace(activity)
-			}
-		}
-	}
-	return ResolvePageName(xml, r.cfg.PageNameResolver)
+	return resolveBasePageNameByStrategy(r, xml)
 }
 
 func (r *Runner) currentHealthSignals() (crash bool, anr bool) {

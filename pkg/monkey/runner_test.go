@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math/rand"
+	"strings"
 	"testing"
 	"time"
 	"trek/internal/engine/core/types"
@@ -640,8 +641,8 @@ func TestPickWeightedCandidateFallbackFirstNonNil(t *testing.T) {
 func TestResolvePageNameDefault(t *testing.T) {
 	xml := `<node class="com.demo.MainActivity"/>`
 	page := ResolvePageName(xml, nil)
-	if page != "com.demo.MainActivity" {
-		t.Fatalf("默认解析页面名错误: %s", page)
+	if !strings.HasPrefix(page, pageFingerprintPrefix+":") {
+		t.Fatalf("默认应使用 XML 结构指纹解析页面名，实际: %s", page)
 	}
 }
 
@@ -650,6 +651,57 @@ func TestResolvePageNameWithCustomResolver(t *testing.T) {
 	page := ResolvePageName(xml, func(_ string) string { return "CustomPage" })
 	if page != "CustomPage" {
 		t.Fatalf("自定义解析页面名错误: %s", page)
+	}
+}
+
+func TestResolvePageNameFingerprintSupportsPocoTree(t *testing.T) {
+	xml := `<hierarchy><node name="Root"><node type="Button" name="btn_start"/></node></hierarchy>`
+	page := ResolvePageName(xml, nil)
+	if !strings.HasPrefix(page, pageFingerprintPrefix+":") {
+		t.Fatalf("预期 Poco 树结构生成指纹页面名，实际: %s", page)
+	}
+	if page != ResolvePageName(xml, nil) {
+		t.Fatalf("同一页面源应生成稳定页面名")
+	}
+}
+
+func TestResolvePageNameFingerprintIgnoresAttributeOrder(t *testing.T) {
+	xmlA := `<hierarchy><node type="Button" name="btn_start"/></hierarchy>`
+	xmlB := `<hierarchy><node name="btn_start" type="Button"/></hierarchy>`
+	if ResolvePageName(xmlA, nil) != ResolvePageName(xmlB, nil) {
+		t.Fatalf("属性顺序不同不应影响页面指纹")
+	}
+}
+
+func TestResolvePageNameFingerprintIgnoresGenericContentAttrs(t *testing.T) {
+	xmlA := `<hierarchy><node label="start" widget="button"/></hierarchy>`
+	xmlB := `<hierarchy><node label="setting" widget="button"/></hierarchy>`
+	if ResolvePageName(xmlA, nil) != ResolvePageName(xmlB, nil) {
+		t.Fatalf("内容属性变化不应影响结构页面指纹")
+	}
+}
+
+func TestResolvePageNameFingerprintUsesTreeStructure(t *testing.T) {
+	xmlA := `<hierarchy><node widget="button"/></hierarchy>`
+	xmlB := `<hierarchy><node widget="button"><node widget="image"/></node></hierarchy>`
+	if ResolvePageName(xmlA, nil) == ResolvePageName(xmlB, nil) {
+		t.Fatalf("树结构变化应影响页面指纹")
+	}
+}
+
+func TestResolvePageNameFingerprintUsesInteractionCapability(t *testing.T) {
+	xmlA := `<hierarchy><node widget="button" clickable="true"/></hierarchy>`
+	xmlB := `<hierarchy><node widget="button" clickable="false"/></hierarchy>`
+	if ResolvePageName(xmlA, nil) == ResolvePageName(xmlB, nil) {
+		t.Fatalf("交互能力变化应影响结构页面指纹")
+	}
+}
+
+func TestResolvePageNameFingerprintIgnoresRuntimeAttrs(t *testing.T) {
+	xmlA := `<hierarchy><node name="start" index="0" focused="false" window-id="10"/></hierarchy>`
+	xmlB := `<hierarchy><node name="start" index="3" focused="true" window-id="99"/></hierarchy>`
+	if ResolvePageName(xmlA, nil) != ResolvePageName(xmlB, nil) {
+		t.Fatalf("运行态抖动属性变化不应影响页面指纹")
 	}
 }
 
@@ -730,6 +782,102 @@ func TestRunnerUsesCurrentActivityAsPageNameWhenUIA(t *testing.T) {
 	}
 	if report.PageVisitCount["com.demo.LoginActivity"] != 1 {
 		t.Fatalf("预期使用 Activity 名参与页面统计，实际: %+v", report.PageVisitCount)
+	}
+}
+
+func TestRunnerUsesXMLPageNameWhenStrategyXMLOnly(t *testing.T) {
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
+	driver := &fakeDriver{
+		pageSource:      &fakePageSource{xml: `<node class="com.demo.FromXML"/>`},
+		currentActivity: "com.demo.FromActivity",
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		MaxSteps:         1,
+		StepInterval:     0,
+		PageSourceType:   "uia",
+		PageNameStrategy: PageNameStrategyXMLOnly,
+		KeepStepRecords:  true,
+		StopOnCrash:      true,
+		StopOnANR:        true,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if !strings.HasPrefix(decider.lastPage, pageFingerprintPrefix+":") {
+		t.Fatalf("预期 xml_only 使用 XML 结构指纹页面名，实际: %s", decider.lastPage)
+	}
+}
+
+func TestRunnerUsesXMLPageNameWhenStrategyStructureFingerprint(t *testing.T) {
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
+	driver := &fakeDriver{
+		pageSource:      &fakePageSource{xml: `<hierarchy><node widget="button"/></hierarchy>`},
+		currentActivity: "com.demo.FromActivity",
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		MaxSteps:         1,
+		StepInterval:     0,
+		PageSourceType:   "uia",
+		PageNameStrategy: PageNameStrategyStructureFingerprint,
+		KeepStepRecords:  true,
+		StopOnCrash:      true,
+		StopOnANR:        true,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if !strings.HasPrefix(decider.lastPage, pageFingerprintPrefix+":") {
+		t.Fatalf("预期 structure_fingerprint 使用页面树结构指纹，实际: %s", decider.lastPage)
+	}
+}
+
+func TestRunnerUsesUnknownWhenStrategyActivityOnlyAndNoActivity(t *testing.T) {
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
+	driver := &fakeDriver{
+		pageSource:    &fakePageSource{xml: `<node class="com.demo.FromXML"/>`},
+		currentActErr: errors.New("activity unavailable"),
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		MaxSteps:         1,
+		StepInterval:     0,
+		PageSourceType:   "uia",
+		PageNameStrategy: PageNameStrategyActivityOnly,
+		KeepStepRecords:  true,
+		StopOnCrash:      true,
+		StopOnANR:        true,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if decider.lastPage != "UnknownPage" {
+		t.Fatalf("预期 activity_only 失败时回退 UnknownPage，实际: %s", decider.lastPage)
 	}
 }
 

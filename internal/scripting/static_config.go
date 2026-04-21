@@ -16,6 +16,7 @@ type StaticConfig struct {
 	SkipAll            bool
 	PageSource         string
 	TouchMode          string
+	PageNameStrategy   string
 	UIA                StaticUIAConfig
 	Poco               StaticPocoConfig
 	Log                StaticLogConfig
@@ -124,6 +125,12 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 	}
 	if touchModeValue := obj.Get("touchMode"); cfg.TouchMode == "" && !isEmptyJSValue(touchModeValue) {
 		cfg.TouchMode = strings.TrimSpace(touchModeValue.String())
+	}
+	if strategyValue := obj.Get("page_name_strategy"); !isEmptyJSValue(strategyValue) {
+		cfg.PageNameStrategy = strings.TrimSpace(strategyValue.String())
+	}
+	if strategyValue := obj.Get("pageNameStrategy"); cfg.PageNameStrategy == "" && !isEmptyJSValue(strategyValue) {
+		cfg.PageNameStrategy = strings.TrimSpace(strategyValue.String())
 	}
 	if uiaValue := obj.Get("uia"); !isEmptyJSValue(uiaValue) {
 		uiaObj := uiaValue.ToObject(vm)

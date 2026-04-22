@@ -1,3 +1,5 @@
+import { useState } from "react"
+
 import { Button } from "@/components/ui/button"
 
 import type { ActionType, DeviceOption, PageActionRule, PageNameStrategy } from "./types"
@@ -8,6 +10,7 @@ type Props = {
   configTab: ConfigTab
   setConfigTab: (tab: ConfigTab) => void
   loading: boolean
+  onImportConfig: (source: string) => void
   onRefreshCurrentPage: () => void
   deviceSerial: string
   setDeviceSerial: (value: string) => void
@@ -62,11 +65,9 @@ type Props = {
   actionRules: PageActionRule[]
   actionLog: string
   onAddActionRule: () => void
-  onCopyText: (text: string) => Promise<void>
-  previewConfigText: string
   outputPath: string
   setOutputPath: (value: string) => void
-  onPreviewConfig: () => void
+  onCopyConfig: () => void
   onSaveConfig: () => void
   status: string
   error: string
@@ -75,15 +76,89 @@ type Props = {
 
 export function ConfigPanel(props: Props) {
   const rangeMatchText = `serial=${props.usedSerial || props.deviceSerial || "<empty>"}，package=${props.currentPackageName || "<empty>"}`
+  const [importOpen, setImportOpen] = useState(false)
+  const [importText, setImportText] = useState("")
+  const [importStatus, setImportStatus] = useState("")
+
+  const handleImportFile = (file: File | undefined) => {
+    if (file === undefined) {
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      setImportText(String(reader.result ?? ""))
+      setImportStatus(`已读取文件：${file.name}`)
+    }
+    reader.onerror = () => {
+      setImportStatus("读取配置文件失败")
+    }
+    reader.readAsText(file, "UTF-8")
+  }
+
+  const handleApplyImport = () => {
+    try {
+      props.onImportConfig(importText)
+      setImportStatus("配置已加载到表单")
+      setImportOpen(false)
+    } catch (err) {
+      setImportStatus(err instanceof Error ? err.message : "导入配置失败")
+    }
+  }
 
   return (
     <>
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-base font-semibold">配置</h2>
-        <Button variant="outline" onClick={props.onRefreshCurrentPage} disabled={props.loading}>
-          当前界面
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" onClick={() => setImportOpen(true)} disabled={props.loading}>
+            导入配置
+          </Button>
+          <Button variant="outline" onClick={props.onRefreshCurrentPage} disabled={props.loading}>
+            当前界面
+          </Button>
+        </div>
       </div>
+      {importOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+          <div className="w-full max-w-2xl rounded-xl border bg-background p-4 shadow-lg">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-base font-semibold">导入 JS 配置</h3>
+              <Button type="button" variant="outline" size="sm" onClick={() => setImportOpen(false)}>
+                关闭
+              </Button>
+            </div>
+            <div className="space-y-3">
+              <label className="flex flex-col gap-1 text-sm">
+                选择配置文件
+                <input
+                  className="rounded-md border bg-background px-3 py-2"
+                  type="file"
+                  accept=".js,application/javascript,text/javascript,text/plain"
+                  onChange={(event) => handleImportFile(event.target.files?.[0])}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                配置内容
+                <textarea
+                  className="min-h-72 rounded-md border bg-background p-3 font-mono text-xs"
+                  value={importText}
+                  onChange={(event) => setImportText(event.target.value)}
+                  placeholder="粘贴或上传 const config = { ... }"
+                />
+              </label>
+              {importStatus !== "" ? <p className="text-sm text-muted-foreground">{importStatus}</p> : null}
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setImportOpen(false)}>
+                  取消
+                </Button>
+                <Button type="button" onClick={handleApplyImport} disabled={importText.trim() === ""}>
+                  加载配置
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="mb-3 flex gap-2">
         <Button type="button" variant={props.configTab === "base" ? "default" : "outline"} onClick={() => props.setConfigTab("base")}>
           基础配置
@@ -291,23 +366,13 @@ export function ConfigPanel(props: Props) {
       ) : null}
       {props.configTab === "preview" ? (
         <div className="mt-2 rounded-md border bg-background p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-sm font-medium">当前界面配置预览</p>
-            <Button type="button" size="sm" variant="outline" onClick={() => void props.onCopyText(props.previewConfigText)}>
-              复制预览
-            </Button>
-          </div>
-          <p className="mb-2 break-all font-mono text-[11px] text-muted-foreground">
-            范围匹配: {rangeMatchText}；页面: {props.currentPageName || "<empty>"}
-          </p>
-          <textarea className="min-h-[460px] w-full rounded-md border bg-background p-2 font-mono text-xs" readOnly value={props.previewConfigText} />
-          <label className="mt-3 flex flex-col gap-1 text-sm">
+          <label className="flex flex-col gap-1 text-sm">
             输出路径
             <input className="rounded-md border bg-background px-3 py-2" value={props.outputPath} onChange={(e) => props.setOutputPath(e.target.value)} />
           </label>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button onClick={props.onPreviewConfig} disabled={props.loading}>
-              预览配置
+            <Button onClick={props.onCopyConfig} disabled={props.resultText.trim() === ""}>
+              复制配置
             </Button>
             <Button variant="outline" onClick={props.onSaveConfig} disabled={props.loading}>
               保存到文件
@@ -317,7 +382,7 @@ export function ConfigPanel(props: Props) {
           {props.error !== "" ? <p className="mt-2 text-sm text-red-700">{props.error}</p> : null}
           <div className="mt-3">
             <label className="text-sm font-medium">生成结果</label>
-            <textarea className="mt-2 min-h-72 w-full rounded-md border bg-background p-3 font-mono text-sm" readOnly value={props.resultText} />
+            <textarea className="mt-2 min-h-[520px] w-full rounded-md border bg-background p-3 font-mono text-sm" readOnly value={props.resultText} />
           </div>
         </div>
       ) : null}

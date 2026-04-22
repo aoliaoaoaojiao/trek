@@ -66,13 +66,64 @@ export function parseDumpTree(xml: string): { root: DumpTreeNode | null; nodeMap
 }
 
 export function buildNodeTitle(node: DumpTreeNode): string {
-  const className = node.attrs.class
-  const name = node.attrs.name
-  const text = node.attrs.text
-  const contentDesc = node.attrs["content-desc"]
-  const resourceId = node.attrs["resource-id"]
-  const key = className || name || resourceId || contentDesc || text || "<empty>"
+  const textLikeKeys = [
+    "text",
+    "label",
+    "value",
+    "title",
+    "content-desc",
+    "name",
+    "resource-id",
+    "class",
+  ]
+  const key =
+    textLikeKeys
+      .map((k) => node.attrs[k])
+      .find((v) => typeof v === "string" && v.trim() !== "") ?? "<empty>"
   return `${node.tag}  ${key}`
+}
+
+export function buildNodeAttrSummary(node: DumpTreeNode): string {
+  const preferredKeys = [
+    "text",
+    "label",
+    "value",
+    "title",
+    "name",
+    "content-desc",
+    "resource-id",
+    "class",
+    "type",
+    "widget",
+    "clickable",
+    "enabled",
+    "focusable",
+    "scrollable",
+  ]
+  const summary: string[] = []
+  const used = new Set<string>()
+
+  for (const key of preferredKeys) {
+    const value = node.attrs[key]
+    if (value === undefined || value.trim() === "") {
+      continue
+    }
+    summary.push(`${key}=${value}`)
+    used.add(key)
+    if (summary.length >= 4) {
+      break
+    }
+  }
+
+  if (summary.length < 4) {
+    const rest = Object.entries(node.attrs)
+      .filter(([key, value]) => !used.has(key) && value.trim() !== "")
+      .slice(0, 4 - summary.length)
+      .map(([key, value]) => `${key}=${value}`)
+    summary.push(...rest)
+  }
+
+  return summary.length > 0 ? summary.join(" | ") : "attrs: <empty>"
 }
 
 export async function copyText(text: string) {
@@ -94,4 +145,3 @@ export async function copyText(text: string) {
     // ignore
   }
 }
-

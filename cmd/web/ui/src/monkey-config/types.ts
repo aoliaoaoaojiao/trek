@@ -13,6 +13,21 @@ export type ConfigPayload = {
   }
 }
 
+export type PartialConfigPayload = Partial<{
+  page_source: "uia" | "poco"
+  page_name_strategy: PageNameStrategy
+  touch_mode: "motion" | "uia" | "adb"
+  skip_all_actions_from_model: boolean
+  uia: Partial<{ server_port: number }>
+  poco: Partial<{ engine: string; port: number }>
+  log: Partial<{ file_level: string }>
+  effective_touch_area: Partial<{
+    serial: string
+    package_name: string
+    range: Partial<EffectiveRange>
+  }>
+}>
+
 export type PageNameStrategy =
   | ""
   | "uia_activity_first"

@@ -19,7 +19,42 @@ import type {
   EffectiveRange,
   PageActionRule,
   PageNameStrategy,
+  PartialConfigPayload,
 } from "@/monkey-config/types"
+
+const pageNameStrategies: PageNameStrategy[] = [
+  "",
+  "uia_activity_first",
+  "xml_only",
+  "xml_fingerprint",
+  "structure_fingerprint",
+  "activity_only",
+]
+
+function isPageNameStrategy(value: unknown): value is PageNameStrategy {
+  return typeof value === "string" && pageNameStrategies.includes(value as PageNameStrategy)
+}
+
+function parseConfigSource(source: string): PartialConfigPayload {
+  const module = { exports: {} as unknown }
+  const load = new Function(
+    "module",
+    "exports",
+    `"use strict";\n${source}\n; if (typeof config !== "undefined") return config; return module.exports;`
+  ) as (module: { exports: unknown }, exports: unknown) => unknown
+  const result = load(module, module.exports)
+  const candidate = result === module.exports && isRecord(module.exports) && "default" in module.exports
+    ? module.exports.default
+    : result
+  if (!isRecord(candidate)) {
+    throw new Error("配置文件中没有找到 config 对象")
+  }
+  return candidate as PartialConfigPayload
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
 
 export function App() {
   const [pageSource, setPageSource] = useState<"uia" | "poco">("uia")
@@ -154,6 +189,38 @@ export function App() {
     [currentPackageName, deviceSerial, effectiveRange, fileLevel, pageNameStrategy, pageSource, pocoEngine, pocoPort, skipAll, touchMode, uiaPort, usedSerial]
   )
 
+  useEffect(() => {
+    if (configTab !== "preview") {
+      return
+    }
+    let ignored = false
+    const renderConfig = async () => {
+      setLoading(true)
+      setStatus("")
+      setError("")
+      try {
+        const data = await postJSON<{ js: string }>("/api/render", payload)
+        if (ignored) {
+          return
+        }
+        setResultText(data.js)
+        setStatus("已生成配置")
+      } catch (err) {
+        if (!ignored) {
+          setError(err instanceof Error ? err.message : "生成失败")
+        }
+      } finally {
+        if (!ignored) {
+          setLoading(false)
+        }
+      }
+    }
+    void renderConfig()
+    return () => {
+      ignored = true
+    }
+  }, [configTab, payload])
+
   const selectedBounds = selectedDumpNode?.bounds ?? null
   const absoluteSpace = useMemo(
     () => ({
@@ -281,19 +348,72 @@ export function App() {
     setRangeLog("已恢复整图默认范围（0,0,1,1）")
   }
 
-  const handlePreview = async () => {
-    setLoading(true)
-    setStatus("")
-    setError("")
-    try {
-      const data = await postJSON<{ js: string }>("/api/render", payload)
-      setResultText(data.js)
-      setStatus("已生成配置")
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "生成失败")
-    } finally {
-      setLoading(false)
+  const handleImportConfig = (source: string) => {
+    const imported = parseConfigSource(source)
+    if (imported.page_source === "uia" || imported.page_source === "poco") {
+      setPageSource(imported.page_source)
     }
+    if (isPageNameStrategy(imported.page_name_strategy)) {
+      setPageNameStrategy(imported.page_name_strategy)
+    }
+    if (
+      imported.touch_mode === "motion" ||
+      imported.touch_mode === "uia" ||
+      imported.touch_mode === "adb"
+    ) {
+      setTouchMode(imported.touch_mode)
+    }
+    if (typeof imported.skip_all_actions_from_model === "boolean") {
+      setSkipAll(imported.skip_all_actions_from_model)
+    }
+    if (typeof imported.uia?.server_port === "number") {
+      setUiaPort(imported.uia.server_port > 0 ? String(imported.uia.server_port) : "")
+    }
+    if (typeof imported.poco?.engine === "string" && imported.poco.engine.trim() !== "") {
+      setPocoEngine(imported.poco.engine.trim())
+    }
+    if (typeof imported.poco?.port === "number") {
+      setPocoPort(imported.poco.port > 0 ? String(imported.poco.port) : "")
+    }
+    if (typeof imported.log?.file_level === "string") {
+      setFileLevel(imported.log.file_level.trim())
+    }
+    if (typeof imported.effective_touch_area?.serial === "string") {
+      setDeviceSerial(imported.effective_touch_area.serial.trim())
+      setUsedSerial(imported.effective_touch_area.serial.trim())
+    }
+    if (typeof imported.effective_touch_area?.package_name === "string") {
+      setCurrentPackageName(imported.effective_touch_area.package_name.trim())
+    }
+    const importedRange = imported.effective_touch_area?.range
+    if (importedRange !== undefined) {
+      if (typeof importedRange.left === "number") {
+        setRangeLeftInput(String(importedRange.left))
+      }
+      if (typeof importedRange.top === "number") {
+        setRangeTopInput(String(importedRange.top))
+      }
+      if (typeof importedRange.right === "number") {
+        setRangeRightInput(String(importedRange.right))
+      }
+      if (typeof importedRange.bottom === "number") {
+        setRangeBottomInput(String(importedRange.bottom))
+      }
+      setRangeLog("已从导入配置加载有效触控区域")
+    }
+    setStatus("配置已导入")
+    setConfigTab("base")
+  }
+
+  const handleCopyConfig = async () => {
+    const text = resultText.trim()
+    if (text === "") {
+      setError("当前没有可复制的配置")
+      return
+    }
+    await copyText(resultText)
+    setStatus("配置已复制")
+    setError("")
   }
 
   const handleSave = async () => {
@@ -425,67 +545,12 @@ export function App() {
     setActionLog(`已添加动作，当前共 ${next.length} 条`)
   }
 
-  const previewConfigText = useMemo(() => {
-    const currentPageActions = actionRules.filter(
-      (item) => item.page_name === currentPageName
-    )
-    const preview = {
-      scope: {
-        serial: usedSerial || deviceSerial || "",
-        package_name: currentPackageName || "",
-        page_name: currentPageName || "",
-      },
-      base: {
-        page_source: pageSource,
-        page_name_strategy: pageNameStrategy,
-        touch_mode: touchMode,
-        uia: {
-          server_port: Number(uiaPort || 0),
-        },
-        log: {
-          file_level: fileLevel,
-        },
-        poco:
-          pageSource === "poco"
-            ? {
-                engine: pocoEngine,
-                port: Number(pocoPort || 0),
-              }
-            : undefined,
-        skip_all_actions_from_model: skipAll,
-      },
-      effective_touch_area: {
-        serial: usedSerial || deviceSerial || "",
-        package_name: currentPackageName || "",
-        range: effectiveRange,
-      },
-      actions: {
-        current_page: currentPageActions,
-        all: actionRules,
-      },
-    }
-    return JSON.stringify(preview, null, 2)
-  }, [
-    actionRules,
-    currentPackageName,
-    currentPageName,
-    effectiveRange,
-    fileLevel,
-    pageNameStrategy,
-    pageSource,
-    pocoEngine,
-    pocoPort,
-    skipAll,
-    touchMode,
-    uiaPort,
-    usedSerial,
-  ])
-
   const renderConfigPanel = () => (
     <ConfigPanel
       configTab={configTab}
       setConfigTab={setConfigTab}
       loading={loading}
+      onImportConfig={handleImportConfig}
       onRefreshCurrentPage={handleRefreshPreview}
       deviceSerial={deviceSerial}
       setDeviceSerial={setDeviceSerial}
@@ -540,11 +605,9 @@ export function App() {
       actionRules={actionRules}
       actionLog={actionLog}
       onAddActionRule={handleAddActionRule}
-      onCopyText={copyText}
-      previewConfigText={previewConfigText}
       outputPath={outputPath}
       setOutputPath={setOutputPath}
-      onPreviewConfig={() => void handlePreview()}
+      onCopyConfig={() => void handleCopyConfig()}
       onSaveConfig={() => void handleSave()}
       status={status}
       error={error}

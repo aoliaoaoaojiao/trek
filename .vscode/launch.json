@@ -17,6 +17,8 @@
                 "--auto-current-app",
                 "--serial",
                 "${input:deviceSerial}",
+                "--algorithm",
+                "${input:algorithm}",
                 "--config",
                 "${input:configPath}",
                 "--max-steps",
@@ -46,6 +48,8 @@
                 "${input:packageName}",
                 "--serial",
                 "${input:deviceSerial}",
+                "--algorithm",
+                "${input:algorithm}",
                 "--config",
                 "${input:configPath}",
                 "--max-steps",
@@ -112,6 +116,16 @@
             "type": "promptString",
             "description": "ADB 设备序列号；留空则自动选择设备",
             "default": ""
+        },
+        {
+            "id": "algorithm",
+            "type": "pickString",
+            "description": "决策算法",
+            "options": [
+                "reuse",
+                "uctbandit"
+            ],
+            "default": "reuse"
         },
         {
             "id": "configPath",

@@ -1,5 +1,6 @@
 const config = {
   page_source: "poco",
+  scroll_infer_threshold: 5, 
   page_name_strategy: "structure_fingerprint",
   touch_mode: "motion",
   poco: {

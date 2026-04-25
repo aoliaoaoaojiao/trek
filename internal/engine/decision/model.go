@@ -194,6 +194,10 @@ func (m *Model) GetOperateOpt(elem types2.IElement, pageName string, deviceID st
 	case *types2.StatefulAction:
 		logger.Debugf("selected action %s", a.String())
 		operate = a.ToOperate()
+	case *types2.Action:
+		// 处理 RESTART、NOP 等基础动作类型（无目标控件的 Agent 动作）
+		logger.Infof("selected base action %s", a.ActionType.String())
+		operate = a.ToOperate()
 	default:
 		logger.Errorf("unsupported action type: %T", action)
 		return types2.ActionCommandNop

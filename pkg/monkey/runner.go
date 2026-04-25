@@ -499,7 +499,18 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		}
 
 		report.StepsSucceeded++
-		report.ConsecutiveFailures = 0
+
+		// RESTART/START 类动作执行成功后，重置连续失败计数并等待应用恢复。
+		// 这些动作会重启应用，Poco 等页面源服务需要时间重新连接，
+		// 连续失败计数不应将重启后的短暂连接中断计为失败。
+		if cmd.Act == types.RESTART || cmd.Act == types.CLEAN_RESTART || cmd.Act == types.START {
+			report.ConsecutiveFailures = 0
+			logger.Infof("monkey step=%d executed app restart action=%s, resetting consecutive failures and waiting for recovery", step, cmd.Act.String())
+			r.sleepStep(ctx, 5*time.Second)
+		} else {
+			report.ConsecutiveFailures = 0
+		}
+
 		afterPage := r.capturePageSnapshot(pageSource, pageName)
 		crash, anr := r.currentHealthSignals()
 		r.notifyStepResult(step, cmd, true, "", time.Since(stepStart).Milliseconds(), crash, anr, beforePage, afterPage)

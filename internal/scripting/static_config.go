@@ -11,16 +11,18 @@ import (
 )
 
 type StaticConfig struct {
-	ResMapping         map[string]string
-	BlackRects         map[string][][4]int
-	SkipAll            bool
-	PageSource         string
-	TouchMode          string
-	PageNameStrategy   string
-	UIA                StaticUIAConfig
-	Poco               StaticPocoConfig
-	Log                StaticLogConfig
-	EffectiveTouchArea *StaticEffectiveTouchArea
+	ResMapping           map[string]string
+	BlackRects           map[string][][4]int
+	SkipAll              bool
+	PageSource           string
+	TouchMode            string
+	PageNameStrategy     string
+	Algorithm            string
+	ScrollInferThreshold int
+	UIA                  StaticUIAConfig
+	Poco                 StaticPocoConfig
+	Log                  StaticLogConfig
+	EffectiveTouchArea   *StaticEffectiveTouchArea
 }
 
 type StaticLogConfig struct {
@@ -131,6 +133,16 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 	}
 	if strategyValue := obj.Get("pageNameStrategy"); cfg.PageNameStrategy == "" && !isEmptyJSValue(strategyValue) {
 		cfg.PageNameStrategy = strings.TrimSpace(strategyValue.String())
+	}
+	if algorithmValue := obj.Get("algorithm"); !isEmptyJSValue(algorithmValue) {
+		cfg.Algorithm = strings.TrimSpace(algorithmValue.String())
+	}
+	if scrollInferValue := obj.Get("scroll_infer_threshold"); !isEmptyJSValue(scrollInferValue) {
+		threshold, err := intFromJSValue(scrollInferValue)
+		if err != nil {
+			return cfg, fmt.Errorf("scroll_infer_threshold 非法: %w", err)
+		}
+		cfg.ScrollInferThreshold = threshold
 	}
 	if uiaValue := obj.Get("uia"); !isEmptyJSValue(uiaValue) {
 		uiaObj := uiaValue.ToObject(vm)

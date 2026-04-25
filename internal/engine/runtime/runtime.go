@@ -5,6 +5,7 @@ import (
 	"errors"
 	"trek/internal/engine/decision"
 	_ "trek/internal/engine/decision/reuse"
+	_ "trek/internal/engine/decision/uctbandit"
 	types2 "trek/internal/engine/decision/shared/types"
 	perceptionfusion "trek/internal/engine/perception/fusion"
 	engineplugin "trek/internal/engine/plugin"

@@ -60,6 +60,10 @@ func CreateAndroidElementFromXml(xmlContent string) (types2.IElement, error) {
 		})
 	}
 
+	// 推断可滚动元素：在可点击性修正完成后，
+	// 为包含足够多可点击后代但未被标记为可滚动的容器推断滚动能力。
+	InferScrollableElements(elem, ScrollInferThreshold)
+
 	return elem, nil
 }
 
@@ -75,7 +79,8 @@ func createAndroidFromXmlDoc(doc *etree.Document) (*AndroidElement, error) {
 
 	element.fromXMLNode(root, noParent)
 
-	element.SetScrollable(true)
+	// 不再强制设置 scrollable=true；保留从 XML 属性读取的真实值。
+	// scrollable 推断由 InferScrollableElements 在后续处理。
 
 	return element, nil
 }

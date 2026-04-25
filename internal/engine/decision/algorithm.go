@@ -6,15 +6,17 @@ import "fmt"
 type AlgorithmType int
 
 const (
-	AlgorithmRandom AlgorithmType = iota
-	AlgorithmReuse  AlgorithmType = 4
-	AlgorithmServer AlgorithmType = 6
+	AlgorithmRandom     AlgorithmType = iota
+	AlgorithmReuse      AlgorithmType = 4
+	AlgorithmServer     AlgorithmType = 6
+	AlgorithmUctBandit  AlgorithmType = 7
 )
 
 var algorithmTypeName = map[AlgorithmType]string{
-	AlgorithmRandom: "Random",
-	AlgorithmReuse:  "reuse",
-	AlgorithmServer: "Server",
+	AlgorithmRandom:    "Random",
+	AlgorithmReuse:    "reuse",
+	AlgorithmServer:    "Server",
+	AlgorithmUctBandit: "uctbandit",
 }
 
 func (at AlgorithmType) String() string {

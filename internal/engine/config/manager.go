@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"trek/internal/engine/decision/shared/elements"
 	types2 "trek/internal/engine/decision/shared/types"
 	"trek/internal/scripting"
 	"trek/logger"
@@ -174,6 +175,9 @@ func (m *Manager) LoadResourceMapping(resourceMappingPath string) error {
 	m.resMapping = staticConfig.ResMapping
 	m.blackRects = staticConfig.BlackRects
 	m.skipAllActionsFromModel = staticConfig.SkipAll
+	if staticConfig.ScrollInferThreshold > 0 {
+		elements.ScrollInferThreshold = staticConfig.ScrollInferThreshold
+	}
 	if staticConfig.Log.FileLevel != "" {
 		if err := logger.SetFileLevel(staticConfig.Log.FileLevel); err != nil {
 			return fmt.Errorf("设置文件日志级别失败: %w", err)

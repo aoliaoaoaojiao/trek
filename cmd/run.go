@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"trek/internal/engine/decision"
 	"trek/internal/scripting"
 	"trek/logger"
 	"trek/pkg/driver/android"
@@ -25,6 +26,7 @@ var runOptions = struct {
 	packageName       string
 	deviceSerial      string
 	configPath        string
+	algorithm         string
 	maxSteps          int
 	maxDuration       time.Duration
 	stepInterval      time.Duration
@@ -50,6 +52,7 @@ func init() {
 	runCmd.Flags().StringVar(&runOptions.packageName, "package", "", "被测应用包名（必填，或使用 --auto-current-app 自动获取）")
 	runCmd.Flags().StringVar(&runOptions.deviceSerial, "serial", "", "设备序列号（可选，默认自动选择）")
 	runCmd.Flags().StringVar(&runOptions.configPath, "config", "", "配置文件路径（可选，仅支持 .js，支持绝对/相对路径）")
+	runCmd.Flags().StringVar(&runOptions.algorithm, "algorithm", "reuse", "决策算法（可选: reuse, uctbandit）")
 	runCmd.Flags().IntVar(&runOptions.maxSteps, "max-steps", 300, "最大执行步数")
 	runCmd.Flags().DurationVar(&runOptions.maxDuration, "max-duration", 10*time.Minute, "最大运行时长")
 	runCmd.Flags().DurationVar(&runOptions.stepInterval, "step-interval", 300*time.Millisecond, "基础步进间隔")
@@ -64,6 +67,7 @@ func runMonkey(logLevelStr string, opts struct {
 	packageName       string
 	deviceSerial      string
 	configPath        string
+	algorithm         string
 	maxSteps          int
 	maxDuration       time.Duration
 	stepInterval      time.Duration
@@ -83,6 +87,12 @@ func runMonkey(logLevelStr string, opts struct {
 			return fmt.Errorf("读取配置文件失败(%s): %w", opts.configPath, err)
 		}
 		staticCfg = cfg
+	}
+
+	// JS 配置文件中的 algorithm 可覆盖 CLI 标志默认值
+	if staticCfg.Algorithm != "" && opts.algorithm == "reuse" {
+		// 仅在 CLI 未显式指定（仍为默认值）时，使用配置文件中的值
+		opts.algorithm = staticCfg.Algorithm
 	}
 
 	pageSourceType, err := resolvePageSourceType(staticCfg)
@@ -127,8 +137,15 @@ func runMonkey(logLevelStr string, opts struct {
 		return fmt.Errorf("参数 --package 不能为空，或使用 --auto-current-app 自动获取")
 	}
 
+	// 解析决策算法类型
+	algorithmType, err := resolveAlgorithmType(opts.algorithm)
+	if err != nil {
+		return err
+	}
+
 	sess := session.NewSession(session.Config{
 		PackageName: packageName,
+		Algorithm:   algorithmType,
 	})
 	if opts.configPath != "" {
 		if err := sess.LoadConfigFile(opts.configPath); err != nil {
@@ -185,6 +202,22 @@ func probePageName(driver *android.AndroidDriver, cfg monkey.Config) error {
 	pageName := monkey.ResolvePageName(xml, cfg.PageNameResolver)
 	fmt.Printf("当前页面名: %s\n", pageName)
 	return nil
+}
+
+// resolveAlgorithmType 将字符串解析为决策算法类型。
+func resolveAlgorithmType(text string) (decision.AlgorithmType, error) {
+	switch strings.ToLower(strings.TrimSpace(text)) {
+	case "reuse", "4":
+		return decision.AlgorithmReuse, nil
+	case "uctbandit", "uct", "7":
+		return decision.AlgorithmUctBandit, nil
+	case "random", "0":
+		return decision.AlgorithmRandom, nil
+	case "server", "6":
+		return decision.AlgorithmServer, nil
+	default:
+		return decision.AlgorithmReuse, nil
+	}
 }
 
 // resolvePageSourceType 从静态配置解析页面源类型。

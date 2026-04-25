@@ -2,11 +2,11 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Monkey: 运行当前前台应用",
+            "name": "Trek: 运行当前前台应用",
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/cmd/monkey",
+            "program": "${workspaceFolder}",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "env": {
@@ -30,11 +30,11 @@
             ]
         },
         {
-            "name": "Monkey: 运行指定包名",
+            "name": "Trek: 运行指定包名",
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/cmd/monkey",
+            "program": "${workspaceFolder}",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "env": {
@@ -59,11 +59,11 @@
             ]
         },
         {
-            "name": "Monkey: 获取当前页面名",
+            "name": "Trek: 获取当前页面名",
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/cmd/monkey",
+            "program": "${workspaceFolder}",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "env": {
@@ -82,11 +82,11 @@
             ]
         },
         {
-            "name": "Monkey: 启动 Web 配置界面",
+            "name": "Trek: 启动 Web 配置界面",
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/cmd/monkey",
+            "program": "${workspaceFolder}",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "env": {

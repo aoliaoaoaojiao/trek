@@ -1,4 +1,7 @@
-package web
+/*
+Copyright © 2026 Trek
+*/
+package webserver
 
 import (
 	"strings"
@@ -6,7 +9,7 @@ import (
 )
 
 func TestBuildConfigJS_Default(t *testing.T) {
-	js, err := buildConfigJS(webConfigPayload{})
+	js, err := BuildConfigJS(ConfigPayload{})
 	if err != nil {
 		t.Fatalf("buildConfigJS 默认配置失败: %v", err)
 	}
@@ -19,11 +22,11 @@ func TestBuildConfigJS_Default(t *testing.T) {
 }
 
 func TestBuildConfigJS_PocoDefaultEngine(t *testing.T) {
-	cfg := webConfigPayload{
+	cfg := ConfigPayload{
 		PageSource: "poco",
 		TouchMode:  "motion",
 	}
-	js, err := buildConfigJS(cfg)
+	js, err := BuildConfigJS(cfg)
 	if err != nil {
 		t.Fatalf("buildConfigJS poco 默认引擎失败: %v", err)
 	}
@@ -33,12 +36,12 @@ func TestBuildConfigJS_PocoDefaultEngine(t *testing.T) {
 }
 
 func TestBuildConfigJS_WithPageNameStrategy(t *testing.T) {
-	cfg := webConfigPayload{
+	cfg := ConfigPayload{
 		PageSource:       "poco",
 		TouchMode:        "motion",
 		PageNameStrategy: "structure_fingerprint",
 	}
-	js, err := buildConfigJS(cfg)
+	js, err := BuildConfigJS(cfg)
 	if err != nil {
 		t.Fatalf("buildConfigJS 页面名策略失败: %v", err)
 	}
@@ -48,7 +51,7 @@ func TestBuildConfigJS_WithPageNameStrategy(t *testing.T) {
 }
 
 func TestResolvePreviewPageNameUsesSelectedStrategy(t *testing.T) {
-	cfg := webConfigPayload{
+	cfg := ConfigPayload{
 		PageSource:       "poco",
 		PageNameStrategy: "structure_fingerprint",
 	}
@@ -62,18 +65,18 @@ func TestResolvePreviewPageNameUsesSelectedStrategy(t *testing.T) {
 }
 
 func TestBuildConfigJS_InvalidTouchMode(t *testing.T) {
-	cfg := webConfigPayload{
+	cfg := ConfigPayload{
 		PageSource: "uia",
 		TouchMode:  "invalid",
 	}
-	_, err := buildConfigJS(cfg)
+	_, err := BuildConfigJS(cfg)
 	if err == nil {
 		t.Fatalf("预期触控模式校验失败，但返回成功")
 	}
 }
 
 func TestBuildConfigJS_WithEffectiveTouchArea(t *testing.T) {
-	cfg := webConfigPayload{
+	cfg := ConfigPayload{
 		PageSource: "uia",
 		TouchMode:  "motion",
 	}
@@ -84,7 +87,7 @@ func TestBuildConfigJS_WithEffectiveTouchArea(t *testing.T) {
 	cfg.EffectiveTouchArea.Range.Right = 1
 	cfg.EffectiveTouchArea.Range.Bottom = 1
 
-	js, err := buildConfigJS(cfg)
+	js, err := BuildConfigJS(cfg)
 	if err != nil {
 		t.Fatalf("buildConfigJS effective_touch_area 失败: %v", err)
 	}

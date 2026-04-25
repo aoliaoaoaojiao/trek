@@ -1,12 +1,15 @@
-package main
+/*
+Copyright © 2026 Trek
+
+*/
+package cmd
 
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
-	webcmd "trek/cmd/web"
+
 	"trek/internal/scripting"
 	"trek/logger"
 	"trek/pkg/driver/android"
@@ -17,7 +20,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type runOptions struct {
+// runOptions 存储 run 子命令的标志值。
+var runOptions = struct {
 	packageName       string
 	deviceSerial      string
 	configPath        string
@@ -28,87 +32,47 @@ type runOptions struct {
 	keepStepRecords   bool
 	probePageName     bool
 	autoCurrentApp    bool
+}{}
+
+// runCmd 定义 run 子命令。
+var runCmd = &cobra.Command{
+	Use:   "run",
+	Short: "执行 monkey 测试",
+	Long:  `在连接的 Android 设备上执行 Smart Monkey UI 自动化遍历测试。`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runMonkey(logLevel, runOptions)
+	},
 }
 
-type webOptions struct {
-	addr string
+func init() {
+	rootCmd.AddCommand(runCmd)
+
+	runCmd.Flags().StringVar(&runOptions.packageName, "package", "", "被测应用包名（必填，或使用 --auto-current-app 自动获取）")
+	runCmd.Flags().StringVar(&runOptions.deviceSerial, "serial", "", "设备序列号（可选，默认自动选择）")
+	runCmd.Flags().StringVar(&runOptions.configPath, "config", "", "配置文件路径（可选，仅支持 .js，支持绝对/相对路径）")
+	runCmd.Flags().IntVar(&runOptions.maxSteps, "max-steps", 300, "最大执行步数")
+	runCmd.Flags().DurationVar(&runOptions.maxDuration, "max-duration", 10*time.Minute, "最大运行时长")
+	runCmd.Flags().DurationVar(&runOptions.stepInterval, "step-interval", 300*time.Millisecond, "基础步进间隔")
+	runCmd.Flags().BoolVar(&runOptions.captureScreenshot, "capture-screenshot", false, "是否采集截图给决策层")
+	runCmd.Flags().BoolVar(&runOptions.keepStepRecords, "keep-step-records", true, "是否保留每步记录")
+	runCmd.Flags().BoolVar(&runOptions.probePageName, "probe-page-name", false, "仅探测当前页面名后退出")
+	runCmd.Flags().BoolVar(&runOptions.autoCurrentApp, "auto-current-app", false, "自动使用当前前台应用进行测试")
 }
 
-type rootOptions struct {
-	logLevel string
-	run      runOptions
-	web      webOptions
-}
-
-func main() {
-	opts := &rootOptions{}
-	cmd := newRootCommand(opts)
-	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "运行失败: %v\n", err)
-		os.Exit(1)
-	}
-}
-
-func newRootCommand(opts *rootOptions) *cobra.Command {
-	rootCmd := &cobra.Command{
-		Use:   "monkey",
-		Short: "Trek Monkey 执行入口",
-		Long:  "支持 run/web 两种模式：run 用于执行 monkey，web 用于启动配置界面。",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runMonkey(opts.logLevel, opts.run)
-		},
-	}
-	rootCmd.PersistentFlags().StringVar(&opts.logLevel, "log-level", "info", "控制台日志级别: debug, info, warn, error")
-
-	bindRunFlags(rootCmd, &opts.run)
-	rootCmd.AddCommand(newRunCommand(opts))
-	rootCmd.AddCommand(newWebCommand(opts))
-	return rootCmd
-}
-
-func newRunCommand(opts *rootOptions) *cobra.Command {
-	runCmd := &cobra.Command{
-		Use:   "run",
-		Short: "执行 monkey 测试",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runMonkey(opts.logLevel, opts.run)
-		},
-	}
-	bindRunFlags(runCmd, &opts.run)
-	return runCmd
-}
-
-func newWebCommand(opts *rootOptions) *cobra.Command {
-	webCmd := &cobra.Command{
-		Use:   "web",
-		Short: "启动 web 配置界面",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := logger.SetLevel(opts.logLevel); err != nil {
-				return fmt.Errorf("设置日志级别失败: %w", err)
-			}
-			return webcmd.Serve(opts.web.addr)
-		},
-	}
-	webCmd.Flags().StringVar(&opts.web.addr, "addr", ":17888", "web 模式监听地址")
-	webCmd.Flags().StringVar(&opts.web.addr, "web-addr", ":17888", "web 模式监听地址（兼容旧参数）")
-	return webCmd
-}
-
-func bindRunFlags(cmd *cobra.Command, opts *runOptions) {
-	cmd.Flags().StringVar(&opts.packageName, "package", "", "被测应用包名（必填）")
-	cmd.Flags().StringVar(&opts.deviceSerial, "serial", "", "设备序列号（可选，默认自动选择）")
-	cmd.Flags().StringVar(&opts.configPath, "config", "", "配置文件路径（可选，仅支持 .js，支持绝对/相对路径）")
-	cmd.Flags().IntVar(&opts.maxSteps, "max-steps", 300, "最大执行步数")
-	cmd.Flags().DurationVar(&opts.maxDuration, "max-duration", 10*time.Minute, "最大运行时长")
-	cmd.Flags().DurationVar(&opts.stepInterval, "step-interval", 300*time.Millisecond, "基础步进间隔")
-	cmd.Flags().BoolVar(&opts.captureScreenshot, "capture-screenshot", false, "是否采集截图给决策层")
-	cmd.Flags().BoolVar(&opts.keepStepRecords, "keep-step-records", true, "是否保留每步记录")
-	cmd.Flags().BoolVar(&opts.probePageName, "probe-page-name", false, "仅探测当前页面名后退出")
-	cmd.Flags().BoolVar(&opts.autoCurrentApp, "auto-current-app", false, "自动使用当前前台应用进行测试")
-}
-
-func runMonkey(logLevel string, opts runOptions) error {
-	if err := logger.SetLevel(logLevel); err != nil {
+// runMonkey 执行 monkey 测试的核心逻辑。
+func runMonkey(logLevelStr string, opts struct {
+	packageName       string
+	deviceSerial      string
+	configPath        string
+	maxSteps          int
+	maxDuration       time.Duration
+	stepInterval      time.Duration
+	captureScreenshot bool
+	keepStepRecords   bool
+	probePageName     bool
+	autoCurrentApp    bool
+}) error {
+	if err := logger.SetLevel(logLevelStr); err != nil {
 		return fmt.Errorf("设置日志级别失败: %w", err)
 	}
 
@@ -160,7 +124,7 @@ func runMonkey(logLevel string, opts runOptions) error {
 	}
 
 	if packageName == "" {
-		return fmt.Errorf("参数 -package 不能为空，或使用 -auto-current-app 自动获取")
+		return fmt.Errorf("参数 --package 不能为空，或使用 --auto-current-app 自动获取")
 	}
 
 	sess := session.NewSession(session.Config{
@@ -174,22 +138,18 @@ func runMonkey(logLevel string, opts runOptions) error {
 	}
 
 	cfg := monkey.Config{
-		PackageName:       packageName,
-		DeviceSerial:      deviceSerial,
-		MaxSteps:          opts.maxSteps,
-		MaxDuration:       opts.maxDuration,
-		StepInterval:      opts.stepInterval,
-		PageSourceType:    pageSourceType,
-		PageNameStrategy:  strings.TrimSpace(staticCfg.PageNameStrategy),
-		CaptureScreenshot: opts.captureScreenshot,
-		KeepStepRecords:   opts.keepStepRecords,
-		StopOnCrash:       true,
-		StopOnANR:         true,
-		EffectiveTouchArea: buildEffectiveTouchAreaConfig(
-			staticCfg,
-			packageName,
-			deviceSerial,
-		),
+		PackageName:        packageName,
+		DeviceSerial:       deviceSerial,
+		MaxSteps:           opts.maxSteps,
+		MaxDuration:        opts.maxDuration,
+		StepInterval:       opts.stepInterval,
+		PageSourceType:     pageSourceType,
+		PageNameStrategy:   strings.TrimSpace(staticCfg.PageNameStrategy),
+		CaptureScreenshot:  opts.captureScreenshot,
+		KeepStepRecords:    opts.keepStepRecords,
+		StopOnCrash:        true,
+		StopOnANR:          true,
+		EffectiveTouchArea: buildEffectiveTouchAreaConfig(staticCfg, packageName, deviceSerial),
 	}
 
 	if opts.probePageName {
@@ -227,6 +187,7 @@ func probePageName(driver *android.AndroidDriver, cfg monkey.Config) error {
 	return nil
 }
 
+// resolvePageSourceType 从静态配置解析页面源类型。
 func resolvePageSourceType(staticCfg scripting.StaticConfig) (string, error) {
 	pageSource := strings.TrimSpace(staticCfg.PageSource)
 	if pageSource == "" {
@@ -242,6 +203,7 @@ func resolvePageSourceType(staticCfg scripting.StaticConfig) (string, error) {
 	}
 }
 
+// resolveTouchMode 从静态配置解析触控模式。
 func resolveTouchMode(staticCfg scripting.StaticConfig) (string, android.TouchType, error) {
 	touchMode := strings.TrimSpace(staticCfg.TouchMode)
 	if touchMode == "" {
@@ -259,6 +221,7 @@ func resolveTouchMode(staticCfg scripting.StaticConfig) (string, android.TouchTy
 	}
 }
 
+// resolveDriverOptions 从静态配置构建 Android 驱动选项。
 func resolveDriverOptions(staticCfg scripting.StaticConfig, pageSourceType string, touchType android.TouchType) ([]android.AndroidDriverOption, error) {
 	options := []android.AndroidDriverOption{
 		android.WithTouch(touchType),
@@ -292,6 +255,7 @@ func resolveDriverOptions(staticCfg scripting.StaticConfig, pageSourceType strin
 	return options, nil
 }
 
+// parsePocoEngine 将字符串解析为 Poco 引擎类型。
 func parsePocoEngine(text string) (poco.Engine, error) {
 	raw := strings.TrimSpace(text)
 	normalized := strings.ToUpper(strings.ReplaceAll(strings.ReplaceAll(raw, "-", "_"), " ", "_"))
@@ -315,6 +279,7 @@ func parsePocoEngine(text string) (poco.Engine, error) {
 	}
 }
 
+// buildEffectiveTouchAreaConfig 从静态配置构建有效触控区域配置。
 func buildEffectiveTouchAreaConfig(staticCfg scripting.StaticConfig, packageName string, deviceSerial string) *monkey.EffectiveTouchArea {
 	if staticCfg.EffectiveTouchArea == nil {
 		return nil

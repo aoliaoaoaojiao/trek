@@ -1,7 +1,11 @@
-package web
+/*
+Copyright © 2026 Trek
+
+Package webserver 提供 Trek Web 配置界面的 HTTP 服务端逻辑。
+*/
+package webserver
 
 import (
-	"embed"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -12,16 +16,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
 	"trek/pkg/driver/android"
 	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/common/page/poco"
 	"trek/pkg/monkey"
 )
 
-//go:embed ui/dist/*
-var uiDistFS embed.FS
-
-type webConfigPayload struct {
+// ConfigPayload 是 web 配置界面的 JSON 请求体结构。
+type ConfigPayload struct {
 	PageSource       string `json:"page_source"`
 	PageNameStrategy string `json:"page_name_strategy"`
 	TouchMode        string `json:"touch_mode"`
@@ -48,21 +51,25 @@ type webConfigPayload struct {
 	} `json:"effective_touch_area"`
 }
 
-type saveRequest struct {
-	Config     webConfigPayload `json:"config"`
-	OutputPath string           `json:"output_path"`
+// SaveRequest 是保存配置的请求体。
+type SaveRequest struct {
+	Config     ConfigPayload `json:"config"`
+	OutputPath string        `json:"output_path"`
 }
 
-type renderResponse struct {
+// RenderResponse 是渲染配置的响应体。
+type RenderResponse struct {
 	JS string `json:"js"`
 }
 
-type previewRequest struct {
-	Serial string           `json:"serial"`
-	Config webConfigPayload `json:"config"`
+// PreviewRequest 是预览页面的请求体。
+type PreviewRequest struct {
+	Serial string       `json:"serial"`
+	Config ConfigPayload `json:"config"`
 }
 
-type previewResponse struct {
+// PreviewResponse 是预览页面的响应体。
+type PreviewResponse struct {
 	UsedSerial       string `json:"used_serial"`
 	XML              string `json:"xml"`
 	ScreenshotBase64 string `json:"screenshot_base64"`
@@ -79,8 +86,10 @@ type deviceOption struct {
 	Label  string `json:"label"`
 }
 
-func Serve(addr string) error {
-	uiHandler, err := newUIHandler()
+// Serve 启动 Web 配置服务。
+// uiFS 是通过 go:embed 嵌入的前端构建产物文件系统。
+func Serve(addr string, uiFS fs.FS) error {
+	uiHandler, err := newUIHandler(uiFS)
 	if err != nil {
 		return fmt.Errorf("加载前端构建产物失败: %w", err)
 	}
@@ -143,13 +152,8 @@ func handleDevices(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func newUIHandler() (http.Handler, error) {
-	distFS, err := fs.Sub(uiDistFS, "ui/dist")
-	if err != nil {
-		return nil, err
-	}
-
-	fileServer := http.FileServer(http.FS(distFS))
+func newUIHandler(uiFS fs.FS) (http.Handler, error) {
+	fileServer := http.FileServer(http.FS(uiFS))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			http.NotFound(w, r)
@@ -161,7 +165,7 @@ func newUIHandler() (http.Handler, error) {
 			requestPath = "index.html"
 		}
 
-		if _, err := distFS.Open(requestPath); err != nil {
+		if _, err := uiFS.Open(requestPath); err != nil {
 			r2 := r.Clone(r.Context())
 			r2.URL.Path = "/index.html"
 			fileServer.ServeHTTP(w, r2)
@@ -181,12 +185,12 @@ func handleRender(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 		return
 	}
-	jsText, err := buildConfigJS(cfg)
+	jsText, err := BuildConfigJS(cfg)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, renderResponse{JS: jsText})
+	writeJSON(w, http.StatusOK, RenderResponse{JS: jsText})
 }
 
 func handleSave(w http.ResponseWriter, r *http.Request) {
@@ -196,29 +200,29 @@ func handleSave(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	var req saveRequest
+	var req SaveRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "请求体不是合法 JSON"})
 		return
 	}
 
-	path := strings.TrimSpace(req.OutputPath)
-	if path == "" {
+	p := strings.TrimSpace(req.OutputPath)
+	if p == "" {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "output_path 不能为空"})
 		return
 	}
-	if strings.ToLower(filepath.Ext(path)) != ".js" {
+	if strings.ToLower(filepath.Ext(p)) != ".js" {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "仅支持保存为 .js 文件"})
 		return
 	}
 
-	jsText, err := buildConfigJS(req.Config)
+	jsText, err := BuildConfigJS(req.Config)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 		return
 	}
 
-	absPath, err := filepath.Abs(path)
+	absPath, err := filepath.Abs(p)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "output_path 非法"})
 		return
@@ -246,13 +250,13 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	var req previewRequest
+	var req PreviewRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "请求体不是合法 JSON"})
 		return
 	}
 
-	pageSourceType, err := resolvePageSourceType(req.Config)
+	pageSourceType, err := resolvePageSourceTypeFromPayload(req.Config)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 		return
@@ -301,7 +305,7 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 	}
 	pageName := resolvePreviewPageName(req.Config, pageSourceType, xml, activityName)
 
-	writeJSON(w, http.StatusOK, previewResponse{
+	writeJSON(w, http.StatusOK, PreviewResponse{
 		UsedSerial:       strings.TrimSpace(driver.Name()),
 		XML:              xml,
 		ScreenshotBase64: base64.StdEncoding.EncodeToString(screenshot),
@@ -310,11 +314,13 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func resolvePreviewPageName(cfg webConfigPayload, pageSourceType string, xml string, activityName string) string {
+// --- 辅助函数 ---
+
+func resolvePreviewPageName(cfg ConfigPayload, pageSourceType string, xml string, activityName string) string {
 	return monkey.ResolvePageNameByStrategy(xml, nil, cfg.PageNameStrategy, pageSourceType, activityName)
 }
 
-func previewPageNameStrategyNeedsActivity(cfg webConfigPayload, pageSourceType string) bool {
+func previewPageNameStrategyNeedsActivity(cfg ConfigPayload, pageSourceType string) bool {
 	strategy := strings.ToLower(strings.TrimSpace(cfg.PageNameStrategy))
 	if strategy == "" || strategy == "auto" {
 		return strings.EqualFold(strings.TrimSpace(pageSourceType), "uia")
@@ -322,16 +328,16 @@ func previewPageNameStrategyNeedsActivity(cfg webConfigPayload, pageSourceType s
 	return strategy == monkey.PageNameStrategyUIAActivityFirst || strategy == monkey.PageNameStrategyActivityOnly
 }
 
-func decodePayload(r *http.Request) (webConfigPayload, error) {
+func decodePayload(r *http.Request) (ConfigPayload, error) {
 	defer r.Body.Close()
-	var cfg webConfigPayload
+	var cfg ConfigPayload
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
 		return cfg, fmt.Errorf("请求体不是合法 JSON")
 	}
 	return cfg, nil
 }
 
-func resolvePageSourceType(cfg webConfigPayload) (string, error) {
+func resolvePageSourceTypeFromPayload(cfg ConfigPayload) (string, error) {
 	pageSource := strings.ToLower(strings.TrimSpace(cfg.PageSource))
 	if pageSource == "" {
 		pageSource = "uia"
@@ -344,7 +350,7 @@ func resolvePageSourceType(cfg webConfigPayload) (string, error) {
 	}
 }
 
-func resolveTouchType(cfg webConfigPayload) (android.TouchType, error) {
+func resolveTouchType(cfg ConfigPayload) (android.TouchType, error) {
 	mode := strings.ToLower(strings.TrimSpace(cfg.TouchMode))
 	if mode == "" {
 		mode = "motion"
@@ -361,7 +367,7 @@ func resolveTouchType(cfg webConfigPayload) (android.TouchType, error) {
 	}
 }
 
-func resolveDriverOptionsForPreview(cfg webConfigPayload, pageSourceType string) ([]android.AndroidDriverOption, error) {
+func resolveDriverOptionsForPreview(cfg ConfigPayload, pageSourceType string) ([]android.AndroidDriverOption, error) {
 	touchType, err := resolveTouchType(cfg)
 	if err != nil {
 		return nil, err
@@ -380,7 +386,7 @@ func resolveDriverOptionsForPreview(cfg webConfigPayload, pageSourceType string)
 		if engineText == "" {
 			engineText = "UNITY_3D"
 		}
-		engine, err := parsePocoEngine(engineText)
+		engine, err := ParsePocoEngine(engineText)
 		if err != nil {
 			return nil, err
 		}
@@ -397,7 +403,8 @@ func resolveDriverOptionsForPreview(cfg webConfigPayload, pageSourceType string)
 	return options, nil
 }
 
-func parsePocoEngine(text string) (poco.Engine, error) {
+// ParsePocoEngine 将字符串解析为 Poco 引擎类型（导出供 cmd 包使用）。
+func ParsePocoEngine(text string) (poco.Engine, error) {
 	raw := strings.TrimSpace(text)
 	normalized := strings.ToUpper(strings.ReplaceAll(strings.ReplaceAll(raw, "-", "_"), " ", "_"))
 	switch normalized {
@@ -420,7 +427,8 @@ func parsePocoEngine(text string) (poco.Engine, error) {
 	}
 }
 
-func buildConfigJS(cfg webConfigPayload) (string, error) {
+// BuildConfigJS 从配置载荷生成 JS 配置脚本（导出供 cmd 包和测试使用）。
+func BuildConfigJS(cfg ConfigPayload) (string, error) {
 	pageSource := strings.ToLower(strings.TrimSpace(cfg.PageSource))
 	if pageSource == "" {
 		pageSource = "uia"

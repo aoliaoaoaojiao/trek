@@ -23,6 +23,7 @@ type StaticConfig struct {
 	Poco                 StaticPocoConfig
 	Log                  StaticLogConfig
 	EffectiveTouchArea   *StaticEffectiveTouchArea
+	UCTBandit            StaticUCTBanditConfig
 }
 
 type StaticLogConfig struct {
@@ -49,6 +50,21 @@ type StaticTouchRange struct {
 	Top    float64
 	Right  float64
 	Bottom float64
+}
+
+type StaticUCTBanditConfig struct {
+	TwoStateLoopPenalty       float64
+	HasTwoStateLoopPenalty    bool
+	EdgeRepeatPenalty         float64
+	HasEdgeRepeatPenalty      bool
+	EdgeRepeatThreshold       int
+	HasEdgeRepeatThreshold    bool
+	ActionCooldownPenalty     float64
+	HasActionCooldownPenalty  bool
+	RecentActionWindow        int
+	HasRecentActionWindow     bool
+	LoopEscapeExploreBoost    float64
+	HasLoopEscapeExploreBoost bool
 }
 
 func LoadStaticConfigFile(path string) (StaticConfig, error) {
@@ -229,6 +245,57 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 			return cfg, fmt.Errorf("effective_touch_area.range 要求 right>left 且 bottom>top")
 		}
 		cfg.EffectiveTouchArea = area
+	}
+	if uctBanditValue := obj.Get("uct_bandit"); !isEmptyJSValue(uctBanditValue) {
+		uctBanditObj := uctBanditValue.ToObject(vm)
+		if value := uctBanditObj.Get("two_state_loop_penalty"); !isEmptyJSValue(value) {
+			parsed, err := floatFromJSValue(value)
+			if err != nil {
+				return cfg, fmt.Errorf("uct_bandit.two_state_loop_penalty 非法: %w", err)
+			}
+			cfg.UCTBandit.TwoStateLoopPenalty = parsed
+			cfg.UCTBandit.HasTwoStateLoopPenalty = true
+		}
+		if value := uctBanditObj.Get("edge_repeat_penalty"); !isEmptyJSValue(value) {
+			parsed, err := floatFromJSValue(value)
+			if err != nil {
+				return cfg, fmt.Errorf("uct_bandit.edge_repeat_penalty 非法: %w", err)
+			}
+			cfg.UCTBandit.EdgeRepeatPenalty = parsed
+			cfg.UCTBandit.HasEdgeRepeatPenalty = true
+		}
+		if value := uctBanditObj.Get("edge_repeat_threshold"); !isEmptyJSValue(value) {
+			parsed, err := intFromJSValue(value)
+			if err != nil {
+				return cfg, fmt.Errorf("uct_bandit.edge_repeat_threshold 非法: %w", err)
+			}
+			cfg.UCTBandit.EdgeRepeatThreshold = parsed
+			cfg.UCTBandit.HasEdgeRepeatThreshold = true
+		}
+		if value := uctBanditObj.Get("action_cooldown_penalty"); !isEmptyJSValue(value) {
+			parsed, err := floatFromJSValue(value)
+			if err != nil {
+				return cfg, fmt.Errorf("uct_bandit.action_cooldown_penalty 非法: %w", err)
+			}
+			cfg.UCTBandit.ActionCooldownPenalty = parsed
+			cfg.UCTBandit.HasActionCooldownPenalty = true
+		}
+		if value := uctBanditObj.Get("recent_action_window"); !isEmptyJSValue(value) {
+			parsed, err := intFromJSValue(value)
+			if err != nil {
+				return cfg, fmt.Errorf("uct_bandit.recent_action_window 非法: %w", err)
+			}
+			cfg.UCTBandit.RecentActionWindow = parsed
+			cfg.UCTBandit.HasRecentActionWindow = true
+		}
+		if value := uctBanditObj.Get("loop_escape_explore_boost"); !isEmptyJSValue(value) {
+			parsed, err := floatFromJSValue(value)
+			if err != nil {
+				return cfg, fmt.Errorf("uct_bandit.loop_escape_explore_boost 非法: %w", err)
+			}
+			cfg.UCTBandit.LoopEscapeExploreBoost = parsed
+			cfg.UCTBandit.HasLoopEscapeExploreBoost = true
+		}
 	}
 	return cfg, nil
 }

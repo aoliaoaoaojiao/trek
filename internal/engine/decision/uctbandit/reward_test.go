@@ -76,7 +76,9 @@ func TestRewardShortLoop(t *testing.T) {
 		RecentStateIDs:   []string{"s0", "s1"},
 	})
 	assert.True(t, result.IsShortLoop)
-	assert.Equal(t, DefaultRewardConfig().ShortLoopPenalty, result.Reward)
+	assert.True(t, result.IsTwoStateLoop)
+	expected := DefaultRewardConfig().ShortLoopPenalty + DefaultRewardConfig().TwoStateLoopPenalty
+	assert.Equal(t, expected, result.Reward)
 }
 
 func TestRewardEmptyResult(t *testing.T) {
@@ -190,4 +192,23 @@ func TestRewardNoSignal(t *testing.T) {
 	})
 	assert.Equal(t, 0.0, result.Reward)
 	assert.Equal(t, "none", result.Reason)
+}
+
+func TestRewardEdgeRepeatPenalty(t *testing.T) {
+	r := NewRewarder(DefaultRewardConfig())
+	result := r.ComputeReward(RewardInput{
+		FoundNewState:    false,
+		FoundNewEdge:     false,
+		StructureChanged: false,
+		IsNoOp:           false,
+		IsShortLoop:      false,
+		IsEmptyResult:    false,
+		PrevStateID:      "s1",
+		NextStateID:      "s2",
+		EdgeRepeatCount:  4,
+		RecentStateIDs:   []string{},
+	})
+	// 默认阈值 2，重复计数 4，超出 2 次，每次 -1。
+	assert.Equal(t, -2.0, result.Reward)
+	assert.Equal(t, "edge_repeat", result.Reason)
 }

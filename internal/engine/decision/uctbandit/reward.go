@@ -9,6 +9,9 @@ type RewardConfig struct {
 	StructureChangeReward float64 // 页面名相同但结构变化
 	NoOpPenalty           float64 // 页面无变化
 	ShortLoopPenalty      float64 // 短环惩罚
+	TwoStateLoopPenalty   float64 // 双状态往返惩罚（A↔B）
+	EdgeRepeatPenalty     float64 // 重复边惩罚
+	EdgeRepeatThreshold   int     // 重复边阈值（超过后开始惩罚）
 	EmptyResultPenalty    float64 // 空结果/连续无效
 	ShortLoopWindow       int     // 短环检测窗口大小
 	StagnationThreshold   int     // 停滞阈值
@@ -20,11 +23,14 @@ func DefaultRewardConfig() RewardConfig {
 		NewStateReward:        5.0,
 		NewEdgeReward:         3.0,
 		StructureChangeReward: 2.0,
-		NoOpPenalty:          -1.0,
-		ShortLoopPenalty:     -2.0,
-		EmptyResultPenalty:   -3.0,
-		ShortLoopWindow:      3,
-		StagnationThreshold:  2,
+		NoOpPenalty:           -1.0,
+		ShortLoopPenalty:      -2.0,
+		TwoStateLoopPenalty:   -3.0,
+		EdgeRepeatPenalty:     -1.0,
+		EdgeRepeatThreshold:   2,
+		EmptyResultPenalty:    -3.0,
+		ShortLoopWindow:       3,
+		StagnationThreshold:   2,
 	}
 }
 
@@ -38,6 +44,7 @@ type RewardInput struct {
 	IsEmptyResult    bool
 	PrevStateID      string
 	NextStateID      string
+	EdgeRepeatCount  int
 	RecentStateIDs   []string // 最近的 state ID 列表，用于短环检测
 }
 
@@ -49,6 +56,7 @@ type RewardResult struct {
 	StructureChanged bool
 	IsNoOp           bool
 	IsShortLoop      bool
+	IsTwoStateLoop   bool
 	NeedEscape       bool
 	Reason           string
 }
@@ -78,6 +86,8 @@ func (r *Rewarder) ComputeReward(input RewardInput) RewardResult {
 	// 短环检测：下一状态在最近窗口内
 	isShortLoop := r.detectShortLoop(input)
 	result.IsShortLoop = isShortLoop
+	isTwoStateLoop := r.detectTwoStateLoop(input)
+	result.IsTwoStateLoop = isTwoStateLoop
 
 	// 按优先级叠加 reward
 	if input.FoundNewState {
@@ -103,12 +113,21 @@ func (r *Rewarder) ComputeReward(input RewardInput) RewardResult {
 		reward += r.config.ShortLoopPenalty
 		reasons = append(reasons, "short_loop")
 	}
+	if isTwoStateLoop {
+		reward += r.config.TwoStateLoopPenalty
+		reasons = append(reasons, "two_state_loop")
+	}
+	if input.EdgeRepeatCount > r.config.EdgeRepeatThreshold {
+		overCount := input.EdgeRepeatCount - r.config.EdgeRepeatThreshold
+		reward += r.config.EdgeRepeatPenalty * float64(overCount)
+		reasons = append(reasons, "edge_repeat")
+	}
 
 	result.Reward = reward
 	result.Reason = joinReasons(reasons)
 
-	logger.Debugf("reward computed: reward=%.2f reason=%s newState=%v newEdge=%v noop=%v shortLoop=%v",
-		reward, result.Reason, input.FoundNewState, input.FoundNewEdge, input.IsNoOp, isShortLoop)
+	logger.Debugf("reward computed: reward=%.2f reason=%s newState=%v newEdge=%v noop=%v shortLoop=%v twoStateLoop=%v edgeRepeat=%d",
+		reward, result.Reason, input.FoundNewState, input.FoundNewEdge, input.IsNoOp, isShortLoop, isTwoStateLoop, input.EdgeRepeatCount)
 
 	return result
 }
@@ -137,6 +156,15 @@ func (r *Rewarder) detectShortLoop(input RewardInput) bool {
 		}
 	}
 	return false
+}
+
+// detectTwoStateLoop 检测是否触发双状态往返（A↔B）模式。
+func (r *Rewarder) detectTwoStateLoop(input RewardInput) bool {
+	if input.PrevStateID == "" || input.NextStateID == "" || len(input.RecentStateIDs) < 2 {
+		return false
+	}
+	n := len(input.RecentStateIDs)
+	return input.RecentStateIDs[n-2] == input.NextStateID && input.RecentStateIDs[n-1] == input.PrevStateID
 }
 
 // joinReasons 拼接多个标签。

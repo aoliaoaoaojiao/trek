@@ -47,6 +47,7 @@ type Manager struct {
 	skipAllActionsFromModel bool
 	resMapping              map[string]string
 	blackRects              map[string][][4]int
+	staticConfig            scripting.StaticConfig
 }
 
 var instance *Manager
@@ -64,6 +65,7 @@ func init() {
 		skipAllActionsFromModel: false,
 		resMapping:              make(map[string]string),
 		blackRects:              make(map[string][][4]int),
+		staticConfig:            scripting.StaticConfig{},
 	}
 }
 
@@ -160,6 +162,7 @@ func (m *Manager) LoadResourceMapping(resourceMappingPath string) error {
 	m.customEvents = make([]*CustomEvent, 0)
 	m.currentActions = make([]types2.IAction, 0)
 	m.skipAllActionsFromModel = false
+	m.staticConfig = scripting.StaticConfig{}
 
 	if resourceMappingPath == "" {
 		return nil
@@ -172,6 +175,7 @@ func (m *Manager) LoadResourceMapping(resourceMappingPath string) error {
 	if err != nil {
 		return err
 	}
+	m.staticConfig = staticConfig
 	m.resMapping = staticConfig.ResMapping
 	m.blackRects = staticConfig.BlackRects
 	m.skipAllActionsFromModel = staticConfig.SkipAll
@@ -184,6 +188,13 @@ func (m *Manager) LoadResourceMapping(resourceMappingPath string) error {
 		}
 	}
 	return nil
+}
+
+func (m *Manager) GetStaticConfig() scripting.StaticConfig {
+	if m == nil {
+		return scripting.StaticConfig{}
+	}
+	return m.staticConfig
 }
 
 func (m *CustomAction) ToActionCommand() *types2.ActionCommand {

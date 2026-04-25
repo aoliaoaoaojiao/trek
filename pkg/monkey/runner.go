@@ -33,6 +33,7 @@ const (
 	defaultForegroundMonitorInterval         = 300 * time.Millisecond
 	defaultHealthSignalMonitorInterval       = 500 * time.Millisecond
 	defaultBlockNoChangeThreshold            = 3
+	defaultTwoStateLoopThreshold             = 2
 )
 
 // StopReason 表示 Monkey 运行停止原因。
@@ -529,8 +530,8 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		afterPage := r.capturePageSnapshot(pageSource, pageName)
 		if r.shouldEnableBlockRecovery() && r.blockDetector.Observe(cmd, beforePage, afterPage) {
 			r.pendingBlockRecovery = true
-			logger.Warnf("monkey step=%d detected stagnation: %d consecutive no-change scroll actions, schedule recovery on next step",
-				step, r.blockDetector.consecutiveNoChangeScroll)
+			logger.Warnf("monkey step=%d detected block loop reason=%s, schedule recovery on next step",
+				step, r.blockDetector.LastReason())
 			r.blockDetector.Reset()
 		}
 		crash, anr := r.currentHealthSignals()
@@ -1076,29 +1077,62 @@ func (r *Runner) shouldEnableBlockRecovery() bool {
 
 type blockDetector struct {
 	noChangeThreshold         int
+	twoStateLoopThreshold     int
 	consecutiveNoChangeScroll int
+	consecutiveTwoStateLoops  int
+	recentAfterSignatures     []string
+	lastReason                string
 }
 
 func newBlockDetector(noChangeThreshold int) *blockDetector {
 	if noChangeThreshold <= 0 {
 		noChangeThreshold = defaultBlockNoChangeThreshold
 	}
-	return &blockDetector{noChangeThreshold: noChangeThreshold}
+	return &blockDetector{
+		noChangeThreshold:     noChangeThreshold,
+		twoStateLoopThreshold: defaultTwoStateLoopThreshold,
+		recentAfterSignatures: make([]string, 0, 8),
+	}
 }
 
 func (d *blockDetector) Observe(cmd *types.ActionCommand, before session.PageSnapshot, after *session.PageSnapshot) bool {
-	if d == nil || cmd == nil || !cmd.IsScrollAction() || after == nil {
+	if d == nil || cmd == nil || after == nil {
 		d.Reset()
 		return false
 	}
+
+	triggerNoChangeScroll := false
+	triggerTwoStateLoop := false
+
 	beforeSig := pageSignature(before.PageName, before.XML)
 	afterSig := pageSignature(after.PageName, after.XML)
-	if beforeSig != "" && beforeSig == afterSig {
+
+	if cmd.IsScrollAction() && beforeSig != "" && beforeSig == afterSig {
 		d.consecutiveNoChangeScroll++
 	} else {
-		d.Reset()
+		d.consecutiveNoChangeScroll = 0
 	}
-	return d.consecutiveNoChangeScroll >= d.noChangeThreshold
+	if d.consecutiveNoChangeScroll >= d.noChangeThreshold {
+		triggerNoChangeScroll = true
+		d.lastReason = fmt.Sprintf("scroll_no_change_%d", d.consecutiveNoChangeScroll)
+	}
+
+	if !isBlockDetectorIgnoredAction(cmd.Act) && beforeSig != "" && afterSig != "" && beforeSig != afterSig {
+		d.pushAfterSignature(afterSig)
+		if d.isTailABAB() {
+			d.consecutiveTwoStateLoops++
+		} else {
+			d.consecutiveTwoStateLoops = 0
+		}
+	} else {
+		d.consecutiveTwoStateLoops = 0
+	}
+	if d.consecutiveTwoStateLoops >= d.twoStateLoopThreshold {
+		triggerTwoStateLoop = true
+		d.lastReason = fmt.Sprintf("two_state_ping_pong_%d", d.consecutiveTwoStateLoops)
+	}
+
+	return triggerNoChangeScroll || triggerTwoStateLoop
 }
 
 func (d *blockDetector) Reset() {
@@ -1106,6 +1140,42 @@ func (d *blockDetector) Reset() {
 		return
 	}
 	d.consecutiveNoChangeScroll = 0
+	d.consecutiveTwoStateLoops = 0
+	d.recentAfterSignatures = d.recentAfterSignatures[:0]
+	d.lastReason = ""
+}
+
+func (d *blockDetector) LastReason() string {
+	if d == nil || strings.TrimSpace(d.lastReason) == "" {
+		return "unknown"
+	}
+	return d.lastReason
+}
+
+func (d *blockDetector) pushAfterSignature(sig string) {
+	if d == nil || strings.TrimSpace(sig) == "" {
+		return
+	}
+	d.recentAfterSignatures = append(d.recentAfterSignatures, sig)
+	if len(d.recentAfterSignatures) > 8 {
+		d.recentAfterSignatures = d.recentAfterSignatures[len(d.recentAfterSignatures)-8:]
+	}
+}
+
+func (d *blockDetector) isTailABAB() bool {
+	if d == nil || len(d.recentAfterSignatures) < 4 {
+		return false
+	}
+	n := len(d.recentAfterSignatures)
+	a := d.recentAfterSignatures[n-4]
+	b := d.recentAfterSignatures[n-3]
+	c := d.recentAfterSignatures[n-2]
+	e := d.recentAfterSignatures[n-1]
+	return a == c && b == e && a != b
+}
+
+func isBlockDetectorIgnoredAction(act types.ActionType) bool {
+	return act == types.NOP || act == types.START || act == types.RESTART || act == types.CLEAN_RESTART || act == types.ACTIVATE
 }
 
 func pageSignature(pageName string, xml string) string {

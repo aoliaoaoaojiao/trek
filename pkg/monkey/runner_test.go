@@ -97,11 +97,20 @@ func (d *recoveryAwareDecider) NextBlockRecoveryAction(pageName string, input se
 }
 
 type fakePageSource struct {
-	xml string
+	xml  string
+	xmls []string
+	idx  int
 }
 
-func (f *fakePageSource) DumpPageSource() (string, error) { return f.xml, nil }
-func (f *fakePageSource) Close() error                    { return nil }
+func (f *fakePageSource) DumpPageSource() (string, error) {
+	if len(f.xmls) > 0 {
+		value := f.xmls[f.idx%len(f.xmls)]
+		f.idx++
+		return value, nil
+	}
+	return f.xml, nil
+}
+func (f *fakePageSource) Close() error { return nil }
 
 type fakeDriver struct {
 	pageSource       common.IPageSource
@@ -1122,6 +1131,55 @@ func TestRunnerNoRecoveryForNoChangeClick(t *testing.T) {
 	}
 	if driver.backCount != 0 {
 		t.Fatalf("CLICK 无变化不应执行 BACK，实际: %d", driver.backCount)
+	}
+}
+
+func TestRunnerDetectTwoStatePingPongAndTriggerRecovery(t *testing.T) {
+	decider := &recoveryAwareDecider{
+		fakeDecider: fakeDecider{
+			commands: []*types.ActionCommand{
+				{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
+			},
+		},
+		recoveryAction: &types.ActionCommand{Act: types.BACK},
+	}
+	// 调用顺序：before1,after1,before2,after2,...
+	// 构造成 after 序列 A,B,A,B，且每步 before!=after，触发两状态往返检测。
+	pageSource := &fakePageSource{
+		xmls: []string{
+			`<node class="PageB"/>`, `<node class="PageA"/>`,
+			`<node class="PageA"/>`, `<node class="PageB"/>`,
+			`<node class="PageB"/>`, `<node class="PageA"/>`,
+			`<node class="PageA"/>`, `<node class="PageB"/>`,
+			`<node class="PageB"/>`, `<node class="PageA"/>`,
+		},
+	}
+	driver := &fakeDriver{pageSource: pageSource}
+
+	runner, err := NewRunner(decider, driver, Config{
+		MaxSteps:               6,
+		StepInterval:           0,
+		KeepStepRecords:        true,
+		StopOnCrash:            true,
+		StopOnANR:              true,
+		BlockNoChangeThreshold: 3,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if decider.recoveryCalls == 0 {
+		t.Fatalf("预期两状态往返触发 block recovery")
+	}
+	if driver.backCount == 0 {
+		t.Fatalf("预期执行恢复 BACK 动作")
 	}
 }
 

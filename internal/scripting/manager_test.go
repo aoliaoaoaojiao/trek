@@ -245,3 +245,37 @@ func TestLoadStaticConfigReadsEffectiveTouchAreaBySerialAndPackage(t *testing.T)
 		t.Fatalf("range 不符合预期: %+v", cfg.EffectiveTouchArea.Range)
 	}
 }
+
+func TestLoadStaticConfigReadsUCTBanditSettings(t *testing.T) {
+	cfg, err := LoadStaticConfig(`const config = {
+  uct_bandit: {
+    two_state_loop_penalty: -4.5,
+    edge_repeat_penalty: -1.2,
+    edge_repeat_threshold: 3,
+    action_cooldown_penalty: 0.75,
+    recent_action_window: 8,
+    loop_escape_explore_boost: 0.2
+  }
+}`)
+	if err != nil {
+		t.Fatalf("加载静态配置失败: %v", err)
+	}
+	if !cfg.UCTBandit.HasTwoStateLoopPenalty || cfg.UCTBandit.TwoStateLoopPenalty != -4.5 {
+		t.Fatalf("two_state_loop_penalty 不符合预期: %+v", cfg.UCTBandit)
+	}
+	if !cfg.UCTBandit.HasEdgeRepeatPenalty || cfg.UCTBandit.EdgeRepeatPenalty != -1.2 {
+		t.Fatalf("edge_repeat_penalty 不符合预期: %+v", cfg.UCTBandit)
+	}
+	if !cfg.UCTBandit.HasEdgeRepeatThreshold || cfg.UCTBandit.EdgeRepeatThreshold != 3 {
+		t.Fatalf("edge_repeat_threshold 不符合预期: %+v", cfg.UCTBandit)
+	}
+	if !cfg.UCTBandit.HasActionCooldownPenalty || cfg.UCTBandit.ActionCooldownPenalty != 0.75 {
+		t.Fatalf("action_cooldown_penalty 不符合预期: %+v", cfg.UCTBandit)
+	}
+	if !cfg.UCTBandit.HasRecentActionWindow || cfg.UCTBandit.RecentActionWindow != 8 {
+		t.Fatalf("recent_action_window 不符合预期: %+v", cfg.UCTBandit)
+	}
+	if !cfg.UCTBandit.HasLoopEscapeExploreBoost || cfg.UCTBandit.LoopEscapeExploreBoost != 0.2 {
+		t.Fatalf("loop_escape_explore_boost 不符合预期: %+v", cfg.UCTBandit)
+	}
+}

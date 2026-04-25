@@ -3,6 +3,8 @@ package uctbandit
 import (
 	"fmt"
 	"math/rand"
+	"strings"
+	engineconfig "trek/internal/engine/config"
 	"trek/internal/engine/decision/shared/types"
 	"trek/logger"
 
@@ -11,23 +13,29 @@ import (
 
 // AgentConfig 定义 Agent 的运行参数。
 type AgentConfig struct {
-	UCTWeight       float64 // UCT 分数权重，默认 0.6
-	BanditWeight    float64 // Bandit 分数权重，默认 0.3
-	HeuristicWeight float64 // 启发式权重，默认 0.1
-	BackPenalty     float64 // back 动作默认惩罚，默认 -1.0
-	EscapeBonus     float64 // 逃逸加成，默认 3.0
-	ExploreRatio   float64 // ε-贪心探索率，默认 0.15（15% 概率随机选择）
+	UCTWeight              float64 // UCT 分数权重，默认 0.6
+	BanditWeight           float64 // Bandit 分数权重，默认 0.3
+	HeuristicWeight        float64 // 启发式权重，默认 0.1
+	BackPenalty            float64 // back 动作默认惩罚，默认 -1.0
+	EscapeBonus            float64 // 逃逸加成，默认 3.0
+	ExploreRatio           float64 // ε-贪心探索率，默认 0.15（15% 概率随机选择）
+	ActionCooldownPenalty  float64 // 同状态同动作近期重复惩罚
+	RecentActionWindow     int     // 近期动作窗口大小
+	LoopEscapeExploreBoost float64 // 检测到回环时的探索增益
 }
 
 // DefaultAgentConfig 返回默认 Agent 配置。
 func DefaultAgentConfig() AgentConfig {
 	return AgentConfig{
-		UCTWeight:       0.6,
-		BanditWeight:    0.3,
-		HeuristicWeight: 0.1,
-		BackPenalty:     -1.0,
-		EscapeBonus:     3.0,
-		ExploreRatio:    0.15,
+		UCTWeight:              0.6,
+		BanditWeight:           0.3,
+		HeuristicWeight:        0.1,
+		BackPenalty:            -1.0,
+		EscapeBonus:            3.0,
+		ExploreRatio:           0.15,
+		ActionCooldownPenalty:  0.8,
+		RecentActionWindow:     6,
+		LoopEscapeExploreBoost: 0.25,
 	}
 }
 
@@ -50,8 +58,10 @@ type Agent struct {
 	currentAction *types.StatefulAction
 	newAction     *types.StatefulAction
 
-	lastStep     StepContext
-	recentStates []string // 最近的 state ID，用于短环检测
+	lastStep             StepContext
+	recentStates         []string       // 最近的 state ID，用于短环检测
+	recentSelections     []string       // 最近选择的 "stateID|actionKey"
+	edgeTransitionCounts map[string]int // "fromState->toState" 计数
 
 	config       AgentConfig
 	rewardConfig RewardConfig
@@ -72,16 +82,18 @@ func NewAgent(model *sharedgraph.Model, deviceType types.DeviceType) *Agent {
 	stats := NewStatsStore()
 
 	return &Agent{
-		model:         model,
-		deviceType:    deviceType,
-		planner:      NewPlanner(stats, plannerConfig),
-		policy:        NewBanditPolicy(stats, banditConfig),
-		rewarder:      NewRewarder(rewardConfig),
-		stats:         stats,
-		config:        agentConfig,
-		rewardConfig:  rewardConfig,
-		algorithmType: "uctbandit",
-		recentStates:  make([]string, 0, 10),
+		model:                model,
+		deviceType:           deviceType,
+		planner:              NewPlanner(stats, plannerConfig),
+		policy:               NewBanditPolicy(stats, banditConfig),
+		rewarder:             NewRewarder(rewardConfig),
+		stats:                stats,
+		config:               agentConfig,
+		rewardConfig:         rewardConfig,
+		algorithmType:        "uctbandit",
+		recentStates:         make([]string, 0, 10),
+		recentSelections:     make([]string, 0, 10),
+		edgeTransitionCounts: make(map[string]int),
 	}
 }
 
@@ -187,6 +199,7 @@ func (a *Agent) selectAction() types.IAction {
 	if a.newState == nil {
 		return nil
 	}
+	a.applyStaticConfigOverrides()
 
 	candidates := a.buildCandidates(a.newState)
 	candidates = a.filterCandidates(candidates)
@@ -213,12 +226,21 @@ func (a *Agent) selectAction() types.IAction {
 			c.PenaltyScore
 	}
 
-	// ε-贪心选择：以 ExploreRatio 概率随机选择（探索），其余选择最高分（利用）
+	// ε-贪心选择：以 ExploreRatio 概率随机选择（探索），其余选择最高分（利用）。
+	// 当检测到明显回环时，提高探索概率，尽快跳出 A↔B 局部最优。
+	exploreRatio := a.config.ExploreRatio
+	if a.isLikelyLooping() {
+		exploreRatio += a.config.LoopEscapeExploreBoost
+		if exploreRatio > 0.9 {
+			exploreRatio = 0.9
+		}
+	}
+
 	var selected Candidate
-	if rand.Float64() < a.config.ExploreRatio && len(candidates) > 1 {
+	if rand.Float64() < exploreRatio && len(candidates) > 1 {
 		// 探索：随机选择一个候选动作
 		selected = candidates[rand.Intn(len(candidates))]
-		logger.Debugf("UCT-Bandit: exploring, random pick from %d candidates", len(candidates))
+		logger.Debugf("UCT-Bandit: exploring, random pick from %d candidates ratio=%.2f", len(candidates), exploreRatio)
 	} else {
 		// 利用：选择最高分候选
 		bestIdx := 0
@@ -377,6 +399,13 @@ func (a *Agent) heuristicPenalty(c *Candidate) float64 {
 		penalty += 0.5
 	}
 
+	// 同状态同动作近期重复惩罚，降低在同一页反复点击同一控件的概率。
+	stateID := a.stateIDEffective()
+	repeatHits := a.countRecentSelectionHits(stateID, c.ActionKey)
+	if repeatHits > 0 {
+		penalty += float64(repeatHits) * a.config.ActionCooldownPenalty
+	}
+
 	return penalty
 }
 
@@ -406,6 +435,7 @@ func (a *Agent) recordSelection(c Candidate, candidateCount int) {
 
 	// 记录 arm 拉取（初始 reward 为 0）
 	a.stats.RecordArmPull(armKey, 0)
+	a.recordRecentSelection(a.stateIDEffective(), actionKey)
 }
 
 // stateIDEffective 返回当前有效状态 ID。
@@ -424,6 +454,7 @@ func (a *Agent) settleReward() {
 	if a.currentAction == nil || a.currentState == nil {
 		return
 	}
+	a.applyStaticConfigOverrides()
 
 	prevStateID := ""
 	if a.lastState != nil {
@@ -457,6 +488,7 @@ func (a *Agent) settleReward() {
 	}
 
 	// 计算 reward
+	edgeRepeatCount := a.increaseEdgeTransitionCount(prevStateID, nextStateID)
 	rewardResult := a.rewarder.ComputeReward(RewardInput{
 		FoundNewState:    foundNewState,
 		FoundNewEdge:     foundNewEdge,
@@ -466,6 +498,7 @@ func (a *Agent) settleReward() {
 		IsEmptyResult:    a.newState == nil,
 		PrevStateID:      prevStateID,
 		NextStateID:      nextStateID,
+		EdgeRepeatCount:  edgeRepeatCount,
 		RecentStateIDs:   a.recentStates,
 	})
 
@@ -497,9 +530,9 @@ func (a *Agent) settleReward() {
 	rewardResult.NeedEscape = a.rewarder.NeedEscape(
 		a.getCurrentStagnationCount(stateID))
 
-	logger.Debugf("UCT-Bandit reward: state=%s action=%s reward=%.2f reason=%s newState=%v shortLoop=%v escape=%v",
+	logger.Debugf("UCT-Bandit reward: state=%s action=%s reward=%.2f reason=%s newState=%v shortLoop=%v twoStateLoop=%v edgeRepeat=%d escape=%v",
 		stateID, actionKey, rewardResult.Reward, rewardResult.Reason,
-		rewardResult.FoundNewState, rewardResult.IsShortLoop, rewardResult.NeedEscape)
+		rewardResult.FoundNewState, rewardResult.IsShortLoop, rewardResult.IsTwoStateLoop, edgeRepeatCount, rewardResult.NeedEscape)
 }
 
 // updateRecentStates 更新近期状态历史。
@@ -510,6 +543,85 @@ func (a *Agent) updateRecentStates(stateID string) {
 	if len(a.recentStates) > maxHistory {
 		a.recentStates = a.recentStates[len(a.recentStates)-maxHistory:]
 	}
+}
+
+func (a *Agent) recordRecentSelection(stateID, actionKey string) {
+	if strings.TrimSpace(stateID) == "" || strings.TrimSpace(actionKey) == "" {
+		return
+	}
+	key := stateID + "|" + actionKey
+	a.recentSelections = append(a.recentSelections, key)
+	maxSize := a.config.RecentActionWindow
+	if maxSize <= 0 {
+		maxSize = 6
+	}
+	if len(a.recentSelections) > maxSize {
+		a.recentSelections = a.recentSelections[len(a.recentSelections)-maxSize:]
+	}
+}
+
+func (a *Agent) countRecentSelectionHits(stateID, actionKey string) int {
+	if strings.TrimSpace(stateID) == "" || strings.TrimSpace(actionKey) == "" {
+		return 0
+	}
+	key := stateID + "|" + actionKey
+	hits := 0
+	for _, candidate := range a.recentSelections {
+		if candidate == key {
+			hits++
+		}
+	}
+	return hits
+}
+
+func (a *Agent) isLikelyLooping() bool {
+	if len(a.recentStates) < 4 {
+		return false
+	}
+	n := len(a.recentStates)
+	a1 := a.recentStates[n-4]
+	b1 := a.recentStates[n-3]
+	a2 := a.recentStates[n-2]
+	b2 := a.recentStates[n-1]
+	return a1 == a2 && b1 == b2 && a1 != b1
+}
+
+func (a *Agent) increaseEdgeTransitionCount(prevStateID, nextStateID string) int {
+	if strings.TrimSpace(prevStateID) == "" || strings.TrimSpace(nextStateID) == "" {
+		return 0
+	}
+	key := prevStateID + "->" + nextStateID
+	a.edgeTransitionCounts[key]++
+	return a.edgeTransitionCounts[key]
+}
+
+func (a *Agent) applyStaticConfigOverrides() {
+	manager := engineconfig.GetInstance()
+	if manager == nil {
+		return
+	}
+	staticCfg := manager.GetStaticConfig()
+	uctCfg := staticCfg.UCTBandit
+
+	if uctCfg.HasTwoStateLoopPenalty {
+		a.rewardConfig.TwoStateLoopPenalty = uctCfg.TwoStateLoopPenalty
+	}
+	if uctCfg.HasEdgeRepeatPenalty {
+		a.rewardConfig.EdgeRepeatPenalty = uctCfg.EdgeRepeatPenalty
+	}
+	if uctCfg.HasEdgeRepeatThreshold && uctCfg.EdgeRepeatThreshold > 0 {
+		a.rewardConfig.EdgeRepeatThreshold = uctCfg.EdgeRepeatThreshold
+	}
+	if uctCfg.HasActionCooldownPenalty {
+		a.config.ActionCooldownPenalty = uctCfg.ActionCooldownPenalty
+	}
+	if uctCfg.HasRecentActionWindow && uctCfg.RecentActionWindow > 0 {
+		a.config.RecentActionWindow = uctCfg.RecentActionWindow
+	}
+	if uctCfg.HasLoopEscapeExploreBoost {
+		a.config.LoopEscapeExploreBoost = uctCfg.LoopEscapeExploreBoost
+	}
+	a.rewarder = NewRewarder(a.rewardConfig)
 }
 
 // getCurrentStagnationCount 获取当前状态停滞计数。

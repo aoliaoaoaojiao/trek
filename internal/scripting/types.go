@@ -47,6 +47,7 @@ type PageNode struct {
 	Enabled     bool
 	Editable    bool
 	Path        string
+	XPath       string
 }
 
 type PageSnapshot struct {
@@ -65,6 +66,13 @@ type RuntimeContext struct {
 	ConsecutiveFailures int
 	PageVisitCount      map[string]int
 	ActionCount         map[string]int
+	BlockRecovery       *BlockRecoveryContext
+}
+
+// BlockRecoveryContext 描述当前是否处于阻塞恢复决策阶段。
+type BlockRecoveryContext struct {
+	Requested bool
+	Reason    string
 }
 
 type PluginContext struct {

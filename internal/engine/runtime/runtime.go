@@ -13,6 +13,10 @@ import (
 
 const ENGINE_VERSION = "1.0.0"
 
+type ActionRequestOptions struct {
+	BlockRecovery bool
+}
+
 type PageSnapshotInput struct {
 	PageName   string
 	XML        string
@@ -49,10 +53,20 @@ func GetActionOpt(activity string, xmlDescOfGuiTree string) *types2.ActionComman
 }
 
 func GetActionOptWithInput(activity string, xmlDescOfGuiTree string, screenshot []byte) *types2.ActionCommand {
+	return getActionOptWithOptions(activity, xmlDescOfGuiTree, screenshot, ActionRequestOptions{})
+}
+
+func GetBlockRecoveryActionOptWithInput(activity string, xmlDescOfGuiTree string, screenshot []byte) *types2.ActionCommand {
+	return getActionOptWithOptions(activity, xmlDescOfGuiTree, screenshot, ActionRequestOptions{
+		BlockRecovery: true,
+	})
+}
+
+func getActionOptWithOptions(activity string, xmlDescOfGuiTree string, screenshot []byte, options ActionRequestOptions) *types2.ActionCommand {
 	if defaultOrchestrator == nil {
 		defaultOrchestrator = newDefaultOrchestrator()
 	}
-	pluginCtx := buildPluginContext(activity, xmlDescOfGuiTree, screenshot)
+	pluginCtx := buildPluginContext(activity, xmlDescOfGuiTree, screenshot, options)
 	page, _ := transformPageForDecision(pluginCtx)
 	pluginCtx.Page = page
 	if cmd, handled, err := beforeDecide(pluginCtx); err == nil && handled {
@@ -74,7 +88,7 @@ func GetActionOptWithInput(activity string, xmlDescOfGuiTree string, screenshot 
 
 // TransformPageInfoWithInput 浣跨敤閰嶇疆鑴氭湰鏀归€犻〉闈俊鎭苟杩斿洖鏂扮粨鏋滐紙鏀寔鎴浘杈撳叆锛夈€?
 func TransformPageInfoWithInput(activity string, xmlDescOfGuiTree string, screenshot []byte) (string, string, error) {
-	ctx := buildPluginContext(activity, xmlDescOfGuiTree, screenshot)
+	ctx := buildPluginContext(activity, xmlDescOfGuiTree, screenshot, ActionRequestOptions{})
 	page, err := transformPageForDecision(ctx)
 	if err != nil {
 		return activity, xmlDescOfGuiTree, err
@@ -125,7 +139,7 @@ func afterDecide(ctx engineplugin.PluginContext, cmd *types2.ActionCommand) (*ty
 	return scriptPlugin.AfterDecide(ctx, cmd)
 }
 
-func buildPluginContext(activity string, xmlDescOfGuiTree string, screenshot []byte) engineplugin.PluginContext {
+func buildPluginContext(activity string, xmlDescOfGuiTree string, screenshot []byte, options ActionRequestOptions) engineplugin.PluginContext {
 	page := engineplugin.PageSnapshot{
 		Name: activity,
 		XML:  xmlDescOfGuiTree,
@@ -145,6 +159,9 @@ func buildPluginContext(activity string, xmlDescOfGuiTree string, screenshot []b
 		Runtime: engineplugin.RuntimeContext{
 			PackageName:    packageName,
 			PageSourceType: string(observationMode),
+			BlockRecovery: &engineplugin.BlockRecoveryContext{
+				Requested: options.BlockRecovery,
+			},
 		},
 	}
 }

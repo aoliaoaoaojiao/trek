@@ -149,3 +149,63 @@ func TestSessionOnStepResultFeedsGojaPluginState(t *testing.T) {
 		t.Fatalf("onStepResult 鐘舵€佸簲椹卞姩涓嬩竴锟?BACK锛屽疄锟? %s", action.Act.String())
 	}
 }
+
+func TestSessionNextBlockRecoveryActionUsesPluginBlockRecoveryContext(t *testing.T) {
+	session := NewSession(Config{PackageName: "com.demo"})
+
+	configPath := filepath.Join(t.TempDir(), "plugin.js")
+	configContent := `const plugin = {
+  beforeDecide(ctx) {
+    if (ctx.runtime.block_recovery && ctx.runtime.block_recovery.requested) {
+      return trek.action.back()
+    }
+    return null
+  }
+};`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("写入测试文件失败: %v", err)
+	}
+	if err := session.LoadConfigFile(configPath); err != nil {
+		t.Fatalf("加载配置失败: %v", err)
+	}
+
+	action, err := session.NextBlockRecoveryAction("MainActivity", ActionInput{
+		XMLDescOfGuiTree: `<hierarchy><node class="android.widget.TextView" bounds="[0,0][10,10]"/></hierarchy>`,
+	})
+	if err != nil {
+		t.Fatalf("获取阻塞恢复动作失败: %v", err)
+	}
+	if action == nil || action.Act != types2.BACK {
+		t.Fatalf("预期阻塞恢复返回 BACK，实际: %+v", action)
+	}
+}
+
+func TestSessionNextBlockRecoveryActionRejectsRestartActions(t *testing.T) {
+	session := NewSession(Config{PackageName: "com.demo"})
+
+	configPath := filepath.Join(t.TempDir(), "plugin.js")
+	configContent := `const plugin = {
+  beforeDecide(ctx) {
+    if (ctx.runtime.block_recovery && ctx.runtime.block_recovery.requested) {
+      return trek.action.restart()
+    }
+    return null
+  }
+};`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("写入测试文件失败: %v", err)
+	}
+	if err := session.LoadConfigFile(configPath); err != nil {
+		t.Fatalf("加载配置失败: %v", err)
+	}
+
+	action, err := session.NextBlockRecoveryAction("MainActivity", ActionInput{
+		XMLDescOfGuiTree: `<hierarchy><node class="android.widget.TextView" bounds="[0,0][10,10]"/></hierarchy>`,
+	})
+	if err != nil {
+		t.Fatalf("获取阻塞恢复动作失败: %v", err)
+	}
+	if action != nil {
+		t.Fatalf("阻塞恢复不应返回重启动作，实际: %+v", action)
+	}
+}

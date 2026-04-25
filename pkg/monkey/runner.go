@@ -662,15 +662,12 @@ func (r *Runner) applyEffectiveTouchArea(step int, cmd *types.ActionCommand) {
 	)
 }
 
-var widgetPathRegex = regexp.MustCompile(`path:([^,}]+)`)
+var widgetXPathRegex = regexp.MustCompile(`(?:^|[,{ ])xpath:([^,}]+)`)
+var widgetPathRegex = regexp.MustCompile(`(?:^|[,{ ])path:([^,}]+)`)
 
 func resolvePocoScrollRectFromWidgetPath(widgetInfo string, xml string) (*types.Rect, bool) {
-	pathMatch := widgetPathRegex.FindStringSubmatch(widgetInfo)
-	if len(pathMatch) < 2 {
-		return nil, false
-	}
-	path := strings.TrimSpace(pathMatch[1])
-	if path == "" {
+	targetPath, ok := extractWidgetLocatorPath(widgetInfo)
+	if !ok {
 		return nil, false
 	}
 
@@ -683,13 +680,7 @@ func resolvePocoScrollRectFromWidgetPath(widgetInfo string, xml string) (*types.
 		return nil, false
 	}
 
-	// 优先直接定位到目标路径节点。
-	current := root.FindElement(path)
-	// 兜底：路径里带根节点时，FindElement 可能返回空，尝试补全为绝对路径风格。
-	if current == nil {
-		normalizedPath := strings.TrimPrefix(path, "/")
-		current = root.FindElement(normalizedPath)
-	}
+	current := findElementByCompatiblePath(doc, root, targetPath)
 	for current != nil {
 		if rect, ok := parseRectFromBoundsValue(current.SelectAttrValue("bounds", "")); ok && !rect.IsEmpty() {
 			return rect, true
@@ -697,6 +688,56 @@ func resolvePocoScrollRectFromWidgetPath(widgetInfo string, xml string) (*types.
 		current = current.Parent()
 	}
 	return nil, false
+}
+
+func extractWidgetLocatorPath(widgetInfo string) (string, bool) {
+	if match := widgetXPathRegex.FindStringSubmatch(widgetInfo); len(match) >= 2 {
+		xpath := strings.TrimSpace(match[1])
+		if xpath != "" {
+			return xpath, true
+		}
+	}
+	if match := widgetPathRegex.FindStringSubmatch(widgetInfo); len(match) >= 2 {
+		path := strings.TrimSpace(match[1])
+		if path != "" {
+			return path, true
+		}
+	}
+	return "", false
+}
+
+func findElementByCompatiblePath(doc *etree.Document, root *etree.Element, targetPath string) *etree.Element {
+	if doc == nil || root == nil {
+		return nil
+	}
+	path := strings.TrimSpace(targetPath)
+	if path == "" {
+		return nil
+	}
+	if matched := doc.FindElement(path); matched != nil {
+		return matched
+	}
+	if matched := root.FindElement(path); matched != nil {
+		return matched
+	}
+
+	normalizedPath := strings.TrimPrefix(path, "/")
+	if matched := root.FindElement(normalizedPath); matched != nil {
+		return matched
+	}
+
+	rootPrefix := "/" + root.Tag
+	if strings.HasPrefix(path, rootPrefix) {
+		trimmed := strings.TrimPrefix(path, rootPrefix)
+		if matched := root.FindElement(trimmed); matched != nil {
+			return matched
+		}
+		trimmed = strings.TrimPrefix(trimmed, "[1]")
+		if matched := root.FindElement(trimmed); matched != nil {
+			return matched
+		}
+	}
+	return nil
 }
 
 func parseRectFromBoundsValue(bounds string) (*types.Rect, bool) {

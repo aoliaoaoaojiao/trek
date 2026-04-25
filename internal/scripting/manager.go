@@ -371,6 +371,7 @@ func nodesToMaps(nodes []PageNode) []map[string]any {
 			"enabled":      node.Enabled,
 			"editable":     node.Editable,
 			"path":         node.Path,
+			"xpath":        node.XPath,
 		})
 	}
 	return result
@@ -388,6 +389,12 @@ func runtimeToMap(runtime RuntimeContext) map[string]any {
 	}
 	if runtime.LastAction != nil {
 		result["last_action"] = actionToMap(*runtime.LastAction)
+	}
+	if runtime.BlockRecovery != nil {
+		result["block_recovery"] = map[string]any{
+			"requested": runtime.BlockRecovery.Requested,
+			"reason":    runtime.BlockRecovery.Reason,
+		}
 	}
 	return result
 }

@@ -91,7 +91,8 @@ type AndroidElement struct {
 	children []types2.IElement
 	parent   types2.IElement
 
-	path string
+	path  string
+	xpath string
 
 	eNode *etree.Element
 }
@@ -126,6 +127,13 @@ func (e *AndroidElement) GetPath() string {
 		return ""
 	}
 	return e.path
+}
+
+func (e *AndroidElement) GetXPath() string {
+	if e == nil || e.eNode == nil {
+		return ""
+	}
+	return e.xpath
 }
 
 func (e *AndroidElement) GetClassname() string {
@@ -400,6 +408,7 @@ func (e *AndroidElement) fromXMLNode(node *etree.Element, parent types2.IElement
 	}
 	e.eNode = node
 	e.path = e.eNode.GetPath()
+	e.xpath = buildAbsoluteXPath(e.eNode)
 
 	if p, isAndroid := parent.(*AndroidElement); isAndroid {
 		e.parent = p
@@ -431,6 +440,30 @@ func (e *AndroidElement) fromXMLNode(node *etree.Element, parent types2.IElement
 		child.fromXMLNode(childNode, e)
 		e.addChild(child)
 	}
+}
+
+func buildAbsoluteXPath(node *etree.Element) string {
+	if node == nil {
+		return ""
+	}
+	parent := node.Parent()
+	if parent == nil || strings.TrimSpace(parent.Tag) == "" {
+		return fmt.Sprintf("/%s[1]", node.Tag)
+	}
+
+	index := 0
+	for _, sibling := range parent.ChildElements() {
+		if sibling.Tag == node.Tag {
+			index++
+		}
+		if sibling == node {
+			break
+		}
+	}
+	if index <= 0 {
+		index = 1
+	}
+	return fmt.Sprintf("%s/%s[%d]", buildAbsoluteXPath(parent), node.Tag, index)
 }
 
 func parseBounds(boundsStr string) *types2.Rect {

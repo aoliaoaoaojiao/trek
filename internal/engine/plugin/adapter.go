@@ -10,6 +10,7 @@ import (
 type PluginContext = scripting.PluginContext
 type PageSnapshot = scripting.PageSnapshot
 type RuntimeContext = scripting.RuntimeContext
+type BlockRecoveryContext = scripting.BlockRecoveryContext
 type Screenshot = scripting.Screenshot
 type PageNode = scripting.PageNode
 type StepResult = scripting.StepResult

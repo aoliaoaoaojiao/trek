@@ -128,7 +128,30 @@ func (s *Session) NextActionWithInput(pageName string, input ActionInput) (*type
 	return operate, nil
 }
 
-// SetObservationMode 闁荤姳绀佹晶浠嬫偪閸℃稑绠涢柣鏃囨閸欌偓濠碘槅鍨埀顒€纾涵鈧梺鎸庣☉濠㈡唩l-only / image-only / hybrid闂佹寧绋戦ˇ顓㈠焵?
+// NextBlockRecoveryAction 在 Runner 检测到阻塞后提供兜底动作。
+// 该链路会显式标记 block_recovery 上下文，便于插件触发 LLM 规划。
+func (s *Session) NextBlockRecoveryAction(pageName string, input ActionInput) (*types.ActionCommand, error) {
+	if strings.TrimSpace(pageName) == "" {
+		return nil, fmt.Errorf("pageName 不能为空")
+	}
+	if strings.TrimSpace(input.XMLDescOfGuiTree) == "" && len(input.Screenshot) == 0 {
+		return nil, fmt.Errorf("xmlDescOfGuiTree 和 screenshot 不能同时为空")
+	}
+
+	operate := engineruntime.GetBlockRecoveryActionOptWithInput(pageName, input.XMLDescOfGuiTree, input.Screenshot)
+	if operate == nil {
+		return nil, nil
+	}
+	if isAppRestartAction(operate.Act) {
+		logger.Warnf("session block recovery rejected app restart action: page=%s act=%s", pageName, operate.Act.String())
+		return nil, nil
+	}
+
+	logger.Infof("session block recovery action: page=%s cmd={%s}", pageName, operate.DetailLogString())
+	return operate, nil
+}
+
+// SetObservationMode 设置感知模式（xml-only / image-only / hybrid）。
 func (s *Session) SetObservationMode(mode string) error {
 	return engineruntime.SetObservationMode(mode)
 }
@@ -190,4 +213,8 @@ func (s *Session) OnStepResult(input StepResultInput) error {
 		}
 	}
 	return engineruntime.OnStepResult(runtimeInput)
+}
+
+func isAppRestartAction(act types.ActionType) bool {
+	return act == types.START || act == types.RESTART || act == types.CLEAN_RESTART
 }

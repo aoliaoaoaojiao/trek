@@ -88,6 +88,7 @@ type IElement interface {
 
 	GetParent() IElement
 	GetPath() string
+	GetXPath() string
 
 	GetText() string
 	SetText(text string)
@@ -130,6 +131,7 @@ type IWidget interface {
 	GetBounds() *Rect
 	GetEnabled() bool
 	GetPath() string
+	GetXPath() string
 
 	// 操作和动作相关方法
 	HasOperate(opt OperateType) bool

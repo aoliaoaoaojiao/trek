@@ -925,6 +925,34 @@ func TestNormalizePocoScrollCommandFallbackToAncestorBounds(t *testing.T) {
 	}
 }
 
+func TestNormalizePocoScrollCommandSupportsXPathLocator(t *testing.T) {
+	decider := &fakeDecider{}
+	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<hierarchy/>`}}
+	runner, err := NewRunner(decider, driver, Config{
+		PageSourceType: "poco",
+		StepInterval:   0,
+		StopOnCrash:    true,
+		StopOnANR:      true,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	cmd := &types.ActionCommand{
+		Act:        types.SCROLL_BOTTOM_UP,
+		Pos:        *types.NewRect(0, 0, 0, 0),
+		WidgetInfo: `Widget{path:/hierarchy/node/node, xpath:/hierarchy[1]/node[1]/node[1], bounds:[0.000,0.000,0.000,0.000], actions:[SCROLL_BOTTOM_UP]}`,
+	}
+	xml := `<hierarchy bounds="[0,0][1,1]"><node bounds="[0,0][1,1]"><node bounds="[0.2,0.3][0.7,0.9]"/></node></hierarchy>`
+	runner.normalizePocoScrollCommand(1, cmd, xml)
+	if cmd.Pos.IsEmpty() {
+		t.Fatalf("预期 xpath 回退后应有可用滑动区域，实际: %s", cmd.Pos.String())
+	}
+	if cmd.Pos.Left != 0.2 || cmd.Pos.Top != 0.3 || cmd.Pos.Right != 0.7 || cmd.Pos.Bottom != 0.9 {
+		t.Fatalf("预期命中 xpath 节点区域 [0.2,0.3,0.7,0.9]，实际: %s", cmd.Pos.String())
+	}
+}
+
 func TestRunnerApplyEffectiveTouchAreaToClick(t *testing.T) {
 	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0.4, 0.4, 0.6, 0.6)}}}
 	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}

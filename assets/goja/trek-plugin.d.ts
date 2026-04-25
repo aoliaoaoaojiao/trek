@@ -60,6 +60,8 @@ interface PageNode {
   editable: boolean
   /** 节点在树中的路径（调试定位用） */
   path: string
+  /** 节点的标准 XPath（优先用于跨模块定位） */
+  xpath?: string
 }
 
 /** 页面快照：由引擎采集并传给插件。 */
@@ -96,6 +98,13 @@ interface RuntimeContext {
   page_visit_count: Record<string, number>
   /** 动作执行计数：key 为动作类型 */
   action_count: Record<string, number>
+  /** 阻塞恢复请求上下文：仅在 monkey 识别阻塞后触发兜底决策时为 true */
+  block_recovery?: {
+    /** 当前是否处于阻塞恢复阶段 */
+    requested: boolean
+    /** 阻塞原因（可选） */
+    reason?: string
+  }
 }
 
 interface PluginContext {

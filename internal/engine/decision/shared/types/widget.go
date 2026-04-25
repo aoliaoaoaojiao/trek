@@ -14,7 +14,8 @@ type Widget struct {
 	Parent   IWidget
 	Text     string
 
-	path string
+	path  string
+	xpath string
 
 	Enabled     bool
 	Editable    bool
@@ -163,8 +164,8 @@ func (w *Widget) String() string {
 	for _, action := range actions {
 		actionNames = append(actionNames, action.String())
 	}
-	return fmt.Sprintf("Widget{hash:%d, text:%q, contentDesc:%q, bounds:%s, enabled:%t, editable:%t, path:%s, actions:[%s]}",
-		w.Hash(), text, contentDesc, w.Bounds.String(), w.Enabled, w.Editable, w.path, strings.Join(actionNames, ","))
+	return fmt.Sprintf("Widget{hash:%d, text:%q, contentDesc:%q, bounds:%s, enabled:%t, editable:%t, path:%s, xpath:%s, actions:[%s]}",
+		w.Hash(), text, contentDesc, w.Bounds.String(), w.Enabled, w.Editable, w.path, w.xpath, strings.Join(actionNames, ","))
 }
 
 func (w *Widget) GetPath() string {
@@ -172,6 +173,13 @@ func (w *Widget) GetPath() string {
 		return ""
 	}
 	return w.path
+}
+
+func (w *Widget) GetXPath() string {
+	if w == nil {
+		return ""
+	}
+	return w.xpath
 }
 
 func (w *Widget) ClearDetails() {
@@ -243,6 +251,7 @@ func (w *Widget) initFormElement(element IElement) {
 	}
 	w.elementSimpleIdentifier = element.GetIdentifierHash()
 	w.path = element.GetPath()
+	w.xpath = element.GetXPath()
 	w.Enabled = element.GetEnable()
 	w.Editable = element.GetEditable()
 	w.Bounds = element.GetBounds()

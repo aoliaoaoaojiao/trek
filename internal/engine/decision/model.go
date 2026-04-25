@@ -156,29 +156,15 @@ func (m *Model) GetOperateOpt(elem types2.IElement, pageName string, deviceID st
 
 	action := customAction
 	if action == nil && !m.skipAllActionsFromModel() {
-		blockTimes := 0
-		if blockAware, ok := agent.(types2.StateBlockAwareAgent); ok {
-			blockTimes = blockAware.GetCurrentStateBlockTimes()
+		action = agent.ResolveNewAction()
+		agent.UpdateStrategy()
+		if action == nil {
+			logger.Errorf("get null action!!!!")
+			return types2.ActionCommandNop
 		}
-
-		if blockTimes > 0 {
-			action = types2.RESTARTAction
-			stateID := ""
-			if state != nil {
-				stateID = state.GetId()
-			}
-			logger.Infof("Ran into a block state %s", stateID)
-		} else {
-			action = agent.ResolveNewAction()
-			agent.UpdateStrategy()
-			if action == nil {
-				logger.Errorf("get null action!!!!")
-				return types2.ActionCommandNop
-			}
-			if stateAction, ok := action.(*types2.StatefulAction); ok && stateAction.IsModelAct() && state != nil {
-				stateAction.Visit(m.core.GetGraph().GetTimestamp())
-				agent.MoveForward(state)
-			}
+		if stateAction, ok := action.(*types2.StatefulAction); ok && stateAction.IsModelAct() && state != nil {
+			stateAction.Visit(m.core.GetGraph().GetTimestamp())
+			agent.MoveForward(state)
 		}
 	}
 

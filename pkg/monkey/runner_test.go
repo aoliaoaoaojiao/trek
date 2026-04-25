@@ -50,6 +50,12 @@ type weightedDecider struct {
 	candidates []WeightedCandidate
 }
 
+type recoveryAwareDecider struct {
+	fakeDecider
+	recoveryAction *types.ActionCommand
+	recoveryCalls  int
+}
+
 type transformingDecider struct {
 	fakeDecider
 	pageName       string
@@ -82,6 +88,14 @@ func (w *weightedDecider) NextWeightedActionsWithInput(pageName string, input se
 	return w.candidates, nil
 }
 
+func (d *recoveryAwareDecider) NextBlockRecoveryAction(pageName string, input session.ActionInput) (*types.ActionCommand, error) {
+	d.recoveryCalls++
+	if d.recoveryAction == nil {
+		return nil, nil
+	}
+	return d.recoveryAction, nil
+}
+
 type fakePageSource struct {
 	xml string
 }
@@ -106,6 +120,7 @@ type fakeDriver struct {
 	currentPkgCalls  int
 	lastSwipeStart   types.Point
 	lastSwipeEnd     types.Point
+	backCount        int
 	envResult        *common.EnvironmentCheckResult
 	envErr           error
 	crashAfterClick  bool
@@ -150,7 +165,10 @@ func (f *fakeDriver) Name() string { return "fake-device" }
 func (f *fakeDriver) GetInfo() map[string]interface{} {
 	return map[string]interface{}{"device": "fake"}
 }
-func (f *fakeDriver) Back() error                                     { return nil }
+func (f *fakeDriver) Back() error {
+	f.backCount++
+	return nil
+}
 func (f *fakeDriver) StartApp(packageName string) error               { f.startCount++; return nil }
 func (f *fakeDriver) RestartApp(packageName string, clean bool) error { return nil }
 func (f *fakeDriver) ActivateApp(packageName string) error {
@@ -1028,6 +1046,82 @@ func TestRunnerSkipEffectiveTouchAreaWhenSerialMismatch(t *testing.T) {
 	const expectY = 0.5
 	if abs(driver.lastClickPoint.X-expectX) > 1e-6 || abs(driver.lastClickPoint.Y-expectY) > 1e-6 {
 		t.Fatalf("序列号不匹配时不应映射: got=(%.6f, %.6f) expect=(%.6f, %.6f)", driver.lastClickPoint.X, driver.lastClickPoint.Y, expectX, expectY)
+	}
+}
+
+func TestRunnerDetectNoChangeScrollAndTriggerRecovery(t *testing.T) {
+	decider := &recoveryAwareDecider{
+		fakeDecider: fakeDecider{
+			commands: []*types.ActionCommand{
+				{Act: types.SCROLL_BOTTOM_UP, Pos: *types.NewRect(0, 0, 1, 1)},
+			},
+		},
+		recoveryAction: &types.ActionCommand{Act: types.BACK},
+	}
+	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}
+
+	runner, err := NewRunner(decider, driver, Config{
+		MaxSteps:               4,
+		StepInterval:           0,
+		KeepStepRecords:        true,
+		StopOnCrash:            true,
+		StopOnANR:              true,
+		BlockNoChangeThreshold: 3,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if decider.recoveryCalls == 0 {
+		t.Fatalf("预期触发一次 block recovery")
+	}
+	if driver.backCount == 0 {
+		t.Fatalf("预期执行恢复 BACK 动作")
+	}
+}
+
+func TestRunnerNoRecoveryForNoChangeClick(t *testing.T) {
+	decider := &recoveryAwareDecider{
+		fakeDecider: fakeDecider{
+			commands: []*types.ActionCommand{
+				{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
+			},
+		},
+		recoveryAction: &types.ActionCommand{Act: types.BACK},
+	}
+	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}
+
+	runner, err := NewRunner(decider, driver, Config{
+		MaxSteps:               4,
+		StepInterval:           0,
+		KeepStepRecords:        true,
+		StopOnCrash:            true,
+		StopOnANR:              true,
+		BlockNoChangeThreshold: 3,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if decider.recoveryCalls != 0 {
+		t.Fatalf("CLICK 无变化不应触发 block recovery，实际调用: %d", decider.recoveryCalls)
+	}
+	if driver.backCount != 0 {
+		t.Fatalf("CLICK 无变化不应执行 BACK，实际: %d", driver.backCount)
 	}
 }
 

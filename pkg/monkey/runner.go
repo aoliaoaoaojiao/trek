@@ -3,6 +3,7 @@ package monkey
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"math/rand"
 	"regexp"
@@ -31,6 +32,7 @@ const (
 	defaultPageSourceType                    = "uia"
 	defaultForegroundMonitorInterval         = 300 * time.Millisecond
 	defaultHealthSignalMonitorInterval       = 500 * time.Millisecond
+	defaultBlockNoChangeThreshold            = 3
 )
 
 // StopReason 表示 Monkey 运行停止原因。
@@ -80,6 +82,8 @@ type Config struct {
 	ForegroundMonitorInterval   time.Duration
 	HealthSignalMonitorInterval time.Duration
 	EffectiveTouchArea          *EffectiveTouchArea
+	EnableBlockRecovery         *bool
+	BlockNoChangeThreshold      int
 }
 
 type EffectiveTouchArea struct {
@@ -147,6 +151,12 @@ type WeightedDecider interface {
 // StepResultObserver 是可选接口，用于接收每步执行后的复盘信息。
 type StepResultObserver interface {
 	OnStepResult(result session.StepResultInput) error
+}
+
+// BlockRecoveryDecider 是可选接口：当 Runner 识别到“滚动无进展阻塞”时，
+// 由决策层提供恢复动作；未实现时 Runner 使用 BACK 兜底。
+type BlockRecoveryDecider interface {
+	NextBlockRecoveryAction(pageName string, input session.ActionInput) (*types.ActionCommand, error)
 }
 
 type currentPackageProvider interface {
@@ -292,12 +302,14 @@ func (m *foregroundPackageMonitor) setCurrentPackage(pkg string) {
 
 // Runner 执行 Smart Monkey 真机闭环。
 type Runner struct {
-	decider       Decider
-	driver        common.IDriver
-	cfg           Config
-	rng           *rand.Rand
-	monitor       *foregroundPackageMonitor
-	healthMonitor *healthSignalMonitor
+	decider              Decider
+	driver               common.IDriver
+	cfg                  Config
+	rng                  *rand.Rand
+	monitor              *foregroundPackageMonitor
+	healthMonitor        *healthSignalMonitor
+	blockDetector        *blockDetector
+	pendingBlockRecovery bool
 }
 
 // NewRunner 创建 Monkey Runner。
@@ -311,10 +323,11 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 
 	cfg = normalizeConfig(cfg)
 	return &Runner{
-		decider: decider,
-		driver:  driver,
-		cfg:     cfg,
-		rng:     rand.New(rand.NewSource(time.Now().UnixNano())),
+		decider:       decider,
+		driver:        driver,
+		cfg:           cfg,
+		rng:           rand.New(rand.NewSource(time.Now().UnixNano())),
+		blockDetector: newBlockDetector(cfg.BlockNoChangeThreshold),
 	}, nil
 }
 
@@ -445,10 +458,12 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		record.PageName = pageName
 		report.PageVisitCount[pageName]++
 
-		cmd, err := r.nextCommand(pageName, session.ActionInput{
+		input := session.ActionInput{
 			XMLDescOfGuiTree: xml,
 			Screenshot:       screenshot,
-		})
+		}
+
+		cmd, err := r.nextCommandWithRecovery(pageName, input)
 		if err != nil {
 			record.Err = err.Error()
 			r.markFailed(report, record, stepStart)
@@ -512,6 +527,12 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		}
 
 		afterPage := r.capturePageSnapshot(pageSource, pageName)
+		if r.shouldEnableBlockRecovery() && r.blockDetector.Observe(cmd, beforePage, afterPage) {
+			r.pendingBlockRecovery = true
+			logger.Warnf("monkey step=%d detected stagnation: %d consecutive no-change scroll actions, schedule recovery on next step",
+				step, r.blockDetector.consecutiveNoChangeScroll)
+			r.blockDetector.Reset()
+		}
 		crash, anr := r.currentHealthSignals()
 		r.notifyStepResult(step, cmd, true, "", time.Since(stepStart).Milliseconds(), crash, anr, beforePage, afterPage)
 		r.appendRecord(report, record, stepStart)
@@ -913,6 +934,38 @@ func (r *Runner) nextCommand(pageName string, input session.ActionInput) (*types
 	return r.decider.NextActionWithInput(pageName, input)
 }
 
+func (r *Runner) nextCommandWithRecovery(pageName string, input session.ActionInput) (*types.ActionCommand, error) {
+	if !r.pendingBlockRecovery {
+		return r.nextCommand(pageName, input)
+	}
+	r.pendingBlockRecovery = false
+	cmd, err := r.nextBlockRecoveryCommand(pageName, input)
+	if err != nil {
+		logger.Warnf("build block recovery command failed, fallback to normal command: %v", err)
+		return r.nextCommand(pageName, input)
+	}
+	if cmd == nil {
+		logger.Warnf("block recovery command is nil, fallback to normal command")
+		return r.nextCommand(pageName, input)
+	}
+	logger.Infof("block recovery command selected: %s", cmd.DetailLogString())
+	return cmd, nil
+}
+
+func (r *Runner) nextBlockRecoveryCommand(pageName string, input session.ActionInput) (*types.ActionCommand, error) {
+	if provider, ok := r.decider.(BlockRecoveryDecider); ok && provider != nil {
+		cmd, err := provider.NextBlockRecoveryAction(pageName, input)
+		if err != nil {
+			return nil, err
+		}
+		if cmd != nil {
+			return cmd, nil
+		}
+	}
+	// 默认恢复动作：返回 BACK，避免直接应用级 RESTART。
+	return &types.ActionCommand{Act: types.BACK}, nil
+}
+
 func (r *Runner) pickWeightedCandidate(candidates []WeightedCandidate) *types.ActionCommand {
 	if len(candidates) == 0 {
 		return nil
@@ -997,6 +1050,9 @@ func normalizeConfig(cfg Config) Config {
 		cfg.StopOnCrash = true
 		cfg.StopOnANR = true
 	}
+	if cfg.BlockNoChangeThreshold <= 0 {
+		cfg.BlockNoChangeThreshold = defaultBlockNoChangeThreshold
+	}
 	if cfg.EffectiveTouchArea != nil {
 		cfg.EffectiveTouchArea.Serial = strings.TrimSpace(cfg.EffectiveTouchArea.Serial)
 		cfg.EffectiveTouchArea.PackageName = strings.TrimSpace(cfg.EffectiveTouchArea.PackageName)
@@ -1006,6 +1062,63 @@ func normalizeConfig(cfg Config) Config {
 		}
 	}
 	return cfg
+}
+
+func (r *Runner) shouldEnableBlockRecovery() bool {
+	if r == nil {
+		return false
+	}
+	if r.cfg.EnableBlockRecovery == nil {
+		return true
+	}
+	return *r.cfg.EnableBlockRecovery
+}
+
+type blockDetector struct {
+	noChangeThreshold         int
+	consecutiveNoChangeScroll int
+}
+
+func newBlockDetector(noChangeThreshold int) *blockDetector {
+	if noChangeThreshold <= 0 {
+		noChangeThreshold = defaultBlockNoChangeThreshold
+	}
+	return &blockDetector{noChangeThreshold: noChangeThreshold}
+}
+
+func (d *blockDetector) Observe(cmd *types.ActionCommand, before session.PageSnapshot, after *session.PageSnapshot) bool {
+	if d == nil || cmd == nil || !cmd.IsScrollAction() || after == nil {
+		d.Reset()
+		return false
+	}
+	beforeSig := pageSignature(before.PageName, before.XML)
+	afterSig := pageSignature(after.PageName, after.XML)
+	if beforeSig != "" && beforeSig == afterSig {
+		d.consecutiveNoChangeScroll++
+	} else {
+		d.Reset()
+	}
+	return d.consecutiveNoChangeScroll >= d.noChangeThreshold
+}
+
+func (d *blockDetector) Reset() {
+	if d == nil {
+		return
+	}
+	d.consecutiveNoChangeScroll = 0
+}
+
+func pageSignature(pageName string, xml string) string {
+	name := strings.TrimSpace(pageName)
+	content := strings.TrimSpace(xml)
+	if name == "" && content == "" {
+		return ""
+	}
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(name))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(content))
+	return fmt.Sprintf("%x", h.Sum64())
 }
 
 // ResolvePageName 使用 Runner 同款逻辑解析页面名，便于调试和外部调用。

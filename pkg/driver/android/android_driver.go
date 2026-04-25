@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -260,16 +261,7 @@ func (a *AndroidDriver) CheckCrash(packageName string) (bool, error) {
 
 	pkgLower := strings.ToLower(strings.TrimSpace(packageName))
 
-	dropboxOut, err := a.device.RunShellCommand("dumpsys", "dropbox", "--print")
-	if err == nil {
-		dropLower := strings.ToLower(dropboxOut)
-		if strings.Contains(dropLower, "crash") || strings.Contains(dropLower, "native_crash") {
-			if pkgLower == "" || strings.Contains(dropLower, pkgLower) {
-				return true, nil
-			}
-		}
-	}
-
+	// 只基于当前日志与进程状态判断 crash，避免被 dropbox 历史记录误判。
 	logcatOut, err := a.device.RunShellCommand("logcat", "-d", "-b", "main", "-t", "50", "AndroidRuntime:E", "*:S")
 	if err != nil {
 		return false, err
@@ -299,26 +291,34 @@ func (a *AndroidDriver) CheckANR(packageName string) (bool, error) {
 
 	pkgLower := strings.ToLower(strings.TrimSpace(packageName))
 
-	dropboxOut, err := a.device.RunShellCommand("dumpsys", "dropbox", "--print")
-	if err == nil {
-		dropLower := strings.ToLower(dropboxOut)
-		if strings.Contains(dropLower, "anr") {
-			if pkgLower == "" || strings.Contains(dropLower, pkgLower) {
-				return true, nil
-			}
-		}
-	}
-
+	// 只基于当前系统进程状态判断 ANR，避免被 dropbox 历史记录误判。
 	dumpsysOut, err := a.device.RunShellCommand("dumpsys", "activity", "processes")
 	if err != nil {
 		return false, err
 	}
 	dumpLower := strings.ToLower(dumpsysOut)
-	if strings.Contains(dumpLower, "notresponding=true") {
-		if pkgLower == "" || strings.Contains(dumpLower, pkgLower) {
-			return true, nil
-		}
+
+	// 未指定包名时，沿用全局判定。
+	if pkgLower == "" {
+		return strings.Contains(dumpLower, "notresponding=true"), nil
 	}
+
+	// 精确匹配“目标进程块内”的 notResponding=true，避免“包名出现 + 其他进程 ANR”误判。
+	// 说明：
+	// 1. 先锚定包含目标包名的 ProcessRecord 行
+	// 2. 在其后有限行范围（最多 120 行）内查找 notResponding=true
+	// 3. 使用 DOTALL/不区分大小写匹配，兼容不同 ROM 输出格式
+	pattern := fmt.Sprintf(`(?is)processrecord\{[^\n]*%s[^\n]*\n(?:[^\n]*\n){0,120}?[^\n]*notresponding=true`, regexp.QuoteMeta(pkgLower))
+	re := regexp.MustCompile(pattern)
+	if re.MatchString(dumpLower) {
+		return true, nil
+	}
+
+	// 调试辅助：当出现全局 ANR 但目标包未命中时输出一次提示，便于排查是否他进程 ANR。
+	if strings.Contains(dumpLower, "notresponding=true") {
+		logger.Debugf("CheckANR detected global notResponding=true but target package not matched, package=%s", pkgLower)
+	}
+
 	return false, nil
 }
 

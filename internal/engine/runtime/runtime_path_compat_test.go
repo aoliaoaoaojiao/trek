@@ -2,19 +2,15 @@ package runtime
 
 import (
 	"testing"
-	oldmodel "trek/internal/engine/decision/reuse/core/model"
 	oldelements "trek/internal/engine/decision/shared/elements"
 
 	"trek/internal/engine/decision"
 	xmlperception "trek/internal/engine/perception/xml"
 )
 
-func TestLegacyAndNewPathsAreBothUsable(t *testing.T) {
-	if oldmodel.NewModel("pkg-old") == nil {
-		t.Fatalf("legacy core/model path should still be usable")
-	}
+func TestDecisionAndPerceptionPathsAreUsable(t *testing.T) {
 	if decision.NewModel("pkg-new") == nil {
-		t.Fatalf("new decision path should be usable")
+		t.Fatalf("decision model path should be usable")
 	}
 
 	if oldelements.NewAndroidElement() == nil {

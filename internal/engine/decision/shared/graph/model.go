@@ -1,4 +1,4 @@
-package model
+package graph
 
 import (
 	types2 "trek/internal/engine/decision/shared/types"

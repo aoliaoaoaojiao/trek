@@ -43,7 +43,7 @@ const (
 	StopPreflightFailed        StopReason = "preflight_failed"
 	StopMaxConsecutiveFailures StopReason = "max_consecutive_failures"
 	StopCrashDetectedLogcat    StopReason = "crash_logcat"
-	StopANRDetectedLogcat      StopReason = "anr_logcat"
+	StopANRDetectedLogcat      StopReason = "anr_signal"
 
 	// 兼容常量：保留旧名称，指向更精确的新原因。
 	StopCrashDetected StopReason = StopCrashDetectedLogcat

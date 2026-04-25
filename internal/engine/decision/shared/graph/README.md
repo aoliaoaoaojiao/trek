@@ -1,6 +1,6 @@
-# Model 子域
+# Graph 子域
 
-`model` 负责状态图与 Agent 容器基础能力：
+`graph` 负责状态图与 Agent 容器基础能力：
 - 维护状态图（`Graph`）
 - 维护设备 Agent 映射
 - 提供包名、任务 ID 等通用元信息存取

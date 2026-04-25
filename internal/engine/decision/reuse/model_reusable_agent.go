@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 	"trek/internal/engine/decision"
-	"trek/internal/engine/decision/shared/model"
+	sharedgraph "trek/internal/engine/decision/shared/graph"
 	"trek/internal/engine/decision/shared/tool"
 	"trek/internal/engine/decision/shared/types"
 	"trek/logger"
@@ -37,7 +37,7 @@ type reuseModelSnapshot struct {
 }
 
 type ModelReusableAgent struct {
-	model                           *model.Model
+	model                           *sharedgraph.Model
 	lastState                       types.IState
 	currentState                    types.IState
 	newState                        types.IState
@@ -78,7 +78,7 @@ func (a *ModelReusableAgent) Stop() {
 	})
 }
 
-var createReuseAgent = func(m *model.Model, deviceType types.DeviceType) (types.IAgent, error) {
+var createReuseAgent = func(m *sharedgraph.Model, deviceType types.DeviceType) (types.IAgent, error) {
 	reuseAgent := NewModelReusableAgent(m)
 
 	reuseAgent.LoadReuseModel()
@@ -105,10 +105,10 @@ var createReuseAgent = func(m *model.Model, deviceType types.DeviceType) (types.
 }
 
 func init() {
-	model.RegisterAgentCreator(decision.AlgorithmReuse.String(), createReuseAgent)
+	sharedgraph.RegisterAgentCreator(decision.AlgorithmReuse.String(), createReuseAgent)
 }
 
-func NewModelReusableAgent(model *model.Model) *ModelReusableAgent {
+func NewModelReusableAgent(model *sharedgraph.Model) *ModelReusableAgent {
 	agent := &ModelReusableAgent{
 		validateFilter:                  NewActionFilterValidDatePriority(),
 		graphStableCounter:              0,
@@ -248,11 +248,11 @@ func (a *ModelReusableAgent) GetAlgorithmType() string {
 	return a.algorithmType
 }
 
-func (a *ModelReusableAgent) GetModel() *model.Model {
+func (a *ModelReusableAgent) GetModel() *sharedgraph.Model {
 	return a.model
 }
 
-func (a *ModelReusableAgent) SetModel(model *model.Model) {
+func (a *ModelReusableAgent) SetModel(model *sharedgraph.Model) {
 	a.model = model
 }
 

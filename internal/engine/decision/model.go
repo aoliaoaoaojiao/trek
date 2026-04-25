@@ -3,28 +3,28 @@ package decision
 import (
 	"fmt"
 	"trek/internal/engine/config"
-	sharedmodel "trek/internal/engine/decision/shared/model"
+	sharedgraph "trek/internal/engine/decision/shared/graph"
 	types2 "trek/internal/engine/decision/shared/types"
 	"trek/logger"
 )
 
 type Model struct {
-	core          *sharedmodel.Model
+	core          *sharedgraph.Model
 	configManager *config.Manager
 }
 
-type IAgentCreator = sharedmodel.IAgentCreator
+type IAgentCreator = sharedgraph.IAgentCreator
 type IElementCreator func(guiContent string) (types2.IElement, error)
-type ActionCounter = sharedmodel.ActionCounter
-type Graph = sharedmodel.Graph
-type VisitCountReward = sharedmodel.VisitCountReward
+type ActionCounter = sharedgraph.ActionCounter
+type Graph = sharedgraph.Graph
+type VisitCountReward = sharedgraph.VisitCountReward
 
-const DefaultDeviceID = sharedmodel.DefaultDeviceID
+const DefaultDeviceID = sharedgraph.DefaultDeviceID
 
 var elementCreators = make(map[string]IElementCreator)
 
 func RegisterAgentCreator(algorithmType string, agentCreator IAgentCreator) {
-	sharedmodel.RegisterAgentCreator(algorithmType, agentCreator)
+	sharedgraph.RegisterAgentCreator(algorithmType, agentCreator)
 }
 
 func RegisterElementCreator(eleType string, creator IElementCreator) {
@@ -33,17 +33,17 @@ func RegisterElementCreator(eleType string, creator IElementCreator) {
 
 func NewModel(packageName string) *Model {
 	return &Model{
-		core:          sharedmodel.NewModel(packageName),
+		core:          sharedgraph.NewModel(packageName),
 		configManager: config.GetInstance(),
 	}
 }
 
 func NewActionCounter() *ActionCounter {
-	return sharedmodel.NewActionCounter()
+	return sharedgraph.NewActionCounter()
 }
 
 func NewGraph() *Graph {
-	return sharedmodel.NewGraph()
+	return sharedgraph.NewGraph()
 }
 
 func (m *Model) GetGraph() *Graph {

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"sync/atomic"
 	"time"
-	"trek/internal/engine/core/tool"
+	"trek/internal/engine/decision/shared/tool"
 	"trek/logger"
 )
 
@@ -16,7 +16,6 @@ type Action struct {
 	PriorityNodeImpl
 	Hashcode   uintptr
 	ActionType ActionType
-	QValue     float64
 }
 
 func NewAction(actionType ActionType) *Action {
@@ -25,7 +24,6 @@ func NewAction(actionType ActionType) *Action {
 		PriorityNodeImpl: *NewPriorityNode(),
 		Hashcode:         0,
 		ActionType:       actionType,
-		QValue:           0,
 	}
 }
 
@@ -102,14 +100,6 @@ func (a *Action) Equal(other *Action) bool {
 	return a.ActionType == other.ActionType
 }
 
-func (a *Action) SetQValue(value float64) {
-	a.QValue = value
-}
-
-func (a *Action) GetQValue() float64 {
-	return a.QValue
-}
-
 func (a *Action) GetId() string {
 	return "g0a" + a.Node.GetId()
 }
@@ -120,8 +110,8 @@ func (a *Action) Visit(timestamp time.Time) {
 }
 
 func (a *Action) String() string {
-	return fmt.Sprintf("{id: %s, act: %s, value: %.2f}",
-		a.GetId(), a.ActionType.String(), a.QValue)
+	return fmt.Sprintf("{id: %s, act: %s}",
+		a.GetId(), a.ActionType.String())
 }
 
 var (
@@ -301,34 +291,6 @@ func (actions StatefulActionList) SortByPriority() {
 	sort.Slice(actions, func(i, j int) bool {
 		return actions[i].GetPriority() < actions[j].GetPriority()
 	})
-}
-
-func (actions StatefulActionList) FilterByQValue(minQValue float64) StatefulActionList {
-	result := make(StatefulActionList, 0)
-	for _, action := range actions {
-		if action.GetQValue() >= minQValue {
-			result = append(result, action)
-		}
-	}
-	return result
-}
-
-func (actions StatefulActionList) GetMaxQValueAction() *StatefulAction {
-	if len(actions) == 0 {
-		return nil
-	}
-
-	maxAction := actions[0]
-	maxQValue := maxAction.GetQValue()
-
-	for _, action := range actions[1:] {
-		if action.GetQValue() > maxQValue {
-			maxAction = action
-			maxQValue = action.GetQValue()
-		}
-	}
-
-	return maxAction
 }
 
 func (actions StatefulActionList) GetRandomUnvisitedAction() *StatefulAction {

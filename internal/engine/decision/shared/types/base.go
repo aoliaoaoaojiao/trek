@@ -108,30 +108,6 @@ const (
 	Inputable                 = Enable << 5
 )
 
-// AlgorithmType 算法类型
-type AlgorithmType int
-
-const (
-	Random AlgorithmType = 0
-	Reuse  AlgorithmType = 4
-	Server AlgorithmType = 6
-)
-
-// AlgorithmTypeName 算法类型名称映射
-var AlgorithmTypeName = map[AlgorithmType]string{
-	Random: "Random",
-	Reuse:  "reuse",
-	Server: "Server",
-}
-
-// String 返回算法类型的字符串表示
-func (at AlgorithmType) String() string {
-	if name, ok := AlgorithmTypeName[at]; ok {
-		return name
-	}
-	return fmt.Sprintf("Unknown(%d)", at)
-}
-
 // DeviceType 设备类型
 type DeviceType int
 

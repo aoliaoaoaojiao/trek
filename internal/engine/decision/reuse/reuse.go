@@ -1,12 +1,11 @@
-﻿// Package reuse 提供 reuse 策略子域对外复用的公共符号与兼容导出。
+// Package reuse exports compatibility symbols for reuse strategy.
 package reuse
 
 import (
-	"trek/internal/engine/core/tool"
-	"trek/internal/engine/core/types"
+	"trek/internal/engine/decision/shared/tool"
+	"trek/internal/engine/decision/shared/types"
 )
 
-// 兼容导出：复用 core 中常用哈希与控件组合工具，降低迁移改动范围。
 var (
 	HashString         = tool.HashString
 	HashInt            = tool.HashInt

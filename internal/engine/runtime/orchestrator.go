@@ -4,15 +4,15 @@ import (
 	"context"
 	"fmt"
 
-	"trek/internal/engine/core/types"
 	"trek/internal/engine/decision"
+	"trek/internal/engine/decision/shared/types"
 	"trek/internal/engine/perception"
 	perceptionfusion "trek/internal/engine/perception/fusion"
 	perceptionvision "trek/internal/engine/perception/vision"
 	xmlperception "trek/internal/engine/perception/xml"
 )
 
-// Orchestrator 负责编排感知、策略、规划和执行流程。
+// Orchestrator 璐熻矗缂栨帓鎰熺煡銆佺瓥鐣ャ€佽鍒掑拰鎵ц娴佺▼銆?
 type Orchestrator struct {
 	perceptor perception.Perceptor
 	policy    decision.Policy
@@ -130,7 +130,7 @@ func newDefaultOrchestrator() *Orchestrator {
 func newOrchestratorWithMode(mode perceptionfusion.Mode) *Orchestrator {
 	fusionPerceptor, err := perceptionfusion.NewPerceptor(mode, &xmlObservationPerceptor{}, perceptionvision.NewPerceptor())
 	if err != nil {
-		// 容错回退：异常模式默认降级到 XML-only，避免中断现有流程。
+		// 瀹归敊鍥為€€锛氬紓甯告ā寮忛粯璁ら檷绾у埌 XML-only锛岄伩鍏嶄腑鏂幇鏈夋祦绋嬨€?
 		fusionPerceptor, err = perceptionfusion.NewPerceptor(perceptionfusion.ModeXMLOnly, &xmlObservationPerceptor{}, perceptionvision.NewPerceptor())
 		if err != nil {
 			panic(fmt.Errorf("failed to init default perceptor: %w", err))

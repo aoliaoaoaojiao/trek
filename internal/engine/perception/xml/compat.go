@@ -1,26 +1,26 @@
-﻿package xml
+package xml
 
 import (
-	oldelements "trek/internal/engine/core/types/elements"
-	"trek/internal/engine/core/types"
+	"trek/internal/engine/decision/shared/elements"
+	"trek/internal/engine/decision/shared/types"
 )
 
-type ElementType = oldelements.ElementType
+type ElementType = elements.ElementType
 
 const (
-	ANDROID_ELEMENT = oldelements.ANDROID_ELEMENT
+	ANDROID_ELEMENT = elements.ANDROID_ELEMENT
 )
 
-type AndroidElement = oldelements.AndroidElement
+type AndroidElement = elements.AndroidElement
 
 func CreateAndroidElement(tag string) (types.IElement, error) {
-	return oldelements.CreateAndroidElement(tag)
+	return elements.CreateAndroidElement(tag)
 }
 
 func CreateAndroidElementFromXml(xmlContent string) (types.IElement, error) {
-	return oldelements.CreateAndroidElementFromXml(xmlContent)
+	return elements.CreateAndroidElementFromXml(xmlContent)
 }
 
 func NewAndroidElement() *AndroidElement {
-	return oldelements.NewAndroidElement()
+	return elements.NewAndroidElement()
 }

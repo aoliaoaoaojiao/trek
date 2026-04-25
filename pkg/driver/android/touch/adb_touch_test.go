@@ -2,7 +2,7 @@ package touch_test
 
 import (
 	"testing"
-	"trek/internal/engine/core/types"
+	"trek/internal/engine/decision/shared/types"
 	"trek/pkg/driver/android/touch"
 )
 

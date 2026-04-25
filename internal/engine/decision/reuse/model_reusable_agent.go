@@ -7,9 +7,10 @@ import (
 	"os"
 	"sync"
 	"time"
-	"trek/internal/engine/core/model"
-	"trek/internal/engine/core/tool"
-	"trek/internal/engine/core/types"
+	"trek/internal/engine/decision"
+	"trek/internal/engine/decision/shared/model"
+	"trek/internal/engine/decision/shared/tool"
+	"trek/internal/engine/decision/shared/types"
 	"trek/logger"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -61,15 +62,17 @@ type ModelReusableAgent struct {
 	previousActions []types.IAction
 	reuseModel      ActionPageStatistics
 	reuseQValue     ActionQValue
+	qValueFilter    types.IStatefulActionFilter
 	modelSavePath   string
 	reuseModelLock  sync.Mutex
+	visitStats      reuseVisitStats
 
 	stopChan chan struct{}
 	stopOnce sync.Once
 }
 
 func (a *ModelReusableAgent) Stop() {
-	a.SaveReuseModel() // 閸︺劌浠犲銏犲娣囨繂鐡ㄥΟ鈥崇€?
+	a.SaveReuseModel() // 闂備線娼荤拹鐔煎礉鐏炲墽顩烽柣妯烘▕濞间即鏌曡箛鏇炐㈡い銈呮噹鑿愰柛銉ｅ妿缁犳捇鏌ｆ幊閸斿矁鐏掗梺鐐藉劚绾绢參鍩€?
 	a.stopOnce.Do(func() {
 		close(a.stopChan)
 	})
@@ -80,9 +83,9 @@ var createReuseAgent = func(m *model.Model, deviceType types.DeviceType) (types.
 
 	reuseAgent.LoadReuseModel()
 
-	// 启动定时自动保存协程，避免长时间运行时模型状态丢失。
+	// 闁告凹鍨版慨鈺冣偓瑙勭濡炲倿鎳涢鍕楀ǎ鍥ㄧ箓閻°劑宕¤箛鏇楁煠闁挎稑鐭傛导鈺呭礂瀹ュ姣愰柡鍐ㄧ埣濡寧娼婚幇顖ｆ斀闁哄啳鍩栬啯闁搞劌顑囨慨鎼佸箑娴ｉ攱涓㈠鏈电┒閳?
 	go func() {
-		ticker := time.NewTicker(10 * time.Minute) // 濮?0閸掑棝鎸撴穱婵嗙摠娑撯偓濞?
+		ticker := time.NewTicker(10 * time.Minute) // 婵?0闂備礁鎲＄敮鎺懳涘┑瀣闁规儳顕埞宥嗙節闂堟稒顥犻柟鐣屽Т閳藉骞橀姘婵?
 		defer ticker.Stop()
 
 		for {
@@ -102,12 +105,12 @@ var createReuseAgent = func(m *model.Model, deviceType types.DeviceType) (types.
 }
 
 func init() {
-	model.RegisterAgentCreator(types.Reuse.String(), createReuseAgent)
+	model.RegisterAgentCreator(decision.AlgorithmReuse.String(), createReuseAgent)
 }
 
 func NewModelReusableAgent(model *model.Model) *ModelReusableAgent {
 	agent := &ModelReusableAgent{
-		validateFilter:                  types.NewActionFilterValidDatePriority(),
+		validateFilter:                  NewActionFilterValidDatePriority(),
 		graphStableCounter:              0,
 		stateStableCounter:              0,
 		pageNameStableCounter:           0,
@@ -117,7 +120,7 @@ func NewModelReusableAgent(model *model.Model) *ModelReusableAgent {
 		appPageNameJustStarted:          false,
 		currentStateRecovered:           false,
 		currentStateBlockTimes:          0,
-		algorithmType:                   types.Reuse.String(),
+		algorithmType:                   decision.AlgorithmReuse.String(),
 		model:                           model,
 		alpha:                           SarsaRLDefaultAlpha,
 		epsilon:                         SarsaRLDefaultEpsilon,
@@ -125,8 +128,14 @@ func NewModelReusableAgent(model *model.Model) *ModelReusableAgent {
 		previousActions:                 make([]types.IAction, 0),
 		reuseModel:                      make(ActionPageStatistics),
 		reuseQValue:                     make(ActionQValue),
-		stopChan:                        make(chan struct{}),
+		visitStats: reuseVisitStats{
+			visitedPages: make(map[string]struct{}),
+		},
+		stopChan: make(chan struct{}),
 	}
+	agent.qValueFilter = NewActionFilterValidValuePriority(func(action *types.StatefulAction) float64 {
+		return agent.getQValueByHash(action.Hash())
+	})
 	if model.GetPackageName() != "" {
 		agent.modelSavePath = fmt.Sprintf("./%s_reuse.model", model.GetPackageName())
 	} else {
@@ -144,6 +153,7 @@ func (a *ModelReusableAgent) CreateState(pageName string, element types.IElement
 
 func (a *ModelReusableAgent) OnAddNode(node types.IState) {
 	a.newState = node
+	a.visitStats.Record(node)
 
 	if BLOCK_STATETIME_RESTART != -1 {
 		if a.newState.Equals(a.currentState) {
@@ -337,7 +347,7 @@ func (a *ModelReusableAgent) handleNullAction() types.IAction {
 }
 
 func (a *ModelReusableAgent) newStateRandomPickAction(filter types.IStatefulActionFilter) types.IAction {
-	return a.newState.RandomPickAction(filter, true)
+	return RandomPickAction(a.newState, filter, true)
 }
 
 func (a *ModelReusableAgent) adjustActions() {
@@ -399,7 +409,7 @@ func (a *ModelReusableAgent) SelectNewAction() types.IAction {
 		return action
 	}
 
-	action = a.newState.RandomPickUnvisitedAction()
+	action = RandomPickUnvisitedAction(a.newState)
 	if action != nil {
 		logger.Infof("select action in unvisited action")
 		return action
@@ -430,8 +440,7 @@ func (a *ModelReusableAgent) computeAlphaValue() {
 		return
 	}
 
-	graphRef := a.model.GetGraph()
-	totalVisitCount := graphRef.GetTotalDistri()
+	totalVisitCount := a.visitStats.Total()
 
 	movingAlpha := 0.5
 	if totalVisitCount > 20000 {
@@ -459,8 +468,7 @@ func (a *ModelReusableAgent) computeRewardOfLatestAction() float64 {
 	}
 
 	a.computeAlphaValue()
-	graphRef := a.model.GetGraph()
-	visitedPages := graphRef.GetVisitedPages()
+	visitedPages := a.visitStats.SnapshotPages()
 	logger.Debugf("computeReward: visitedPages count %d", len(visitedPages))
 
 	if len(a.previousActions) > 0 {
@@ -541,11 +549,27 @@ func (a *ModelReusableAgent) getStateActionExpectationValue(state types.IState, 
 }
 
 func (a *ModelReusableAgent) getQValue(action types.IAction) float64 {
-	return action.GetQValue()
+	if action == nil {
+		return 0
+	}
+	return a.getQValueByHash(action.Hash())
 }
 
 func (a *ModelReusableAgent) setQValue(action types.IAction, qValue float64) {
-	action.SetQValue(qValue)
+	if action == nil {
+		return
+	}
+	a.reuseQValue[action.Hash()] = qValue
+}
+
+func (a *ModelReusableAgent) getQValueByHash(actionHash uintptr) float64 {
+	if a.reuseQValue == nil {
+		return 0
+	}
+	if qv, ok := a.reuseQValue[actionHash]; ok {
+		return qv
+	}
+	return 0
 }
 
 func (a *ModelReusableAgent) updateReuseModel() {
@@ -584,10 +608,10 @@ func (a *ModelReusableAgent) updateReuseModel() {
 		entryMap[pageName]++
 	}
 
-	a.reuseQValue[hash] = modelAction.GetQValue()
+	a.reuseQValue[hash] = a.getQValueByHash(hash)
 	logger.Debugf("Updated Q-value for action %s: %.6f",
 		modelAction.GetId(),
-		modelAction.GetQValue())
+		a.getQValueByHash(hash))
 }
 
 func (a *ModelReusableAgent) selectUnperformedActionNotInReuseModel() types.IAction {
@@ -644,8 +668,7 @@ func (a *ModelReusableAgent) selectUnperformedActionInReuseModel() types.IAction
 				continue
 			}
 
-			graphRef := a.model.GetGraph()
-			visitedActivities := graphRef.GetVisitedPages()
+			visitedActivities := a.visitStats.SnapshotPages()
 
 			qualityValue := a.probabilityOfVisitingNewActivities(action, visitedActivities)
 
@@ -674,8 +697,7 @@ func (a *ModelReusableAgent) selectActionByQValue() types.IAction {
 	var returnAction types.IAction
 	maxQ := -math.MaxFloat64
 
-	graphRef := a.model.GetGraph()
-	visitedActivities := graphRef.GetVisitedPages()
+	visitedActivities := a.visitStats.SnapshotPages()
 
 	for _, action := range a.newState.GetActions() {
 		qv := 0.0
@@ -711,7 +733,7 @@ func (a *ModelReusableAgent) selectActionByQValue() types.IAction {
 func (a *ModelReusableAgent) selectNewActionEpsilonGreedyRandomly() types.IAction {
 	if a.eGreedy() {
 		logger.Debugf("Try to select the max value action")
-		action := a.newState.GreedyPickAction(types.EnableValidValuePriorityFilter)
+		action := GreedyPickAction(a.newState, a.qValueFilter)
 		if action != nil {
 
 		} else {
@@ -720,7 +742,7 @@ func (a *ModelReusableAgent) selectNewActionEpsilonGreedyRandomly() types.IActio
 		return action
 	}
 	logger.Debugf("Try to randomly select a value action.")
-	action := a.newStateRandomPickAction(types.EnableValidValuePriorityFilter)
+	action := a.newStateRandomPickAction(a.qValueFilter)
 	if action != nil {
 
 	} else {

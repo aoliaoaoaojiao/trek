@@ -2,9 +2,9 @@ package runtime
 
 import (
 	"testing"
+	oldmodel "trek/internal/engine/decision/reuse/core/model"
+	oldelements "trek/internal/engine/decision/shared/elements"
 
-	oldmodel "trek/internal/engine/core/model"
-	oldelements "trek/internal/engine/core/types/elements"
 	"trek/internal/engine/decision"
 	xmlperception "trek/internal/engine/perception/xml"
 )

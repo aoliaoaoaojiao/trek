@@ -4,12 +4,6 @@ import (
 	"time"
 )
 
-// QValueNode 具有Q值的节点接口
-type QValueNode interface {
-	GetQValue() float64
-	SetQValue(qValue float64)
-}
-
 // EnableNode 可启用接口
 type EnableNode interface {
 	GetEnabled() bool
@@ -21,7 +15,6 @@ type IGraphListener interface {
 
 type IAgent interface {
 	IGraphListener
-	GetCurrentStateBlockTimes() int
 	ResolveNewAction() IAction
 	SelectNewAction() IAction
 	UpdateStrategy()
@@ -29,6 +22,11 @@ type IAgent interface {
 	GetAlgorithmType() string
 	CreateState(pageName string, element IElement) IState
 	Stop()
+}
+
+// StateBlockAwareAgent 是可选能力接口；仅在策略实现支持“状态阻塞检测”时提供。
+type StateBlockAwareAgent interface {
+	GetCurrentStateBlockTimes() int
 }
 
 type HashNode interface {
@@ -42,7 +40,6 @@ type Serializable interface {
 
 type IAction interface {
 	HashNode
-	QValueNode
 	Serializable
 	EnableNode
 	GetActionType() ActionType
@@ -70,15 +67,9 @@ type IState interface {
 	GetId() string
 	GetPageNameString() string
 	GetActions() StatefulActionList
-	GetBackAction() *StatefulAction
 	GetMergedWidgets() WidgetListMap
 	GetVisitedCount() int32
 	GetWidgets() WidgetList
-
-	// 动作选择
-	RandomPickUnvisitedAction() IAction
-	GreedyPickAction(filter IStatefulActionFilter) IAction
-	RandomPickAction(filter IStatefulActionFilter, includeBack bool) IAction
 
 	// 工具方法
 	TargetActions() StatefulActionList

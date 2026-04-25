@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"trek/internal/engine/core/types"
+	"trek/internal/engine/decision/shared/types"
 	"trek/logger"
 	"trek/pkg/driver/common"
 	"trek/pkg/session"

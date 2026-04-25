@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"trek/internal/engine/core/types"
+	types2 "trek/internal/engine/decision/shared/types"
 	"trek/internal/scripting"
 	"trek/logger"
 )
 
 type CustomAction struct {
-	types.StatefulAction
+	types2.StatefulAction
 	Xpath              string
 	ResourceID         string
 	ContentDescription string
@@ -35,9 +35,8 @@ type CustomEvent struct {
 	Actions  []*CustomAction
 }
 
-// Manager 持有运行时配置执行态（偏好、规则命中缓存、输入 fuzz 等）。
 type Manager struct {
-	currentActions          []types.IAction
+	currentActions          []types2.IAction
 	customEvents            []*CustomEvent
 	randomInputText         bool
 	doInputFuzzing          bool
@@ -54,7 +53,7 @@ var instance *Manager
 func init() {
 	rand.Seed(time.Now().UnixNano())
 	instance = &Manager{
-		currentActions:          make([]types.IAction, 0),
+		currentActions:          make([]types2.IAction, 0),
 		customEvents:            make([]*CustomEvent, 0),
 		randomInputText:         false,
 		doInputFuzzing:          true,
@@ -71,7 +70,7 @@ func GetInstance() *Manager {
 	return instance
 }
 
-func (m *Manager) ResolvePageAndGetSpecifiedAction(pageName string, rootXML types.IElement) types.IAction {
+func (m *Manager) ResolvePageAndGetSpecifiedAction(pageName string, rootXML types2.IElement) types2.IAction {
 	if rootXML != nil {
 		m.resolvePage(rootXML)
 	}
@@ -80,7 +79,7 @@ func (m *Manager) ResolvePageAndGetSpecifiedAction(pageName string, rootXML type
 		for _, customEvent := range m.customEvents {
 			eventRate := rand.Float64()
 			if eventRate < customEvent.Prob && customEvent.Times > 0 && customEvent.PageName == pageName {
-				m.currentActions = make([]types.IAction, len(customEvent.Actions))
+				m.currentActions = make([]types2.IAction, len(customEvent.Actions))
 				for i, action := range customEvent.Actions {
 					m.currentActions[i] = action
 				}
@@ -105,11 +104,11 @@ func (m *Manager) ResolvePageAndGetSpecifiedAction(pageName string, rootXML type
 	return nil
 }
 
-func (m *Manager) resolvePage(rootXML types.IElement) {
+func (m *Manager) resolvePage(rootXML types2.IElement) {
 	m.cachePageTexts(rootXML)
 }
 
-func (m *Manager) cachePageTexts(rootXML types.IElement) {
+func (m *Manager) cachePageTexts(rootXML types2.IElement) {
 	if rootXML == nil {
 		return
 	}
@@ -122,7 +121,7 @@ func (m *Manager) cachePageTexts(rootXML types.IElement) {
 	}
 }
 
-func (m *Manager) patchActionBounds(action *CustomAction, rootXML types.IElement) bool {
+func (m *Manager) patchActionBounds(action *CustomAction, rootXML types2.IElement) bool {
 	_ = action
 	_ = rootXML
 	return true
@@ -132,12 +131,12 @@ func (m *Manager) SkipAllActionsFromModel() bool {
 	return m.skipAllActionsFromModel
 }
 
-func (m *Manager) PatchOperate(operate *types.ActionCommand) {
+func (m *Manager) PatchOperate(operate *types2.ActionCommand) {
 	if !m.doInputFuzzing {
 		return
 	}
 
-	if operate.Editable && operate.Text == "" && (operate.Act == types.CLICK || operate.Act == types.LONG_CLICK) {
+	if operate.Editable && operate.Text == "" && (operate.Act == types2.CLICK || operate.Act == types2.LONG_CLICK) {
 		if m.randomInputText && len(m.inputTexts) > 0 {
 			randIdx := rand.Intn(len(m.inputTexts))
 			operate.Text = m.inputTexts[randIdx]
@@ -154,12 +153,11 @@ func (m *Manager) PatchOperate(operate *types.ActionCommand) {
 	}
 }
 
-// LoadResourceMapping 加载资源映射配置（主入口）。
 func (m *Manager) LoadResourceMapping(resourceMappingPath string) error {
 	m.resMapping = make(map[string]string)
 	m.blackRects = make(map[string][][4]int)
 	m.customEvents = make([]*CustomEvent, 0)
-	m.currentActions = make([]types.IAction, 0)
+	m.currentActions = make([]types2.IAction, 0)
 	m.skipAllActionsFromModel = false
 
 	if resourceMappingPath == "" {
@@ -181,11 +179,10 @@ func (m *Manager) LoadResourceMapping(resourceMappingPath string) error {
 			return fmt.Errorf("设置文件日志级别失败: %w", err)
 		}
 	}
-
 	return nil
 }
 
-func (m *CustomAction) ToActionCommand() *types.ActionCommand {
+func (m *CustomAction) ToActionCommand() *types2.ActionCommand {
 	operate := m.StatefulAction.ToOperate()
 	operate.Text = m.Text
 	operate.Clear = m.ClearText
@@ -194,7 +191,7 @@ func (m *CustomAction) ToActionCommand() *types.ActionCommand {
 	operate.WaitTime = m.WaitTime
 	operate.Throttle = float32(m.Throttle)
 	if len(m.Bounds) == 4 {
-		operate.Pos = types.Rect{
+		operate.Pos = types2.Rect{
 			Left:   m.Bounds[0],
 			Top:    m.Bounds[1],
 			Right:  m.Bounds[2],
@@ -204,7 +201,7 @@ func (m *CustomAction) ToActionCommand() *types.ActionCommand {
 	return operate
 }
 
-// Deprecated: 请使用 LoadResourceMapping。
+// Deprecated: use LoadResourceMapping.
 func (m *Manager) LoadMixResMapping(resourceMappingPath string) error {
 	return m.LoadResourceMapping(resourceMappingPath)
 }

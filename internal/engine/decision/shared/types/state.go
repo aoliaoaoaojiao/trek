@@ -2,11 +2,10 @@ package types
 
 import (
 	"fmt"
-	"math/rand"
 	"sort"
 	"sync/atomic"
 	"time"
-	"trek/internal/engine/core/tool"
+	"trek/internal/engine/decision/shared/tool"
 	"trek/logger"
 )
 
@@ -28,7 +27,6 @@ type State struct {
 	Widgets       WidgetList
 	MergedWidgets WidgetListMap
 	HasNoDetail   bool
-	BackAction    *StatefulAction
 }
 
 func NewState() *State {
@@ -41,7 +39,6 @@ func NewState() *State {
 		Widgets:          make(WidgetList, 0),
 		MergedWidgets:    make(WidgetListMap),
 		HasNoDetail:      false,
-		BackAction:       nil,
 	}
 }
 
@@ -57,15 +54,10 @@ func NewStateWithPage(pageName string) *State {
 		Widgets:          make(WidgetList, 0),
 		MergedWidgets:    make(WidgetListMap),
 		HasNoDetail:      false,
-		BackAction:       nil,
 	}
 }
 func (s *State) GetWidgets() WidgetList {
 	return s.Widgets
-}
-
-func (s *State) GetBackAction() *StatefulAction {
-	return s.BackAction
 }
 
 func (s *State) GetActions() StatefulActionList {
@@ -109,53 +101,6 @@ func (s *State) TargetActions() StatefulActionList {
 		}
 	}
 	return result
-}
-
-func (s *State) RandomPickUnvisitedAction() IAction {
-	action := s.randomPickAction(EnableValidUnvisitedFilter, false)
-	if action == nil && EnableValidUnvisitedFilter.Include(s.BackAction) {
-		action = s.BackAction
-	}
-	return action
-}
-
-func (s *State) GreedyPickAction(filter IStatefulActionFilter) IAction {
-	if filter == nil {
-		filter = EnableValidValuePriorityFilter
-	}
-
-	filtered := FilterActions(s.Actions, filter)
-	if len(filtered) == 0 {
-		return nil
-	}
-
-	maxAction := filtered[0]
-	maxPriority := filter.GetPriority(maxAction)
-
-	for _, action := range filtered[1:] {
-		priority := filter.GetPriority(action)
-		if priority > maxPriority {
-			maxAction = action
-			maxPriority = priority
-		}
-	}
-
-	return maxAction
-}
-
-func (s *State) RandomPickAction(filter IStatefulActionFilter, includeBack bool) IAction {
-	return s.randomPickAction(filter, includeBack)
-}
-
-func (s *State) randomPickAction(filter IStatefulActionFilter, includeBack bool) IAction {
-	total := s.CountActionPriority(filter, includeBack)
-	if total == 0 {
-		return nil
-	}
-
-	rand.Seed(time.Now().UnixNano())
-	index := rand.Intn(total)
-	return s.pickAction(filter, includeBack, index)
 }
 
 func (s *State) ResolveAt(action *StatefulAction, t time.Time) *StatefulAction {
@@ -287,32 +232,6 @@ func (s *State) Visit(timestamp time.Time) {
 	atomic.AddInt32(&s.Node.VisitedCount, 1)
 }
 
-func (s *State) CountActionPriority(filter IStatefulActionFilter, includeBack bool) int {
-	if filter == nil {
-		filter = EnableValidFilter
-	}
-
-	totalP := 0
-	count := 0
-	for _, action := range s.Actions {
-		if !includeBack && action.IsBack() {
-			continue
-		}
-		included := filter.Include(action)
-		if included {
-			fp := filter.GetPriority(action)
-			if fp <= 0 {
-				logger.Debugf("Error: Action should has a positive priority, but we get %d", fp)
-				continue
-			}
-			totalP += int(fp)
-			count++
-		}
-	}
-
-	return totalP
-}
-
 func (s *State) MergeWidgetAndStoreMergedOnes(mergeWidgets WidgetSet) int {
 	mergedWidgetCount := 0
 
@@ -379,30 +298,6 @@ func (s *State) BuildFromElement(parentWidget IWidget, elem IElement) {
 	}
 }
 
-func (s *State) pickAction(filter IStatefulActionFilter, includeBack bool, index int) IAction {
-	if filter == nil {
-		filter = EnableValidFilter
-	}
-
-	ii := index
-	for _, action := range s.Actions {
-		if !includeBack && action.IsBack() {
-			continue
-		}
-		if filter.Include(action) {
-			p := filter.GetPriority(action)
-			if p > int32(ii) {
-				return action
-			} else {
-				ii = ii - int(p)
-			}
-		}
-	}
-
-	logger.Debugf("ERROR: action filter is unstable")
-	return nil
-}
-
 func Create(elem IElement, pageName string) *State {
 	state := NewStateWithPage(pageName)
 
@@ -449,10 +344,6 @@ func Create(elem IElement, pageName string) *State {
 			state.Actions = append(state.Actions, action)
 		}
 	}
-
-	backAction := NewStatefulAction(state, nil, BACK)
-	state.BackAction = backAction
-	state.Actions = append(state.Actions, backAction)
 
 	return state
 }

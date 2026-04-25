@@ -2,7 +2,7 @@ package touch_test
 
 import (
 	"testing"
-	"trek/internal/engine/core/types"
+	"trek/internal/engine/decision/shared/types"
 	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/android/touch"
 	"trek/pkg/driver/android/utils"
@@ -24,10 +24,10 @@ func TestMotionTouch_Pinch(t *testing.T) {
 		Y: 0.5,
 	}
 
-	// 放大
+	// 鏀惧ぇ
 	motionTouch.Pinch(centerPoint, 0.3, 0.9, 3*1000)
 
-	// 缩小
+	// 缂╁皬
 	motionTouch.Pinch(centerPoint, 0.9, 0.3, 3*1000)
 
 	centerPoint2 := types.Point{
@@ -35,10 +35,10 @@ func TestMotionTouch_Pinch(t *testing.T) {
 		Y: 500,
 	}
 
-	// 放大
+	// 鏀惧ぇ
 	motionTouch.Pinch(centerPoint2, 300, 900, 3*1000)
 
-	// 缩小
+	// 缂╁皬
 	motionTouch.Pinch(centerPoint2, 900, 300, 3*1000)
 
 }

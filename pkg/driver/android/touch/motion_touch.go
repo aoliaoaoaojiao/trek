@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	types2 "trek/internal/engine/core/types"
+	types2 "trek/internal/engine/decision/shared/types"
 	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/common"
 )

@@ -16,12 +16,12 @@ import (
 var _ common.IPageSource = (*PocoPageSource)(nil)
 
 type PocoPageSource struct {
-	engine   Engine
-	conn     PocoConnection
-	source   string
+	engine    Engine
+	conn      PocoConnection
+	source    string
 	rawSource string
-	isFrozen bool
-	mu       sync.RWMutex
+	isFrozen  bool
+	mu        sync.RWMutex
 }
 
 func NewPocoPageSource(engine Engine) (*PocoPageSource, error) {

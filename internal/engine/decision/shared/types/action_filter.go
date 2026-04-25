@@ -1,9 +1,5 @@
 package types
 
-import (
-	"math"
-)
-
 // ActionFilterALL 全部动作过滤器
 type ActionFilterALL struct{}
 
@@ -152,66 +148,6 @@ func (f *ActionFilterValidUnSaturated) GetPriority(action *StatefulAction) int32
 	return action.GetPriority()
 }
 
-// ActionFilterValidValuePriority 有效且基于Q值优先级的动作过滤器
-type ActionFilterValidValuePriority struct{}
-
-// NewActionFilterValidValuePriority 创建新的有效且基于Q值优先级的动作过滤器
-func NewActionFilterValidValuePriority() *ActionFilterValidValuePriority {
-	return &ActionFilterValidValuePriority{}
-}
-
-// Include 只包含有效的动作
-func (f *ActionFilterValidValuePriority) Include(action *StatefulAction) bool {
-	if action == nil {
-		return false
-	}
-	return action.GetEnabled() && action.IsValid()
-}
-
-// GetPriority 获取基于Q值的优先级
-func (f *ActionFilterValidValuePriority) GetPriority(action *StatefulAction) int32 {
-	if action == nil {
-		return 0
-	}
-	pri := action.GetPriority()
-	if !action.IsBack() {
-		pri += int32(math.Ceil(10 * action.GetQValue()))
-	}
-	return pri
-}
-
-// ActionFilterValidDatePriority 有效且基于日期优先级的动作过滤器
-type ActionFilterValidDatePriority struct{}
-
-// NewActionFilterValidDatePriority 创建新的有效且基于日期优先级的动作过滤器
-func NewActionFilterValidDatePriority() *ActionFilterValidDatePriority {
-	return &ActionFilterValidDatePriority{}
-}
-
-// Include 根据动作类型包含动作
-func (f *ActionFilterValidDatePriority) Include(action *StatefulAction) bool {
-	if action == nil {
-		return false
-	}
-
-	switch action.GetActionType() {
-	case START, RESTART, CLEAN_RESTART, NOP, ACTIVATE, BACK:
-		return true
-	case CLICK, LONG_CLICK, SCROLL_BOTTOM_UP, SCROLL_TOP_DOWN, SCROLL_LEFT_RIGHT, SCROLL_RIGHT_LEFT, SCROLL_BOTTOM_UP_N:
-		return action.GetEnabled() && action.IsValid() && !action.IsEmpty()
-	default:
-		return false
-	}
-}
-
-// GetPriority 获取优先级
-func (f *ActionFilterValidDatePriority) GetPriority(action *StatefulAction) int32 {
-	if action == nil {
-		return 0
-	}
-	return action.GetPriority()
-}
-
 // 全局过滤器实例
 var (
 	AllFilter                      = NewActionFilterALL()
@@ -220,8 +156,6 @@ var (
 	EnableValidFilter              = NewActionFilterEnableValid()
 	EnableValidUnvisitedFilter     = NewActionFilterUnvisitedValid()
 	EnableValidUnSaturatedFilter   = NewActionFilterValidUnSaturated()
-	EnableValidValuePriorityFilter = NewActionFilterValidValuePriority()
-	ValidDatePriorityFilter        = NewActionFilterValidDatePriority()
 )
 
 // FilterActions 使用过滤器过滤动作

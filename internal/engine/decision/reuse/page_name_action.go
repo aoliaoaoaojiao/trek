@@ -1,11 +1,11 @@
 package reuse
 
 import (
-	"trek/internal/engine/core/types"
+	"trek/internal/engine/decision/shared/types"
 	"trek/logger"
 )
 
-// PageNameAction 带页面名称的动作
+// PageNameAction 甯﹂〉闈㈠悕绉扮殑鍔ㄤ綔
 type PageNameAction struct {
 	types.StatefulAction
 	pageName string
@@ -13,9 +13,9 @@ type PageNameAction struct {
 
 // pageName
 
-// NewPageNameAction 创建新的ActivityNameAction
+// NewPageNameAction 鍒涘缓鏂扮殑ActivityNameAction
 func NewPageNameAction(pageName string, widget types.IWidget, actionType types.ActionType) *PageNameAction {
-	// 创建基础的StatefulAction
+	// 鍒涘缓鍩虹鐨凷tatefulAction
 	baseAction := types.NewStatefulAction(nil, widget, actionType)
 
 	pageAction := &PageNameAction{
@@ -23,7 +23,7 @@ func NewPageNameAction(pageName string, widget types.IWidget, actionType types.A
 		pageName:       pageName,
 	}
 
-	// 计算哈希码
+	// 璁＄畻鍝堝笇鐮?
 	pageNameHashCode := HashString(pageName)
 	actionTypeHashCode := HashInt(int(pageAction.GetActionType()))
 

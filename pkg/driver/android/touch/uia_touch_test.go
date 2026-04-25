@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	types2 "trek/internal/engine/core/types"
+	types2 "trek/internal/engine/decision/shared/types"
 	"trek/pkg/driver/android/uia"
 
 	"github.com/stretchr/testify/assert"

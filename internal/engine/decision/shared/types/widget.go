@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"trek/internal/engine/core/tool"
+	"trek/internal/engine/decision/shared/tool"
 )
 
 var _ IWidget = (*Widget)(nil)

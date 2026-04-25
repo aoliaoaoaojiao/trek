@@ -1,104 +1,87 @@
 package reuse
 
 import (
-	"trek/internal/engine/core/types"
+	types2 "trek/internal/engine/decision/shared/types"
 	"trek/logger"
 )
 
-// ReuseState 重用状态类，持有所有Widgets及其关联的动作等
 type ReuseState struct {
 	pageName string
-	types.State
+	types2.State
 }
 
-// NewReuseState 创建新的ReuseState
 func NewReuseState(pageName string) *ReuseState {
-	baseState := types.NewStateWithPage(pageName)
-
+	baseState := types2.NewStateWithPage(pageName)
 	rs := &ReuseState{
 		pageName: pageName,
 		State:    *baseState,
 	}
-
 	rs.HasNoDetail = false
 	return rs
 }
 
-// Create 根据元素和活动名称创建ReuseState
-func Create(pageName string, element types.IElement) *ReuseState {
-
-	statePointer := NewReuseState(pageName)
+func Create(pageName string, element types2.IElement) *ReuseState {
+	state := NewReuseState(pageName)
 	logger.Debugf("Creating ReuseState for page: %s", pageName)
-	statePointer.buildState(element)
-
-	return statePointer
+	state.buildState(element)
+	return state
 }
 
-// buildState 构建状态
-func (rs *ReuseState) buildState(element types.IElement) {
+func (rs *ReuseState) buildState(element types2.IElement) {
 	rs.buildStateFromElement(nil, element)
 	rs.mergeWidgetsInState()
 	rs.buildHashForState()
 	rs.buildActionForState()
 }
 
-// buildStateFromElement 从元素构建状态
-func (rs *ReuseState) buildStateFromElement(parentWidget *RichWidget, element types.IElement) {
+func (rs *ReuseState) buildStateFromElement(parentWidget *RichWidget, element types2.IElement) {
 	rs.buildBoundingBox(element)
 
-	// 使用RichWidget构建状态
 	widget := NewRichWidget(parentWidget, element)
 	rs.Widgets = append(rs.Widgets, &widget.Widget)
 	logger.Debugf("Added RichWidget to state, total widgets now: %d, widget=%s", len(rs.Widgets), widget.String())
 
-	for _, childElement := range element.GetChildren() {
-		rs.buildFromElement(widget, childElement)
+	for _, child := range element.GetChildren() {
+		rs.buildFromElement(widget, child)
 	}
 }
 
-// buildFromElement 从元素构建
-func (rs *ReuseState) buildFromElement(parentWidget *RichWidget, elem types.IElement) {
+func (rs *ReuseState) buildFromElement(parentWidget *RichWidget, elem types2.IElement) {
 	rs.buildBoundingBox(elem)
 
-	var parentWidgetPtr *types.Widget
+	var parentWidgetPtr *types2.Widget
 	if parentWidget != nil {
 		parentWidgetPtr = &parentWidget.Widget
 	}
 
-	widget := types.NewWidget(parentWidgetPtr, elem)
+	widget := types2.NewWidget(parentWidgetPtr, elem)
 	rs.Widgets = append(rs.Widgets, widget)
 	logger.Debugf("Added Widget to state, total widgets now: %d, widget=%s", len(rs.Widgets), widget.String())
 
-	for _, childElement := range elem.GetChildren() {
-		rs.buildFromElement(parentWidget, childElement)
+	for _, child := range elem.GetChildren() {
+		rs.buildFromElement(parentWidget, child)
 	}
 }
 
-// buildBoundingBox 构建边界框
-func (rs *ReuseState) buildBoundingBox(element types.IElement) {
+func (rs *ReuseState) buildBoundingBox(element types2.IElement) {
 	if element.GetParent() == nil && !element.GetBounds().IsEmpty() {
-		if types.SameRootBounds.IsEmpty() && element != nil {
-			types.SameRootBounds = element.GetBounds()
+		if types2.SameRootBounds.IsEmpty() && element != nil {
+			types2.SameRootBounds = element.GetBounds()
 		}
-		if types.SameRootBounds.Equal(element.GetBounds()) {
-			rs.RootBounds = types.SameRootBounds
+		if types2.SameRootBounds.Equal(element.GetBounds()) {
+			rs.RootBounds = types2.SameRootBounds
 		} else {
 			rs.RootBounds = element.GetBounds()
 		}
 	}
 }
 
-// buildHashForState 构建状态哈希
 func (rs *ReuseState) buildHashForState() {
-	// 构建哈希
-	pageString := rs.PageName
-	pageHash := (HashString(pageString) * 31) << 5
-	pageHash ^= (CombineHashWidgets(rs.Widgets, types.STATE_WITH_WIDGET_ORDER) << 1)
+	pageHash := (HashString(rs.PageName) * 31) << 5
+	pageHash ^= (CombineHashWidgets(rs.Widgets, types2.STATE_WITH_WIDGET_ORDER) << 1)
 	rs.Hashcode = pageHash
-
 }
 
-// buildActionForState 构建状态动作
 func (rs *ReuseState) buildActionForState() {
 	for _, widget := range rs.Widgets {
 		if widget.GetBounds() == nil {
@@ -106,31 +89,20 @@ func (rs *ReuseState) buildActionForState() {
 			continue
 		}
 
-		actions := widget.GetActions()
-		for _, action := range actions {
+		for _, action := range widget.GetActions() {
 			pageNameAction := NewPageNameAction(rs.PageName, widget, action)
 			rs.Actions = append(rs.Actions, &pageNameAction.StatefulAction)
 			logger.Debugf("Added action to state, total actions now: %d", len(rs.Actions))
 		}
 	}
 
-	// 创建返回动作
-	backAction := NewPageNameAction(rs.PageName, nil, types.BACK)
-	rs.BackAction = &backAction.StatefulAction
-	rs.Actions = append(rs.Actions, rs.BackAction)
+	backAction := NewPageNameAction(rs.PageName, nil, types2.BACK)
+	rs.Actions = append(rs.Actions, &backAction.StatefulAction)
 	logger.Debugf("Added back action to state, total actions now: %d", len(rs.Actions))
 }
 
-// mergeWidgetsInState 合并状态中的Widgets
 func (rs *ReuseState) mergeWidgetsInState() {
-	mergedWidgets := make(types.WidgetSet)
+	mergedWidgets := make(types2.WidgetSet)
 	mergedCount := rs.MergeWidgetAndStoreMergedOnes(mergedWidgets)
-
-	if mergedCount != 0 {
-		logger.Debugf("build state merged %d widget", mergedCount)
-		rs.Widgets = make(types.WidgetList, 0, len(mergedWidgets))
-		for _, widget := range mergedWidgets {
-			rs.Widgets = append(rs.Widgets, widget)
-		}
-	}
+	logger.Debugf("MergeWidgetAndStoreMergedOnes merged %d widgets", mergedCount)
 }

@@ -3,9 +3,9 @@ package runtime
 import (
 	"context"
 	"errors"
-	types2 "trek/internal/engine/core/types"
 	"trek/internal/engine/decision"
 	_ "trek/internal/engine/decision/reuse"
+	types2 "trek/internal/engine/decision/shared/types"
 	perceptionfusion "trek/internal/engine/perception/fusion"
 	engineplugin "trek/internal/engine/plugin"
 	"trek/internal/scripting"
@@ -72,7 +72,7 @@ func GetActionOptWithInput(activity string, xmlDescOfGuiTree string, screenshot 
 	return operate
 }
 
-// TransformPageInfoWithInput 使用配置脚本改造页面信息并返回新结果（支持截图输入）。
+// TransformPageInfoWithInput 浣跨敤閰嶇疆鑴氭湰鏀归€犻〉闈俊鎭苟杩斿洖鏂扮粨鏋滐紙鏀寔鎴浘杈撳叆锛夈€?
 func TransformPageInfoWithInput(activity string, xmlDescOfGuiTree string, screenshot []byte) (string, string, error) {
 	ctx := buildPluginContext(activity, xmlDescOfGuiTree, screenshot)
 	page, err := transformPageForDecision(ctx)
@@ -188,18 +188,18 @@ func OnStepResult(input StepResultInput) error {
 	return scriptPlugin.OnStepResult(ctx)
 }
 
-func InitAgent(agentType types2.AlgorithmType, packageName string, deviceType types2.DeviceType) {
+func InitAgent(agentType decision.AlgorithmType, packageName string, deviceType types2.DeviceType) {
 	ensureModel(packageName)
 	engineModel.AddAgent(decision.DefaultDeviceID, agentType.String(), deviceType)
 	engineModel.SetPackageName(packageName)
 }
 
-// LoadResourceMapping 加载资源映射配置（主入口）。
+// LoadResourceMapping 鍔犺浇璧勬簮鏄犲皠閰嶇疆锛堜富鍏ュ彛锛夈€?
 func LoadResourceMapping(resourceMappingFilepath string) {
 	_ = LoadConfigFile(resourceMappingFilepath)
 }
 
-// Deprecated: 请使用 LoadResourceMapping。
+// Deprecated: 璇蜂娇鐢?LoadResourceMapping銆?
 func LoadResMapping(resMappingFilepath string) {
 	LoadResourceMapping(resMappingFilepath)
 }
@@ -229,7 +229,7 @@ func ResetModel() {
 	ClearScriptPlugin()
 }
 
-// SetObservationMode 设置感知模式：xml-only / image-only / hybrid。
+// SetObservationMode 璁剧疆鎰熺煡妯″紡锛歺ml-only / image-only / hybrid銆?
 func SetObservationMode(mode string) error {
 	parsed, err := perceptionfusion.ParseMode(mode)
 	if err != nil {
@@ -240,7 +240,7 @@ func SetObservationMode(mode string) error {
 	return nil
 }
 
-// GetObservationMode 返回当前感知模式。
+// GetObservationMode 杩斿洖褰撳墠鎰熺煡妯″紡銆?
 func GetObservationMode() string {
 	return string(observationMode)
 }

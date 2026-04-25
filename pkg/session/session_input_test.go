@@ -2,14 +2,15 @@ package session
 
 import (
 	"testing"
-	"trek/internal/engine/core/types"
+	"trek/internal/engine/decision"
+	"trek/internal/engine/decision/shared/types"
 	"trek/logger"
 )
 
 func initSessionTestLogger(t *testing.T) {
 	t.Helper()
 	if err := logger.InitLogger("log"); err != nil {
-		t.Fatalf("鍒濆鍖栨祴璇曟棩蹇楀け璐? %v", err)
+		t.Fatalf("init logger failed: %v", err)
 	}
 }
 
@@ -17,14 +18,14 @@ func TestSessionSetObservationModeRoundTrip(t *testing.T) {
 	session := NewSession(Config{PackageName: "com.demo"})
 
 	if err := session.SetObservationMode("hybrid"); err != nil {
-		t.Fatalf("璁剧疆 hybrid 妯″紡澶辫触: %v", err)
+		t.Fatalf("set hybrid mode failed: %v", err)
 	}
 	if got := session.GetObservationMode(); got != "hybrid" {
-		t.Fatalf("妯″紡璇诲彇涓嶇鍚堥鏈? got=%s", got)
+		t.Fatalf("unexpected observation mode: got=%s", got)
 	}
 
 	if err := session.SetObservationMode("xml-only"); err != nil {
-		t.Fatalf("鎭㈠ xml-only 妯″紡澶辫触: %v", err)
+		t.Fatalf("set xml-only mode failed: %v", err)
 	}
 }
 
@@ -33,7 +34,7 @@ func TestSessionNextActionWithInputValidateEmptyPayload(t *testing.T) {
 
 	_, err := session.NextActionWithInput("MainActivity", ActionInput{})
 	if err == nil {
-		t.Fatalf("棰勬湡绌鸿緭鍏ュ簲杩斿洖閿欒")
+		t.Fatalf("expected error for empty action input")
 	}
 }
 
@@ -42,11 +43,11 @@ func TestSessionNextActionWithInputXMLCompatible(t *testing.T) {
 
 	session := NewSession(Config{
 		PackageName: "com.demo",
-		Algorithm:   types.Reuse,
+		Algorithm:   decision.AlgorithmReuse,
 		DeviceType:  types.Phone,
 	})
 	if err := session.SetObservationMode("xml-only"); err != nil {
-		t.Fatalf("璁剧疆 xml-only 澶辫触: %v", err)
+		t.Fatalf("set xml-only failed: %v", err)
 	}
 
 	action, err := session.NextActionWithInput("LoginActivity", ActionInput{
@@ -57,9 +58,9 @@ func TestSessionNextActionWithInputXMLCompatible(t *testing.T) {
 </hierarchy>`,
 	})
 	if err != nil {
-		t.Fatalf("NextActionWithInput 鎵ц澶辫触: %v", err)
+		t.Fatalf("NextActionWithInput failed: %v", err)
 	}
 	if action == nil {
-		t.Fatalf("鍔ㄤ綔缁撴灉涓嶈兘涓虹┖")
+		t.Fatalf("expected non-nil action")
 	}
 }

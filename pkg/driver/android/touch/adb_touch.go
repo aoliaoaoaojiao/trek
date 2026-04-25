@@ -3,7 +3,7 @@ package touch
 import (
 	"errors"
 	"fmt"
-	types2 "trek/internal/engine/core/types"
+	types2 "trek/internal/engine/decision/shared/types"
 	"trek/logger"
 	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/common"

@@ -14,6 +14,9 @@ func TestProviderBuildCandidatesFromStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建 store 失败: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
 
 	now := time.Now().UTC()
 	record := RecoveryMemoryRecord{
@@ -75,6 +78,9 @@ func TestProviderBoostsCandidateEnhancementInExplore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建 store 失败: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
 	now := time.Now().UTC()
 
 	enhanced := RecoveryMemoryRecord{

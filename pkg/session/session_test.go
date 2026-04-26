@@ -16,6 +16,13 @@ import (
 	"trek/internal/engine/traversal"
 )
 
+func closeSessionMemoryStore(s *Session) {
+	if s == nil || s.memoryStore == nil {
+		return
+	}
+	_ = s.memoryStore.Close()
+}
+
 type mockTraversalAlgorithm struct {
 	proposeFn func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
 	selectFn  func(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types2.ActionCommand, error)
@@ -253,6 +260,9 @@ func TestSessionBuildMemoryRecoveryCandidates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("初始化 memory store 失败: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
 	record := memory.RecoveryMemoryRecord{
 		MemoryKey:        memory.BuildMemoryKey("page.sig", "same_page_no_change", "back", "recover"),
 		PageSignature:    "page.sig",
@@ -280,6 +290,9 @@ func TestSessionBuildMemoryRecoveryCandidates(t *testing.T) {
 	session := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryMemoryFile: memoryPath,
+	})
+	t.Cleanup(func() {
+		closeSessionMemoryStore(session)
 	})
 	items, err := session.BuildMemoryRecoveryCandidates(enginestate.TraversalContext{
 		Mode:             "recover",
@@ -464,6 +477,9 @@ func TestSessionRecordRecoveryMemoryOutcome(t *testing.T) {
 		PackageName:        "com.demo",
 		RecoveryMemoryFile: memoryPath,
 	})
+	t.Cleanup(func() {
+		closeSessionMemoryStore(session)
+	})
 
 	err := session.RecordRecoveryMemoryOutcome(
 		enginestate.TraversalContext{
@@ -490,6 +506,9 @@ func TestSessionRecordRecoveryMemoryOutcome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取 memory store 失败: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
 	all := store.All()
 	if len(all) != 1 {
 		t.Fatalf("预期写入 1 条记录，实际: %d", len(all))
@@ -510,6 +529,9 @@ func TestSessionRecordRecoveryMemoryOutcomeAggregatesCounts(t *testing.T) {
 	session := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryMemoryFile: memoryPath,
+	})
+	t.Cleanup(func() {
+		closeSessionMemoryStore(session)
 	})
 	ctx := enginestate.TraversalContext{
 		Mode:             "Recover",
@@ -536,6 +558,9 @@ func TestSessionRecordRecoveryMemoryOutcomeAggregatesCounts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取 memory store 失败: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
 	all := store.All()
 	if len(all) != 1 {
 		t.Fatalf("聚合后预期 1 条记录，实际: %d", len(all))
@@ -553,6 +578,9 @@ func TestSessionRecordCandidateEnhancementOutcome(t *testing.T) {
 	session := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryMemoryFile: memoryPath,
+	})
+	t.Cleanup(func() {
+		closeSessionMemoryStore(session)
 	})
 	ctx := enginestate.TraversalContext{
 		Mode:             "Explore",
@@ -574,6 +602,9 @@ func TestSessionRecordCandidateEnhancementOutcome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取 memory store 失败: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
 	all := store.All()
 	if len(all) != 1 {
 		t.Fatalf("预期写入 1 条记录，实际: %d", len(all))
@@ -591,6 +622,9 @@ func TestSessionBuildKnownFailedRecoveryActions(t *testing.T) {
 	session := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryMemoryFile: memoryPath,
+	})
+	t.Cleanup(func() {
+		closeSessionMemoryStore(session)
 	})
 	ctx := enginestate.TraversalContext{
 		Mode:             "Recover",
@@ -623,6 +657,9 @@ func TestSessionBuildKnownSuccessfulRecoveryActions(t *testing.T) {
 	session := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryMemoryFile: memoryPath,
+	})
+	t.Cleanup(func() {
+		closeSessionMemoryStore(session)
 	})
 	ctx := enginestate.TraversalContext{
 		Mode:             "Recover",

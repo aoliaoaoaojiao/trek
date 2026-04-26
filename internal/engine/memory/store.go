@@ -1,46 +1,107 @@
 package memory
 
 import (
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 	"trek/internal/engine/candidate"
 	enginestate "trek/internal/engine/state"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
-// Store 管理 recovery memory 的内存索引与 jsonl 持久化。
+// Store 管理 recovery memory 的 SQLite 持久化与查询。
 type Store struct {
-	path    string
-	mu      sync.RWMutex
-	records []RecoveryMemoryRecord
+	path string
+	db   *gorm.DB
+	mu   sync.RWMutex
 }
 
-// NewStore 创建 Store，并从 jsonl 文件加载已有记录。
+type recoveryMemoryRow struct {
+	ID uint `gorm:"primaryKey"`
+
+	MemoryKey        string `gorm:"size:1024;not null;index:idx_memory_action,unique"`
+	ActionKey        string `gorm:"size:4096;not null;index:idx_memory_action,unique"`
+	PageSignature    string `gorm:"size:1024;index"`
+	ClusterSignature string `gorm:"size:1024;index"`
+	BlockReason      string `gorm:"size:256;index"`
+	TraceSignature   string `gorm:"size:2048"`
+	Mode             string `gorm:"size:64;index"`
+
+	CandidateJSON string  `gorm:"type:text"`
+	Outcome       string  `gorm:"size:64"`
+	EscapeScore   float64 `gorm:"not null;default:0"`
+	SuccessCount  int     `gorm:"not null;default:0"`
+	FailCount     int     `gorm:"not null;default:0"`
+
+	LastUsedAt       time.Time `gorm:"index"`
+	RecordCreatedAt  time.Time `gorm:"column:record_created_at;index"`
+	RecordModifiedAt time.Time `gorm:"column:record_modified_at;index"`
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (recoveryMemoryRow) TableName() string {
+	return "recovery_memory_records"
+}
+
+// NewStore 创建 Store，并初始化 SQLite 表结构。
+// 若传入旧的 `.jsonl` 路径，会自动切换到同目录 `.sqlite` 文件并尝试迁移历史 jsonl 数据。
 func NewStore(path string) (*Store, error) {
-	records, err := loadRecordsFromJSONL(path)
+	dbPath := resolveSQLitePath(path)
+	if err := ensureParentDir(dbPath); err != nil {
+		return nil, err
+	}
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
 	if err != nil {
 		return nil, err
 	}
-	return &Store{
-		path:    path,
-		records: aggregateRecords(records),
-	}, nil
+	db = db.Session(&gorm.Session{
+		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
+	})
+	if err := db.AutoMigrate(&recoveryMemoryRow{}); err != nil {
+		return nil, err
+	}
+
+	store := &Store{
+		path: dbPath,
+		db:   db,
+	}
+	if err := store.importLegacyJSONLIfNeeded(path); err != nil {
+		return nil, err
+	}
+	return store, nil
 }
 
-// Append 追加一条记录并落盘 jsonl。
+// Close 关闭底层数据库连接。
+func (s *Store) Close() error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	sqlDB, err := s.db.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
+}
+
+// Append 追加一条记录并在 SQLite 内按 key 聚合。
 func (s *Store) Append(record RecoveryMemoryRecord) error {
-	if s == nil {
+	if s == nil || s.db == nil {
 		return nil
 	}
 	item := cloneRecord(record)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	if err := appendRecordToJSONL(s.path, item); err != nil {
-		return err
-	}
-	s.upsertRecordLocked(item)
-	return nil
+	return s.upsertRecordLocked(item)
 }
 
 // AppendOutcome 追加一次恢复结果增量，并在内存中按 key 聚合统计。
@@ -50,22 +111,172 @@ func (s *Store) AppendOutcome(record RecoveryMemoryRecord) error {
 
 // All 返回记录快照。
 func (s *Store) All() []RecoveryMemoryRecord {
-	if s == nil {
+	if s == nil || s.db == nil {
 		return nil
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return cloneRecords(s.records)
+	return s.allLocked()
 }
 
 // Find 基于上下文执行分层匹配。
 func (s *Store) Find(ctx enginestate.TraversalContext) []RecoveryMemoryRecord {
-	if s == nil {
+	if s == nil || s.db == nil {
 		return nil
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return findMatches(s.records, ctx)
+	return findMatches(s.allLocked(), ctx)
+}
+
+func (s *Store) allLocked() []RecoveryMemoryRecord {
+	rows := make([]recoveryMemoryRow, 0, 64)
+	if err := s.db.Order("id ASC").Find(&rows).Error; err != nil {
+		return nil
+	}
+	result := make([]RecoveryMemoryRecord, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, row.toRecord())
+	}
+	return result
+}
+
+func (s *Store) upsertRecordLocked(item RecoveryMemoryRecord) error {
+	actionKey := actionKeyFromRecord(item)
+	var row recoveryMemoryRow
+	err := s.db.Where("memory_key = ? AND action_key = ?", strings.TrimSpace(item.MemoryKey), actionKey).Take(&row).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		newRow := rowFromRecord(item)
+		return s.db.Create(&newRow).Error
+	}
+
+	merged := mergeRecord(row.toRecord(), item)
+	next := rowFromRecord(merged)
+	next.ID = row.ID
+	next.CreatedAt = row.CreatedAt
+	return s.db.Save(&next).Error
+}
+
+func (s *Store) importLegacyJSONLIfNeeded(originalPath string) error {
+	originalPath = strings.TrimSpace(originalPath)
+	if originalPath == "" || samePath(originalPath, s.path) {
+		return nil
+	}
+	if !strings.EqualFold(filepath.Ext(originalPath), ".jsonl") {
+		return nil
+	}
+	if _, err := os.Stat(originalPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	var count int64
+	if err := s.db.Model(&recoveryMemoryRow{}).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+
+	legacyRecords, err := loadRecordsFromJSONL(originalPath)
+	if err != nil || len(legacyRecords) == 0 {
+		return err
+	}
+	aggregated := aggregateRecords(legacyRecords)
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		for _, item := range aggregated {
+			row := rowFromRecord(item)
+			if err := tx.Create(&row).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func resolveSQLitePath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "recovery_memory.sqlite"
+	}
+	if strings.EqualFold(filepath.Ext(path), ".jsonl") {
+		base := strings.TrimSuffix(path, filepath.Ext(path))
+		return base + ".sqlite"
+	}
+	return path
+}
+
+func ensureParentDir(path string) error {
+	dir := filepath.Dir(path)
+	if dir == "" || dir == "." {
+		return nil
+	}
+	return os.MkdirAll(dir, 0o755)
+}
+
+func rowFromRecord(item RecoveryMemoryRecord) recoveryMemoryRow {
+	data, _ := json.Marshal(cloneCandidate(item.Candidate))
+	return recoveryMemoryRow{
+		MemoryKey:        strings.TrimSpace(item.MemoryKey),
+		ActionKey:        actionKeyFromRecord(item),
+		PageSignature:    strings.TrimSpace(item.PageSignature),
+		ClusterSignature: strings.TrimSpace(item.ClusterSignature),
+		BlockReason:      strings.TrimSpace(item.BlockReason),
+		TraceSignature:   strings.TrimSpace(item.TraceSignature),
+		Mode:             strings.TrimSpace(item.Mode),
+		CandidateJSON:    string(data),
+		Outcome:          strings.TrimSpace(item.Outcome),
+		EscapeScore:      item.EscapeScore,
+		SuccessCount:     maxInt(item.SuccessCount, 0),
+		FailCount:        maxInt(item.FailCount, 0),
+		LastUsedAt:       item.LastUsedAt,
+		RecordCreatedAt:  item.CreatedAt,
+		RecordModifiedAt: item.LastUsedAt,
+	}
+}
+
+func (row recoveryMemoryRow) toRecord() RecoveryMemoryRecord {
+	result := RecoveryMemoryRecord{
+		MemoryKey:        row.MemoryKey,
+		PageSignature:    row.PageSignature,
+		ClusterSignature: row.ClusterSignature,
+		BlockReason:      row.BlockReason,
+		TraceSignature:   row.TraceSignature,
+		Mode:             row.Mode,
+		Outcome:          row.Outcome,
+		EscapeScore:      row.EscapeScore,
+		SuccessCount:     row.SuccessCount,
+		FailCount:        row.FailCount,
+		LastUsedAt:       row.LastUsedAt,
+		CreatedAt:        row.RecordCreatedAt,
+	}
+	if result.CreatedAt.IsZero() {
+		result.CreatedAt = row.CreatedAt
+	}
+	if strings.TrimSpace(row.CandidateJSON) != "" {
+		var c candidate.Candidate
+		if err := json.Unmarshal([]byte(row.CandidateJSON), &c); err == nil {
+			result.Candidate = cloneCandidate(c)
+		}
+	}
+	return result
+}
+
+func actionKeyFromRecord(item RecoveryMemoryRecord) string {
+	if item.Candidate.Command == nil {
+		return "_nil_action"
+	}
+	key := strings.TrimSpace(item.Candidate.Command.ToJSON())
+	if key == "" {
+		return "_nil_action"
+	}
+	return key
 }
 
 func cloneRecords(src []RecoveryMemoryRecord) []RecoveryMemoryRecord {
@@ -121,17 +332,6 @@ func aggregateRecords(records []RecoveryMemoryRecord) []RecoveryMemoryRecord {
 	return result
 }
 
-func (s *Store) upsertRecordLocked(item RecoveryMemoryRecord) {
-	key := recordAggregateKey(item)
-	for i := range s.records {
-		if recordAggregateKey(s.records[i]) == key {
-			s.records[i] = mergeRecord(s.records[i], item)
-			return
-		}
-	}
-	s.records = append(s.records, cloneRecord(item))
-}
-
 func mergeRecord(base RecoveryMemoryRecord, delta RecoveryMemoryRecord) RecoveryMemoryRecord {
 	result := cloneRecord(base)
 	if result.SuccessCount < 0 {
@@ -170,4 +370,17 @@ func recordAggregateKey(item RecoveryMemoryRecord) string {
 		act = item.Candidate.Command.ToJSON()
 	}
 	return strings.TrimSpace(item.MemoryKey) + "|" + act
+}
+
+func maxInt(left int, right int) int {
+	if left > right {
+		return left
+	}
+	return right
+}
+
+func samePath(left string, right string) bool {
+	a := strings.ToLower(filepath.Clean(strings.TrimSpace(left)))
+	b := strings.ToLower(filepath.Clean(strings.TrimSpace(right)))
+	return a == b
 }

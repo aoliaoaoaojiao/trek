@@ -16,6 +16,9 @@ func TestStoreAppendAndReloadFromJSONL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建 store 失败: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
 
 	record := RecoveryMemoryRecord{
 		MemoryKey:        BuildMemoryKey("page-a", "scroll_no_change", "CLICK>BACK", string(enginestate.ModeRecover)),
@@ -45,6 +48,9 @@ func TestStoreAppendAndReloadFromJSONL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("重载 store 失败: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = reloaded.Close()
+	})
 
 	items := reloaded.All()
 	if len(items) != 1 {
@@ -63,6 +69,9 @@ func TestStoreFindPrefersExactMatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建 store 失败: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
 
 	now := time.Now().UTC()
 	exact := RecoveryMemoryRecord{
@@ -134,6 +143,9 @@ func TestStoreAppendOutcomeAggregatesByMemoryKeyAndAction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建 store 失败: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
 
 	now := time.Now().UTC()
 	base := RecoveryMemoryRecord{

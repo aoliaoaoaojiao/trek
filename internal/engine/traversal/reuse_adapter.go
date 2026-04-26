@@ -26,10 +26,11 @@ type StateProvider interface {
 // 映射为 Source=algorithm 的统一 Candidate 列表。
 // SelectAction: 当融合候选集中存在来源为 algorithm 的候选时，
 // 优先从中选择；否则回退到其他来源中按置信度选择。
-// ObserveOutcome: 根据 ActionOutcome 映射学习信号（当前为空操作）。
+// ObserveOutcome: 将动作执行结果回写为动作级反馈分，影响后续候选排序。
 type ReuseAdapter struct {
 	agent         types.IAgent
 	stateProvider StateProvider
+	feedback      *outcomeFeedbackStore
 }
 
 // NewReuseAdapter 创建 Reuse 算法适配器。
@@ -39,6 +40,7 @@ func NewReuseAdapter(agent types.IAgent, stateProvider StateProvider) *ReuseAdap
 	return &ReuseAdapter{
 		agent:         agent,
 		stateProvider: stateProvider,
+		feedback:      newOutcomeFeedbackStore(),
 	}
 }
 
@@ -85,6 +87,8 @@ func (a *ReuseAdapter) ProposeCandidates(ctx enginestate.TraversalContext) ([]ca
 				"visited_count": formatInt32(action.GetVisitedCount()),
 			},
 		))
+		last := len(candidates) - 1
+		candidates[last] = applyOutcomeFeedback(candidates[last], a.feedback)
 	}
 	return candidates, nil
 }
@@ -101,7 +105,8 @@ func (a *ReuseAdapter) SelectAction(ctx enginestate.TraversalContext, candidates
 	// 优先选择算法自身的候选
 	for _, c := range candidates {
 		if c.Source == candidate.SourceAlgorithm && c.Command != nil && c.Command.IsValid() {
-			return c.Command, nil
+			scored := applyOutcomeFeedback(c, a.feedback)
+			return scored.Command, nil
 		}
 	}
 
@@ -112,8 +117,9 @@ func (a *ReuseAdapter) SelectAction(ctx enginestate.TraversalContext, candidates
 		if c.Command == nil || !c.Command.IsValid() {
 			continue
 		}
-		if !found || c.Confidence > best.Confidence {
-			best = c
+		scored := applyOutcomeFeedback(c, a.feedback)
+		if !found || scored.Confidence-scored.RiskScore > best.Confidence-best.RiskScore {
+			best = scored
 			found = true
 		}
 	}
@@ -124,13 +130,12 @@ func (a *ReuseAdapter) SelectAction(ctx enginestate.TraversalContext, candidates
 	return nil, nil
 }
 
-// ObserveOutcome 接收动作执行结果，映射到 Reuse 内部学习信号。
-//
-// 当前实现为空操作，因为 Reuse 的 UpdateStrategy 已在内部处理。
-// 未来可在此桥接外部 Outcome 到 Reuse 的奖励机制。
+// ObserveOutcome 接收动作执行结果并更新动作级反馈分。
 func (a *ReuseAdapter) ObserveOutcome(ctx enginestate.TraversalContext, action *types.ActionCommand, outcome ActionOutcome) error {
-	// Reuse 的学习信号在 agent.UpdateStrategy() 和 agent.MoveForward() 中内部处理，
-	// 此处暂为空操作。Phase 4 后续迭代可桥接外部 Outcome 到 Reuse 的奖励机制。
+	if a == nil || action == nil {
+		return nil
+	}
+	a.feedback.observe(action, outcome)
 	return nil
 }
 

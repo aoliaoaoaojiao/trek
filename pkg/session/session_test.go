@@ -16,6 +16,35 @@ import (
 	"trek/internal/engine/traversal"
 )
 
+type mockTraversalAlgorithm struct {
+	proposeFn func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+	selectFn  func(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types2.ActionCommand, error)
+	observeFn func(ctx enginestate.TraversalContext, action *types2.ActionCommand, outcome traversal.ActionOutcome) error
+}
+
+func (m *mockTraversalAlgorithm) Name() string { return "mock" }
+
+func (m *mockTraversalAlgorithm) ProposeCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+	if m != nil && m.proposeFn != nil {
+		return m.proposeFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockTraversalAlgorithm) SelectAction(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types2.ActionCommand, error) {
+	if m != nil && m.selectFn != nil {
+		return m.selectFn(ctx, candidates)
+	}
+	return nil, nil
+}
+
+func (m *mockTraversalAlgorithm) ObserveOutcome(ctx enginestate.TraversalContext, action *types2.ActionCommand, outcome traversal.ActionOutcome) error {
+	if m != nil && m.observeFn != nil {
+		return m.observeFn(ctx, action, outcome)
+	}
+	return nil
+}
+
 func TestSessionNextAction(t *testing.T) {
 	session := NewSession(Config{
 		PackageName: "com.demo",
@@ -298,9 +327,9 @@ func TestSessionBuildHeuristicRecoveryCandidates(t *testing.T) {
 	}
 
 	items, err := session.BuildHeuristicRecoveryCandidates(enginestate.TraversalContext{
-		Mode:      "Recover",
-		PageName:  "MainActivity",
-		XML:       `<hierarchy><node class="android.widget.TextView"/></hierarchy>`,
+		Mode:       "Recover",
+		PageName:   "MainActivity",
+		XML:        `<hierarchy><node class="android.widget.TextView"/></hierarchy>`,
 		Screenshot: []byte{1, 2, 3},
 	})
 	if err != nil {
@@ -374,6 +403,42 @@ func TestSessionSelectRecoveryActionPrefersAlgorithmCandidate(t *testing.T) {
 	}
 	if cmd == nil || cmd.Act != types2.BACK {
 		t.Fatalf("预期优先选择 algorithm 候选 BACK，实际: %+v", cmd)
+	}
+}
+
+func TestSessionBuildAlgorithmCandidatesDelegatesTraversalAlgorithm(t *testing.T) {
+	session := NewSession(Config{
+		PackageName: "com.demo",
+		Algorithm:   decision.AlgorithmReuse,
+		DeviceType:  types2.Phone,
+	})
+	called := false
+	expected := []candidate.Candidate{
+		{
+			Command:    &types2.ActionCommand{Act: types2.BACK},
+			Source:     candidate.SourceAlgorithm,
+			Confidence: 0.8,
+		},
+	}
+	session.traversalAlgo = &mockTraversalAlgorithm{
+		proposeFn: func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+			called = true
+			return expected, nil
+		},
+	}
+
+	items, err := session.BuildAlgorithmCandidates(enginestate.TraversalContext{
+		Mode:     "Explore",
+		PageName: "MainActivity",
+	})
+	if err != nil {
+		t.Fatalf("BuildAlgorithmCandidates 失败: %v", err)
+	}
+	if !called {
+		t.Fatalf("预期调用 traversalAlgo.ProposeCandidates")
+	}
+	if len(items) != 1 || items[0].Command == nil || items[0].Command.Act != types2.BACK {
+		t.Fatalf("算法候选返回不符合预期: %+v", items)
 	}
 }
 

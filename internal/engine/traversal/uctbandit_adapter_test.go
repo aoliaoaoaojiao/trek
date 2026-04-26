@@ -48,6 +48,34 @@ func TestUCTBanditAdapterObserveOutcomeNoOp(t *testing.T) {
 	}
 }
 
+func TestUCTBanditAdapterObserveOutcomeAffectsSelection(t *testing.T) {
+	adapter := traversal.NewUCTBanditAdapter(nil, nil)
+	ctx := testTraversalContext()
+
+	backCmd := types.NewActionCommand()
+	backCmd.Act = types.BACK
+	clickCmd := types.NewActionCommand()
+	clickCmd.Act = types.CLICK
+	clickCmd.Pos = *types.NewRect(0.1, 0.2, 0.3, 0.4)
+
+	if err := adapter.ObserveOutcome(ctx, backCmd, traversal.OutcomeLoop); err != nil {
+		t.Fatalf("observe outcome 失败: %v", err)
+	}
+
+	backCandidate := candidate.NewCandidate(backCmd, candidate.SourceMemory, "back", nil)
+	backCandidate.Confidence = 0.5
+	clickCandidate := candidate.NewCandidate(clickCmd, candidate.SourceMemory, "click", nil)
+	clickCandidate.Confidence = 0.5
+
+	cmd, err := adapter.SelectAction(ctx, []candidate.Candidate{backCandidate, clickCandidate})
+	if err != nil {
+		t.Fatalf("select action 失败: %v", err)
+	}
+	if cmd == nil || cmd.Act != types.CLICK {
+		t.Fatalf("预期负反馈后优先选择 CLICK，实际: %+v", cmd)
+	}
+}
+
 func TestUCTBanditAdapterSelectActionPrefersAlgorithmSource(t *testing.T) {
 	adapter := traversal.NewUCTBanditAdapter(nil, nil)
 	ctx := testTraversalContext()

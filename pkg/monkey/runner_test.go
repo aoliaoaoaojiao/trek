@@ -41,10 +41,10 @@ func (f *failingDecider) NextActionWithInput(pageName string, input session.Acti
 
 type observingDecider struct {
 	fakeDecider
-	results          []session.StepResultInput
-	outcomeCalls     int
-	lastOutcome      string
-	lastOutcomeCtx   enginestate.TraversalContext
+	results           []session.StepResultInput
+	outcomeCalls      int
+	lastOutcome       string
+	lastOutcomeCtx    enginestate.TraversalContext
 	lastOutcomeAction *types.ActionCommand
 }
 
@@ -78,20 +78,22 @@ type contextAwareRecoveryDecider struct {
 
 type plannerAwareRecoveryDecider struct {
 	contextAwareRecoveryDecider
-	memoryCandidates    []candidate.Candidate
-	heuristicCandidates []candidate.Candidate
-	llmCandidates       []candidate.Candidate
-	weightedCandidates  []WeightedCandidate
-	persistedFailed     map[string]bool
-	memoryCalls         int
-	heuristicCalls      int
-	llmCalls            int
-	selectCalls         int
-	selectedRecoveryCmd *types.ActionCommand
-	outcomeCalls        int
-	lastOutcomeEscaped  bool
-	lastOutcomeContext  enginestate.TraversalContext
-	lastOutcomeItem     candidate.Candidate
+	memoryCandidates        []candidate.Candidate
+	heuristicCandidates     []candidate.Candidate
+	llmCandidates           []candidate.Candidate
+	algorithmCandidates     []candidate.Candidate
+	weightedCandidates      []WeightedCandidate
+	persistedFailed         map[string]bool
+	algorithmCalls          int
+	memoryCalls             int
+	heuristicCalls          int
+	llmCalls                int
+	selectCalls             int
+	selectedRecoveryCmd     *types.ActionCommand
+	outcomeCalls            int
+	lastOutcomeEscaped      bool
+	lastOutcomeContext      enginestate.TraversalContext
+	lastOutcomeItem         candidate.Candidate
 	enhancementOutcomeCalls int
 	lastEnhancementImproved bool
 	lastEnhancementContext  enginestate.TraversalContext
@@ -150,6 +152,11 @@ func (d *contextAwareRecoveryDecider) NextBlockRecoveryActionWithContext(ctx eng
 func (d *plannerAwareRecoveryDecider) BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
 	d.memoryCalls++
 	return d.memoryCandidates, nil
+}
+
+func (d *plannerAwareRecoveryDecider) BuildAlgorithmCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+	d.algorithmCalls++
+	return d.algorithmCandidates, nil
 }
 
 func (d *plannerAwareRecoveryDecider) BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
@@ -1436,6 +1443,58 @@ func TestRunnerRecoveryPlannerUsesSelectorWhenAvailable(t *testing.T) {
 	}
 }
 
+func TestRunnerExploreUsesTraversalCandidatesBeforeEnhancement(t *testing.T) {
+	decider := &plannerAwareRecoveryDecider{
+		contextAwareRecoveryDecider: contextAwareRecoveryDecider{
+			recoveryAwareDecider: recoveryAwareDecider{
+				fakeDecider: fakeDecider{
+					commands: []*types.ActionCommand{
+						{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
+					},
+				},
+			},
+		},
+		algorithmCandidates: []candidate.Candidate{
+			{Command: &types.ActionCommand{Act: types.BACK}, Source: candidate.SourceAlgorithm, Confidence: 0.7},
+		},
+		selectedRecoveryCmd: &types.ActionCommand{Act: types.BACK},
+	}
+	driver := &fakeDriver{
+		pageSource: &fakePageSource{xmls: []string{
+			`<node class="PageA"/>`,
+			`<node class="PageB"/>`,
+		}},
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		MaxSteps:        1,
+		StepInterval:    0,
+		KeepStepRecords: true,
+		StopOnCrash:     true,
+		StopOnANR:       true,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if decider.algorithmCalls == 0 {
+		t.Fatalf("预期探索阶段调用算法候选提供器")
+	}
+	if decider.selectCalls == 0 {
+		t.Fatalf("预期探索阶段调用候选选择器")
+	}
+	if driver.backCount == 0 {
+		t.Fatalf("预期探索阶段融合后执行 BACK")
+	}
+}
+
 func TestRunnerExploreLLMEnhancementEnabled(t *testing.T) {
 	enabled := true
 	decider := &plannerAwareRecoveryDecider{
@@ -1465,12 +1524,12 @@ func TestRunnerExploreLLMEnhancementEnabled(t *testing.T) {
 	}
 
 	runner, err := NewRunner(decider, driver, Config{
-		MaxSteps:                      1,
-		StepInterval:                  0,
-		KeepStepRecords:               true,
-		StopOnCrash:                   true,
-		StopOnANR:                     true,
-		EnableExploreLLMEnhancement:   &enabled,
+		MaxSteps:                       1,
+		StepInterval:                   0,
+		KeepStepRecords:                true,
+		StopOnCrash:                    true,
+		StopOnANR:                      true,
+		EnableExploreLLMEnhancement:    &enabled,
 		CandidateEnhancementMinStepGap: 1,
 	})
 	if err != nil {

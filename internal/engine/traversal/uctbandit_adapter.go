@@ -14,17 +14,22 @@ import (
 // ProposeCandidates: 从注入的 StateProvider 提取可选动作，
 // 映射为 Source=algorithm 的统一 Candidate，UCT 分数作为 Confidence。
 // SelectAction: 优先选择算法自身候选，否则从其他来源中按置信度选择。
-// ObserveOutcome: 当前为空操作，UCTBandit 的学习在 MoveForward 内部处理。
+// ObserveOutcome: 将动作执行结果回写为动作级反馈分，影响后续候选排序。
 type UCTBanditAdapter struct {
 	agent         types.IAgent
 	stateProvider StateProvider
+	feedback      *outcomeFeedbackStore
 }
 
 // NewUCTBanditAdapter 创建 UCTBandit 算法适配器。
 // agent 参数为 uctbandit.Agent 实例，可为 nil。
 // stateProvider 用于获取当前状态的可选动作列表，可为 nil。
 func NewUCTBanditAdapter(agent types.IAgent, stateProvider StateProvider) *UCTBanditAdapter {
-	return &UCTBanditAdapter{agent: agent, stateProvider: stateProvider}
+	return &UCTBanditAdapter{
+		agent:         agent,
+		stateProvider: stateProvider,
+		feedback:      newOutcomeFeedbackStore(),
+	}
 }
 
 // Name 返回算法名称。
@@ -82,6 +87,7 @@ func (a *UCTBanditAdapter) ProposeCandidates(ctx enginestate.TraversalContext) (
 		)
 		c.Confidence = confidence
 		c.NoveltyScore = noveltyFromVisitCount(action.GetVisitedCount())
+		c = applyOutcomeFeedback(c, a.feedback)
 		candidates = append(candidates, c)
 	}
 	return candidates, nil
@@ -97,7 +103,8 @@ func (a *UCTBanditAdapter) SelectAction(ctx enginestate.TraversalContext, candid
 	// 优先选择算法自身的候选
 	for _, c := range candidates {
 		if c.Source == candidate.SourceAlgorithm && c.Command != nil && c.Command.IsValid() {
-			return c.Command, nil
+			scored := applyOutcomeFeedback(c, a.feedback)
+			return scored.Command, nil
 		}
 	}
 
@@ -108,8 +115,9 @@ func (a *UCTBanditAdapter) SelectAction(ctx enginestate.TraversalContext, candid
 		if c.Command == nil || !c.Command.IsValid() {
 			continue
 		}
-		if !found || c.Confidence > best.Confidence {
-			best = c
+		scored := applyOutcomeFeedback(c, a.feedback)
+		if !found || scored.Confidence+scored.EscapeScore-scored.RiskScore > best.Confidence+best.EscapeScore-best.RiskScore {
+			best = scored
 			found = true
 		}
 	}
@@ -119,9 +127,12 @@ func (a *UCTBanditAdapter) SelectAction(ctx enginestate.TraversalContext, candid
 	return nil, nil
 }
 
-// ObserveOutcome 接收动作执行结果，映射到 UCTBandit 学习信号。
-// 当前为空操作，UCTBandit 的学习在 Agent.MoveForward/settleReward 内部处理。
+// ObserveOutcome 接收动作执行结果并更新动作级反馈分。
 func (a *UCTBanditAdapter) ObserveOutcome(ctx enginestate.TraversalContext, action *types.ActionCommand, outcome ActionOutcome) error {
+	if a == nil || action == nil {
+		return nil
+	}
+	a.feedback.observe(action, outcome)
 	return nil
 }
 

@@ -8,8 +8,8 @@ import (
 	"trek/internal/engine/candidate"
 	candidateproviders "trek/internal/engine/candidate/providers"
 	"trek/internal/engine/decision"
-	decisiontypes "trek/internal/engine/decision/shared/types"
 	"trek/internal/engine/decision/shared/types"
+	decisiontypes "trek/internal/engine/decision/shared/types"
 	"trek/internal/engine/memory"
 	engineruntime "trek/internal/engine/runtime"
 	enginestate "trek/internal/engine/state"
@@ -336,6 +336,20 @@ func (s *Session) BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) (
 		return nil, nil
 	}
 	return s.llmProvider.BuildCandidates(ctx)
+}
+
+// BuildAlgorithmCandidates 将统一算法适配器产出的候选暴露给 Runner 的探索融合链路。
+func (s *Session) BuildAlgorithmCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+	if s == nil {
+		return nil, nil
+	}
+	if s.traversalAlgo == nil {
+		s.initTraversalAlgorithm()
+	}
+	if s.traversalAlgo == nil {
+		return nil, nil
+	}
+	return s.traversalAlgo.ProposeCandidates(ctx)
 }
 
 // SelectRecoveryAction 基于 traversal 算法从融合恢复候选中选择最终动作。

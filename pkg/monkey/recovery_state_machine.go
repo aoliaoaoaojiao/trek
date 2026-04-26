@@ -58,6 +58,9 @@ func (m *recoveryStateMachine) OnBlockDetected(reason string) {
 		m.mode = TraversalModeSuspectBlocked
 	case TraversalModeSuspectBlocked:
 		m.mode = TraversalModeRecover
+	case TraversalModeRecover:
+		// 恢复失败但预算未耗尽：保持 Recover 状态继续尝试恢复。
+		// 这符合设计规格的 Recover→Recover 自循环。
 	case TraversalModeCooldown:
 		m.mode = TraversalModeSuspectBlocked
 		m.cooldownRemaining = 0

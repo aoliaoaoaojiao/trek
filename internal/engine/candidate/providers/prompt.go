@@ -91,7 +91,7 @@ func buildRecoveryPrompt(ctx enginestate.TraversalContext) RecoveryPrompt {
 		ScreenshotMediaType: mediaType,
 		ContextFields: RecoveryContextFields{
 			Step:             ctx.Step,
-			Mode:             ctx.Mode,
+			Mode:             string(ctx.Mode),
 			PageName:         ctx.PageName,
 			PageSignature:    ctx.PageSignature,
 			ClusterSignature: ctx.ClusterSignature,

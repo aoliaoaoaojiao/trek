@@ -5,6 +5,8 @@ import (
 	enginestate "trek/internal/engine/state"
 )
 
+const candidateEnhancementConfidenceBoost = 0.2
+
 // Provider 将 memory 记录转换为恢复候选。
 type Provider struct {
 	store *Store
@@ -25,14 +27,35 @@ func (p *Provider) BuildCandidates(ctx enginestate.TraversalContext) ([]candidat
 	for _, record := range records {
 		item := cloneCandidate(record.Candidate)
 		item.Source = candidate.SourceMemory
-		item.Confidence = successRate(record)
+		item.Confidence = providerConfidence(record, ctx)
 		item.EscapeScore = record.EscapeScore
 		if item.Metadata == nil {
-			item.Metadata = make(map[string]string, 2)
+			item.Metadata = make(map[string]string, 4)
 		}
 		item.Metadata["memory_key"] = record.MemoryKey
 		item.Metadata["memory_outcome"] = record.Outcome
+		if shouldBoostCandidateEnhancement(record, ctx) {
+			item.Metadata["memory_weight_tag"] = BlockReasonCandidateEnhancement
+		}
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+func providerConfidence(record RecoveryMemoryRecord, ctx enginestate.TraversalContext) float64 {
+	base := successRate(record)
+	if shouldBoostCandidateEnhancement(record, ctx) {
+		base += candidateEnhancementConfidenceBoost
+	}
+	if base > 1 {
+		return 1
+	}
+	return base
+}
+
+func shouldBoostCandidateEnhancement(record RecoveryMemoryRecord, ctx enginestate.TraversalContext) bool {
+	if !equalFold(record.BlockReason, BlockReasonCandidateEnhancement) {
+		return false
+	}
+	return ctx.Mode == enginestate.ModeExplore || ctx.Mode == enginestate.ModeSuspectBlocked
 }

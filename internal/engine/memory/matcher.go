@@ -8,10 +8,11 @@ import (
 
 func findMatches(records []RecoveryMemoryRecord, ctx enginestate.TraversalContext) []RecoveryMemoryRecord {
 	trace := buildTraceSignature(ctx)
+	ctxMode := string(ctx.Mode)
 
 	exact := make([]RecoveryMemoryRecord, 0, 8)
 	for _, item := range records {
-		if equalFold(item.Mode, ctx.Mode) &&
+		if equalFold(item.Mode, ctxMode) &&
 			equalFold(item.PageSignature, ctx.PageSignature) &&
 			equalFold(item.BlockReason, ctx.BlockReason) &&
 			equalFold(item.TraceSignature, trace) {
@@ -25,7 +26,7 @@ func findMatches(records []RecoveryMemoryRecord, ctx enginestate.TraversalContex
 
 	cluster := make([]RecoveryMemoryRecord, 0, 8)
 	for _, item := range records {
-		if equalFold(item.Mode, ctx.Mode) &&
+		if equalFold(item.Mode, ctxMode) &&
 			equalFold(item.ClusterSignature, ctx.ClusterSignature) &&
 			equalFold(item.BlockReason, ctx.BlockReason) {
 			cluster = append(cluster, cloneRecord(item))
@@ -38,7 +39,7 @@ func findMatches(records []RecoveryMemoryRecord, ctx enginestate.TraversalContex
 
 	page := make([]RecoveryMemoryRecord, 0, 8)
 	for _, item := range records {
-		if equalFold(item.Mode, ctx.Mode) &&
+		if equalFold(item.Mode, ctxMode) &&
 			equalFold(item.PageSignature, ctx.PageSignature) {
 			page = append(page, cloneRecord(item))
 		}

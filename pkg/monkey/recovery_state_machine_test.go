@@ -30,6 +30,32 @@ func TestRecoveryStateMachineEscalatesFromExploreToRecover(t *testing.T) {
 	}
 }
 
+func TestRecoveryStateMachineRecoverSelfLoop(t *testing.T) {
+	sm := newRecoveryStateMachine()
+
+	// Explore -> SuspectBlocked -> Recover
+	sm.OnBlockDetected("scroll_no_change")
+	sm.OnBlockDetected("scroll_no_change")
+	if sm.Mode() != TraversalModeRecover {
+		t.Fatalf("应进入 Recover，实际: %s", sm.Mode())
+	}
+
+	// Recover -> Recover（自循环：恢复失败但预算未耗尽）
+	sm.OnBlockDetected("two_state_ping_pong")
+	if sm.Mode() != TraversalModeRecover {
+		t.Fatalf("Recover 状态下再遇阻塞应保持 Recover（自循环），实际: %s", sm.Mode())
+	}
+	if sm.BlockReason() != "two_state_ping_pong" {
+		t.Fatalf("阻塞原因应更新为最新原因，实际: %s", sm.BlockReason())
+	}
+
+	// 再次自循环
+	sm.OnBlockDetected("same_page_no_change")
+	if sm.Mode() != TraversalModeRecover {
+		t.Fatalf("Recover 自循环应可重复，实际: %s", sm.Mode())
+	}
+}
+
 func TestRecoveryStateMachineProgressEntersCooldownThenBackToExplore(t *testing.T) {
 	sm := newRecoveryStateMachineWithCooldown(2)
 
@@ -113,7 +139,7 @@ func TestRunnerBuildTraversalContextIncludesRecoveryStateAndTrace(t *testing.T) 
 	if ctx.Step != 7 {
 		t.Fatalf("step 不符合预期: %d", ctx.Step)
 	}
-	if ctx.Mode != string(enginestate.ModeRecover) {
+	if ctx.Mode != enginestate.ModeRecover {
 		t.Fatalf("mode 不符合预期: %s", ctx.Mode)
 	}
 	if ctx.BlockReason != "scroll_no_change" {
@@ -198,7 +224,7 @@ func TestRunnerPrefersContextAwareBlockRecoveryDecider(t *testing.T) {
 	if decider.recoveryCalls == 0 {
 		t.Fatalf("预期触发恢复决策")
 	}
-	if decider.lastContext.Mode != string(enginestate.ModeRecover) {
+	if decider.lastContext.Mode != enginestate.ModeRecover {
 		t.Fatalf("恢复上下文 mode 错误: %s", decider.lastContext.Mode)
 	}
 	if decider.lastContext.BlockReason == "" {
@@ -299,7 +325,10 @@ func TestRunnerRecordsRecoveryOutcomeAfterPlannerSelection(t *testing.T) {
 
 	runner.handleBlockDetected("same_page_no_change")
 	runner.handleBlockDetected("same_page_no_change")
-	cmd, err := runner.nextCommandWithRecovery("MainActivity", session.ActionInput{
+	cmd, err := runner.nextCommandWithRecovery(1, session.PageSnapshot{
+		PageName: "MainActivity",
+		XML:      `<hierarchy/>`,
+	}, "MainActivity", session.ActionInput{
 		XMLDescOfGuiTree: `<hierarchy/>`,
 	})
 	if err != nil {
@@ -316,7 +345,7 @@ func TestRunnerRecordsRecoveryOutcomeAfterPlannerSelection(t *testing.T) {
 	if !decider.lastOutcomeEscaped {
 		t.Fatalf("预期写回 escaped=true")
 	}
-	if decider.lastOutcomeContext.Mode != string(enginestate.ModeRecover) {
+	if decider.lastOutcomeContext.Mode != enginestate.ModeRecover {
 		t.Fatalf("写回上下文 mode 错误: %s", decider.lastOutcomeContext.Mode)
 	}
 	if decider.lastOutcomeContext.BlockReason != "same_page_no_change" {
@@ -369,7 +398,7 @@ func TestRunnerRecoveryPlannerRespectsLLMBudgetConfig(t *testing.T) {
 
 	_, err = planner.BuildRecoveryCandidates(enginestate.BuildTraversalContext(enginestate.BuildInput{
 		Step:        1,
-		Mode:        string(enginestate.ModeRecover),
+		Mode:        enginestate.ModeRecover,
 		PageName:    "PageA",
 		BlockReason: "same_page_no_change",
 	}))
@@ -378,7 +407,7 @@ func TestRunnerRecoveryPlannerRespectsLLMBudgetConfig(t *testing.T) {
 	}
 	_, err = planner.BuildRecoveryCandidates(enginestate.BuildTraversalContext(enginestate.BuildInput{
 		Step:        2,
-		Mode:        string(enginestate.ModeRecover),
+		Mode:        enginestate.ModeRecover,
 		PageName:    "PageA",
 		BlockReason: "same_page_no_change",
 	}))
@@ -483,7 +512,10 @@ func TestRunnerRecoveryPlannerPenalizesKnownFailedAction(t *testing.T) {
 
 	runner.handleBlockDetected("same_page_no_change")
 	runner.handleBlockDetected("same_page_no_change")
-	first, err := runner.nextCommandWithRecovery("MainActivity", session.ActionInput{XMLDescOfGuiTree: `<hierarchy/>`})
+	first, err := runner.nextCommandWithRecovery(1, session.PageSnapshot{
+		PageName: "MainActivity",
+		XML:      `<hierarchy/>`,
+	}, "MainActivity", session.ActionInput{XMLDescOfGuiTree: `<hierarchy/>`})
 	if err != nil {
 		t.Fatalf("第一次恢复取动作失败: %v", err)
 	}
@@ -494,7 +526,10 @@ func TestRunnerRecoveryPlannerPenalizesKnownFailedAction(t *testing.T) {
 	runner.recordRecoveryOutcome(false)
 
 	runner.handleBlockDetected("same_page_no_change")
-	second, err := runner.nextCommandWithRecovery("MainActivity", session.ActionInput{XMLDescOfGuiTree: `<hierarchy/>`})
+	second, err := runner.nextCommandWithRecovery(2, session.PageSnapshot{
+		PageName: "MainActivity",
+		XML:      `<hierarchy/>`,
+	}, "MainActivity", session.ActionInput{XMLDescOfGuiTree: `<hierarchy/>`})
 	if err != nil {
 		t.Fatalf("第二次恢复取动作失败: %v", err)
 	}
@@ -539,7 +574,10 @@ func TestRunnerRecoveryPlannerPenalizesPersistedFailedAction(t *testing.T) {
 
 	runner.handleBlockDetected("same_page_no_change")
 	runner.handleBlockDetected("same_page_no_change")
-	cmd, err := runner.nextCommandWithRecovery("MainActivity", session.ActionInput{XMLDescOfGuiTree: `<hierarchy/>`})
+	cmd, err := runner.nextCommandWithRecovery(1, session.PageSnapshot{
+		PageName: "MainActivity",
+		XML:      `<hierarchy/>`,
+	}, "MainActivity", session.ActionInput{XMLDescOfGuiTree: `<hierarchy/>`})
 	if err != nil {
 		t.Fatalf("恢复取动作失败: %v", err)
 	}

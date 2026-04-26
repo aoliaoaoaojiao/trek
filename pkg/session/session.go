@@ -8,10 +8,12 @@ import (
 	"trek/internal/engine/candidate"
 	candidateproviders "trek/internal/engine/candidate/providers"
 	"trek/internal/engine/decision"
+	decisiontypes "trek/internal/engine/decision/shared/types"
 	"trek/internal/engine/decision/shared/types"
 	"trek/internal/engine/memory"
 	engineruntime "trek/internal/engine/runtime"
 	enginestate "trek/internal/engine/state"
+	"trek/internal/engine/traversal"
 	"trek/logger"
 )
 
@@ -68,10 +70,15 @@ type Session struct {
 	memoryStore    *memory.Store
 	memoryProvider *memory.Provider
 	llmProvider    recoveryLLMCandidateProvider
+	traversalAlgo  traversal.TraversalAlgorithm
 }
 
 type recoveryLLMCandidateProvider interface {
 	BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+}
+
+type stateReader interface {
+	GetCurrentState() decisiontypes.IState
 }
 
 // NewSession 闂佸憡甯楃粙鎴犵磽閹捐妫樺Λ棰佽兌缁愭鎮归崶銊х畵闁艰崵鍠栧畷姘攽閸♀晜缍忛梺鍛婄墬閻楃姷鍒掗婊勫闁靛牆顦敮宕囩磽閸愭儳鏋旈柍?
@@ -155,14 +162,44 @@ func (s *Session) initRecoveryLLMProvider() {
 func (s *Session) Reset() {
 	engineruntime.ResetModel()
 	engineruntime.InitAgent(s.config.Algorithm, s.config.PackageName, s.config.DeviceType)
+	s.initTraversalAlgorithm()
 }
 
 // LoadConfigFile 闂佸憡姊绘慨鎯归崶銊︿氦闁归偊鍨奸弨浠嬫煛閸愩劎鍩ｉ柛妯稿€楃槐鏃堫敊閼恒儳鈧喖霉閻樹警鍟囩紒杈ㄧ懄缁嬪鎷犻幓鎺戞辈闂佸憡鐟辩紞鍥╂濮樿泛违?
 func (s *Session) LoadConfigFile(path string) error {
 	if engineruntime.GetModel() == nil {
 		s.Reset()
+	} else if s.traversalAlgo == nil {
+		s.initTraversalAlgorithm()
 	}
 	return engineruntime.LoadConfigFile(path)
+}
+
+func (s *Session) initTraversalAlgorithm() {
+	s.traversalAlgo = nil
+	model := engineruntime.GetModel()
+	if model == nil {
+		return
+	}
+	rawAgent := model.GetAgent(decision.DefaultDeviceID)
+	agent, ok := rawAgent.(decisiontypes.IAgent)
+	if !ok || agent == nil {
+		return
+	}
+
+	var provider traversal.StateProvider
+	if reader, ok := rawAgent.(stateReader); ok && reader != nil {
+		provider = &sessionStateProvider{reader: reader}
+	}
+
+	switch s.config.Algorithm {
+	case decision.AlgorithmReuse:
+		s.traversalAlgo = traversal.NewReuseAdapter(agent, provider)
+	case decision.AlgorithmUctBandit:
+		s.traversalAlgo = traversal.NewUCTBanditAdapter(agent, provider)
+	default:
+		s.traversalAlgo = nil
+	}
 }
 
 // Deprecated: 闁荤姴娲╁〒瑙勭箾閸ヮ剚鍋?LoadConfigFile闂?
@@ -243,6 +280,38 @@ func (s *Session) BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext
 	return s.memoryProvider.BuildCandidates(ctx)
 }
 
+// BuildHeuristicRecoveryCandidates 通过插件 block_recovery 链路生成启发式恢复候选。
+func (s *Session) BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+	if s == nil {
+		return nil, nil
+	}
+	if strings.TrimSpace(ctx.XML) == "" && len(ctx.Screenshot) == 0 {
+		return nil, nil
+	}
+
+	pageName := strings.TrimSpace(ctx.PageName)
+	if pageName == "" {
+		pageName = "UnknownPage"
+	}
+
+	operate := engineruntime.GetBlockRecoveryActionOptWithInput(pageName, ctx.XML, ctx.Screenshot)
+	if operate == nil || isAppRestartAction(operate.Act) {
+		return nil, nil
+	}
+
+	cmd := *operate
+	return []candidate.Candidate{
+		{
+			Command: &cmd,
+			Source:  candidate.SourceHeuristic,
+			Intent:  "plugin_block_recovery",
+			Metadata: map[string]string{
+				"provider": "session_plugin",
+			},
+		},
+	}, nil
+}
+
 // BuildKnownFailedRecoveryActions 返回恢复阶段已知失败动作，用于候选融合惩罚。
 func (s *Session) BuildKnownFailedRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
 	result := make(map[string]bool)
@@ -269,6 +338,34 @@ func (s *Session) BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) (
 	return s.llmProvider.BuildCandidates(ctx)
 }
 
+// SelectRecoveryAction 基于 traversal 算法从融合恢复候选中选择最终动作。
+func (s *Session) SelectRecoveryAction(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types.ActionCommand, error) {
+	if s == nil || len(candidates) == 0 {
+		return nil, nil
+	}
+	if s.traversalAlgo == nil {
+		s.initTraversalAlgorithm()
+	}
+	if s.traversalAlgo == nil {
+		return nil, nil
+	}
+	return s.traversalAlgo.SelectAction(ctx, candidates)
+}
+
+// ObserveTraversalOutcome 回写统一动作结果，供 traversal 算法在线学习。
+func (s *Session) ObserveTraversalOutcome(ctx enginestate.TraversalContext, action *types.ActionCommand, outcome traversal.ActionOutcome) error {
+	if s == nil || action == nil {
+		return nil
+	}
+	if s.traversalAlgo == nil {
+		s.initTraversalAlgorithm()
+	}
+	if s.traversalAlgo == nil {
+		return nil
+	}
+	return s.traversalAlgo.ObserveOutcome(ctx, action, outcome)
+}
+
 // RecordRecoveryMemoryOutcome 写回一次恢复动作结果，用于跨会话复用。
 func (s *Session) RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, item candidate.Candidate, escaped bool) error {
 	if s == nil || s.memoryStore == nil || item.Command == nil {
@@ -286,12 +383,50 @@ func (s *Session) RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, 
 		escapeScore = 1
 	}
 	record := memory.RecoveryMemoryRecord{
-		MemoryKey:        memory.BuildMemoryKey(ctx.PageSignature, ctx.BlockReason, traceSignature, ctx.Mode),
+		MemoryKey:        memory.BuildMemoryKey(ctx.PageSignature, ctx.BlockReason, traceSignature, string(ctx.Mode)),
 		PageSignature:    ctx.PageSignature,
 		ClusterSignature: ctx.ClusterSignature,
 		BlockReason:      ctx.BlockReason,
 		TraceSignature:   traceSignature,
-		Mode:             ctx.Mode,
+		Mode:             string(ctx.Mode),
+		Candidate:        item,
+		Outcome:          outcome,
+		EscapeScore:      escapeScore,
+		SuccessCount:     successCount,
+		FailCount:        failCount,
+		LastUsedAt:       time.Now(),
+		CreatedAt:        time.Now(),
+	}
+	return s.memoryStore.AppendOutcome(record)
+}
+
+// RecordCandidateEnhancementOutcome 写回候选增强动作结果，沉淀正负样本。
+func (s *Session) RecordCandidateEnhancementOutcome(ctx enginestate.TraversalContext, item candidate.Candidate, improved bool) error {
+	if s == nil || s.memoryStore == nil || item.Command == nil {
+		return nil
+	}
+	traceSignature := buildTraceSignature(ctx.RecentTrace)
+	outcome := memory.OutcomeFailed
+	successCount := 0
+	failCount := 1
+	escapeScore := 0.0
+	if improved {
+		outcome = memory.OutcomeEscaped
+		successCount = 1
+		failCount = 0
+		escapeScore = 1
+	}
+	blockReason := strings.TrimSpace(ctx.BlockReason)
+	if blockReason == "" {
+		blockReason = memory.BlockReasonCandidateEnhancement
+	}
+	record := memory.RecoveryMemoryRecord{
+		MemoryKey:        memory.BuildMemoryKey(ctx.PageSignature, blockReason, traceSignature, string(ctx.Mode)),
+		PageSignature:    ctx.PageSignature,
+		ClusterSignature: ctx.ClusterSignature,
+		BlockReason:      blockReason,
+		TraceSignature:   traceSignature,
+		Mode:             string(ctx.Mode),
 		Candidate:        item,
 		Outcome:          outcome,
 		EscapeScore:      escapeScore,
@@ -369,6 +504,17 @@ func (s *Session) OnStepResult(input StepResultInput) error {
 
 func isAppRestartAction(act types.ActionType) bool {
 	return act == types.START || act == types.RESTART || act == types.CLEAN_RESTART
+}
+
+type sessionStateProvider struct {
+	reader stateReader
+}
+
+func (p *sessionStateProvider) CurrentState() decisiontypes.IState {
+	if p == nil || p.reader == nil {
+		return nil
+	}
+	return p.reader.GetCurrentState()
 }
 
 func buildTraceSignature(trace []enginestate.ActionTrace) string {

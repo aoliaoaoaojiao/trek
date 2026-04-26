@@ -10,6 +10,7 @@ import (
 	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
 	enginestate "trek/internal/engine/state"
+	"trek/internal/engine/traversal"
 	"trek/pkg/driver/common"
 	"trek/pkg/session"
 )
@@ -40,11 +41,23 @@ func (f *failingDecider) NextActionWithInput(pageName string, input session.Acti
 
 type observingDecider struct {
 	fakeDecider
-	results []session.StepResultInput
+	results          []session.StepResultInput
+	outcomeCalls     int
+	lastOutcome      string
+	lastOutcomeCtx   enginestate.TraversalContext
+	lastOutcomeAction *types.ActionCommand
 }
 
 func (o *observingDecider) OnStepResult(result session.StepResultInput) error {
 	o.results = append(o.results, result)
+	return nil
+}
+
+func (o *observingDecider) ObserveTraversalOutcome(ctx enginestate.TraversalContext, action *types.ActionCommand, outcome traversal.ActionOutcome) error {
+	o.outcomeCalls++
+	o.lastOutcome = string(outcome)
+	o.lastOutcomeCtx = ctx
+	o.lastOutcomeAction = action
 	return nil
 }
 
@@ -68,14 +81,21 @@ type plannerAwareRecoveryDecider struct {
 	memoryCandidates    []candidate.Candidate
 	heuristicCandidates []candidate.Candidate
 	llmCandidates       []candidate.Candidate
+	weightedCandidates  []WeightedCandidate
 	persistedFailed     map[string]bool
 	memoryCalls         int
 	heuristicCalls      int
 	llmCalls            int
+	selectCalls         int
+	selectedRecoveryCmd *types.ActionCommand
 	outcomeCalls        int
 	lastOutcomeEscaped  bool
 	lastOutcomeContext  enginestate.TraversalContext
 	lastOutcomeItem     candidate.Candidate
+	enhancementOutcomeCalls int
+	lastEnhancementImproved bool
+	lastEnhancementContext  enginestate.TraversalContext
+	lastEnhancementItem     candidate.Candidate
 }
 
 type transformingDecider struct {
@@ -142,6 +162,17 @@ func (d *plannerAwareRecoveryDecider) BuildLLMRecoveryCandidates(ctx enginestate
 	return d.llmCandidates, nil
 }
 
+func (d *plannerAwareRecoveryDecider) NextWeightedActionsWithInput(pageName string, input session.ActionInput) ([]WeightedCandidate, error) {
+	if len(d.weightedCandidates) > 0 {
+		return d.weightedCandidates, nil
+	}
+	cmd, err := d.NextActionWithInput(pageName, input)
+	if err != nil || cmd == nil {
+		return nil, err
+	}
+	return []WeightedCandidate{{Command: cmd, Weight: 1}}, nil
+}
+
 func (d *plannerAwareRecoveryDecider) BuildKnownFailedRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
 	result := make(map[string]bool, len(d.persistedFailed))
 	for key, value := range d.persistedFailed {
@@ -150,11 +181,27 @@ func (d *plannerAwareRecoveryDecider) BuildKnownFailedRecoveryActions(ctx engine
 	return result, nil
 }
 
+func (d *plannerAwareRecoveryDecider) SelectRecoveryAction(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types.ActionCommand, error) {
+	d.selectCalls++
+	if d.selectedRecoveryCmd == nil {
+		return nil, nil
+	}
+	return d.selectedRecoveryCmd, nil
+}
+
 func (d *plannerAwareRecoveryDecider) RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, item candidate.Candidate, escaped bool) error {
 	d.outcomeCalls++
 	d.lastOutcomeEscaped = escaped
 	d.lastOutcomeContext = ctx
 	d.lastOutcomeItem = item
+	return nil
+}
+
+func (d *plannerAwareRecoveryDecider) RecordCandidateEnhancementOutcome(ctx enginestate.TraversalContext, item candidate.Candidate, improved bool) error {
+	d.enhancementOutcomeCalls++
+	d.lastEnhancementImproved = improved
+	d.lastEnhancementContext = ctx
+	d.lastEnhancementItem = item
 	return nil
 }
 
@@ -356,6 +403,50 @@ func TestRunnerReportsStepResultWithAfterPageCrashANRAndScreenshot(t *testing.T)
 	}
 	if len(result.Before.Screenshot) == 0 || len(result.After.Screenshot) == 0 {
 		t.Fatalf("预期包含执行前后截图: %+v", result)
+	}
+}
+
+func TestRunnerNotifiesTraversalOutcomeObserver(t *testing.T) {
+	decider := &observingDecider{
+		fakeDecider: fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}},
+	}
+	driver := &fakeDriver{
+		pageSource: &fakePageSource{
+			xmls: []string{
+				`<node class="PageA"/>`, `<node class="PageB"/>`,
+			},
+		},
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		MaxSteps:        1,
+		StepInterval:    0,
+		KeepStepRecords: true,
+		StopOnCrash:     true,
+		StopOnANR:       true,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if decider.outcomeCalls != 1 {
+		t.Fatalf("预期回调 1 次 traversal outcome，实际: %d", decider.outcomeCalls)
+	}
+	if decider.lastOutcome != string(traversal.OutcomeNewState) {
+		t.Fatalf("预期 outcome=%s，实际: %s", traversal.OutcomeNewState, decider.lastOutcome)
+	}
+	if decider.lastOutcomeAction == nil || decider.lastOutcomeAction.Act != types.CLICK {
+		t.Fatalf("预期记录 CLICK 动作，实际: %+v", decider.lastOutcomeAction)
+	}
+	if decider.lastOutcomeCtx.Mode != TraversalModeExplore {
+		t.Fatalf("预期回调上下文 mode=Explore，实际: %s", decider.lastOutcomeCtx.Mode)
 	}
 }
 
@@ -1298,6 +1389,280 @@ func TestRunnerReportContainsCooldownStats(t *testing.T) {
 	}
 	if report.RecoveryCooldownStepCount <= 0 {
 		t.Fatalf("预期记录 cooldown 步进命中次数，实际: %d", report.RecoveryCooldownStepCount)
+	}
+}
+
+func TestRunnerRecoveryPlannerUsesSelectorWhenAvailable(t *testing.T) {
+	decider := &plannerAwareRecoveryDecider{
+		selectedRecoveryCmd: &types.ActionCommand{Act: types.BACK},
+		memoryCandidates: []candidate.Candidate{
+			{Command: &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}, Source: candidate.SourceMemory},
+		},
+	}
+	driver := &fakeDriver{
+		pageSource: &fakePageSource{xmls: []string{
+			`<node class="PageA"/>`,
+			`<node class="PageB"/>`,
+		}},
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		MaxSteps:               5,
+		StepInterval:           0,
+		KeepStepRecords:        true,
+		StopOnCrash:            true,
+		StopOnANR:              true,
+		BlockNoChangeThreshold: 2,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+	// 直接标记两次阻塞，进入 recover pending。
+	runner.handleBlockDetected(blockReasonSamePageNoChange)
+	runner.handleBlockDetected(blockReasonSamePageNoChange)
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if decider.selectCalls == 0 {
+		t.Fatalf("预期调用 SelectRecoveryAction")
+	}
+	if driver.backCount == 0 {
+		t.Fatalf("预期按 selector 结果执行 BACK")
+	}
+}
+
+func TestRunnerExploreLLMEnhancementEnabled(t *testing.T) {
+	enabled := true
+	decider := &plannerAwareRecoveryDecider{
+		contextAwareRecoveryDecider: contextAwareRecoveryDecider{
+			recoveryAwareDecider: recoveryAwareDecider{
+				fakeDecider: fakeDecider{
+					commands: []*types.ActionCommand{
+						{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
+					},
+				},
+			},
+		},
+		weightedCandidates: []WeightedCandidate{
+			{Command: &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}, Weight: 0.5},
+			{Command: &types.ActionCommand{Act: types.SCROLL_BOTTOM_UP, Pos: *types.NewRect(0, 0, 1, 1)}, Weight: 0.5},
+		},
+		selectedRecoveryCmd: &types.ActionCommand{Act: types.BACK},
+		llmCandidates: []candidate.Candidate{
+			{Command: &types.ActionCommand{Act: types.BACK}, Source: candidate.SourceLLM, Confidence: 0.9},
+		},
+	}
+	driver := &fakeDriver{
+		pageSource: &fakePageSource{xmls: []string{
+			`<node class="PageA"/>`,
+			`<node class="PageB"/>`,
+		}},
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		MaxSteps:                      1,
+		StepInterval:                  0,
+		KeepStepRecords:               true,
+		StopOnCrash:                   true,
+		StopOnANR:                     true,
+		EnableExploreLLMEnhancement:   &enabled,
+		CandidateEnhancementMinStepGap: 1,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if decider.llmCalls == 0 {
+		t.Fatalf("预期启用后触发 llm 候选增强")
+	}
+	if decider.selectCalls == 0 {
+		t.Fatalf("预期启用后调用 selector")
+	}
+	if driver.backCount == 0 {
+		t.Fatalf("预期增强后执行 BACK")
+	}
+	if report.CandidateEnhancementCalls <= 0 || report.CandidateEnhancementSelects <= 0 {
+		t.Fatalf("预期报告记录增强调用/命中次数，实际 calls=%d hits=%d", report.CandidateEnhancementCalls, report.CandidateEnhancementSelects)
+	}
+	if decider.enhancementOutcomeCalls == 0 {
+		t.Fatalf("预期写回候选增强结果")
+	}
+	if !decider.lastEnhancementImproved {
+		t.Fatalf("预期增强后 outcome 记为 improved=true")
+	}
+}
+
+func TestRunnerExploreLLMEnhancementDisabledByDefault(t *testing.T) {
+	decider := &plannerAwareRecoveryDecider{
+		contextAwareRecoveryDecider: contextAwareRecoveryDecider{
+			recoveryAwareDecider: recoveryAwareDecider{
+				fakeDecider: fakeDecider{
+					commands: []*types.ActionCommand{
+						{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
+					},
+				},
+			},
+		},
+		selectedRecoveryCmd: &types.ActionCommand{Act: types.BACK},
+		llmCandidates: []candidate.Candidate{
+			{Command: &types.ActionCommand{Act: types.BACK}, Source: candidate.SourceLLM, Confidence: 0.9},
+		},
+	}
+	driver := &fakeDriver{
+		pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`},
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		MaxSteps:        1,
+		StepInterval:    0,
+		KeepStepRecords: true,
+		StopOnCrash:     true,
+		StopOnANR:       true,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if decider.llmCalls != 0 || decider.selectCalls != 0 {
+		t.Fatalf("默认关闭时不应触发增强，llm=%d selector=%d", decider.llmCalls, decider.selectCalls)
+	}
+	if driver.backCount != 0 {
+		t.Fatalf("默认关闭时不应执行增强 BACK，实际 back=%d", driver.backCount)
+	}
+	if report.CandidateEnhancementCalls != 0 || report.CandidateEnhancementSelects != 0 {
+		t.Fatalf("默认关闭时报告中增强计数应为 0，实际 calls=%d hits=%d", report.CandidateEnhancementCalls, report.CandidateEnhancementSelects)
+	}
+}
+
+func TestRunnerExploreLLMEnhancementSkipsWhenCandidatesDistinct(t *testing.T) {
+	enabled := true
+	decider := &plannerAwareRecoveryDecider{
+		contextAwareRecoveryDecider: contextAwareRecoveryDecider{
+			recoveryAwareDecider: recoveryAwareDecider{
+				fakeDecider: fakeDecider{
+					commands: []*types.ActionCommand{
+						{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
+					},
+				},
+			},
+		},
+		weightedCandidates: []WeightedCandidate{
+			{Command: &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}, Weight: 0.9},
+			{Command: &types.ActionCommand{Act: types.SCROLL_BOTTOM_UP, Pos: *types.NewRect(0, 0, 1, 1)}, Weight: 0.1},
+		},
+		selectedRecoveryCmd: &types.ActionCommand{Act: types.BACK},
+		llmCandidates: []candidate.Candidate{
+			{Command: &types.ActionCommand{Act: types.BACK}, Source: candidate.SourceLLM, Confidence: 0.9},
+		},
+	}
+	driver := &fakeDriver{
+		pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`},
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		MaxSteps:                       1,
+		StepInterval:                   0,
+		KeepStepRecords:                true,
+		StopOnCrash:                    true,
+		StopOnANR:                      true,
+		EnableExploreLLMEnhancement:    &enabled,
+		CandidateEnhancementMinStepGap: 1,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if decider.llmCalls != 0 || decider.selectCalls != 0 {
+		t.Fatalf("候选区分度高时不应触发增强，llm=%d selector=%d", decider.llmCalls, decider.selectCalls)
+	}
+	if driver.backCount != 0 {
+		t.Fatalf("候选区分度高时不应执行增强 BACK，实际 back=%d", driver.backCount)
+	}
+	if report.CandidateEnhancementCalls != 0 || report.CandidateEnhancementSelects != 0 {
+		t.Fatalf("候选区分度高时增强计数应为 0，实际 calls=%d hits=%d", report.CandidateEnhancementCalls, report.CandidateEnhancementSelects)
+	}
+}
+
+func TestBlockDetectorUsesStableReasonForScrollNoChange(t *testing.T) {
+	detector := newBlockDetector(3)
+	cmd := &types.ActionCommand{Act: types.SCROLL_BOTTOM_UP, Pos: *types.NewRect(0, 0, 1, 1)}
+	before := session.PageSnapshot{PageName: "MainActivity", XML: `<node class="MainActivity"/>`}
+	after := &session.PageSnapshot{PageName: "MainActivity", XML: `<node class="MainActivity"/>`}
+
+	triggered := false
+	for i := 0; i < 3; i++ {
+		triggered = detector.Observe(cmd, before, after)
+	}
+	if !triggered {
+		t.Fatalf("预期触发 scroll_no_change")
+	}
+	if detector.LastReason() != blockReasonScrollNoChange {
+		t.Fatalf("预期 reason=%s，实际: %s", blockReasonScrollNoChange, detector.LastReason())
+	}
+}
+
+func TestBlockDetectorDetectsSamePageNoChange(t *testing.T) {
+	detector := newBlockDetector(3)
+	cmd := &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}
+	before := session.PageSnapshot{PageName: "MainActivity", XML: `<node class="MainActivity"/>`}
+	after := &session.PageSnapshot{PageName: "MainActivity", XML: `<node class="MainActivity"/>`}
+
+	triggered := false
+	for i := 0; i < 3; i++ {
+		triggered = detector.Observe(cmd, before, after)
+	}
+	if !triggered {
+		t.Fatalf("预期触发 same_page_no_change")
+	}
+	if detector.LastReason() != blockReasonSamePageNoChange {
+		t.Fatalf("预期 reason=%s，实际: %s", blockReasonSamePageNoChange, detector.LastReason())
+	}
+}
+
+func TestBlockDetectorDetectsHighVisitLowReward(t *testing.T) {
+	detector := newBlockDetector(20)
+	cmd := &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}
+	after := &session.PageSnapshot{PageName: "PageA", XML: `<node class="PageA"/>`}
+
+	triggered := false
+	for i := 0; i < defaultHighVisitThreshold; i++ {
+		before := session.PageSnapshot{
+			PageName: "PageB",
+			XML:      `<node class="PageB_` + strings.Repeat("x", i+1) + `"/>`,
+		}
+		triggered = detector.Observe(cmd, before, after)
+	}
+	if !triggered {
+		t.Fatalf("预期触发 high_visit_low_reward")
+	}
+	if detector.LastReason() != blockReasonHighVisitLowGain {
+		t.Fatalf("预期 reason=%s，实际: %s", blockReasonHighVisitLowGain, detector.LastReason())
 	}
 }
 

@@ -5,6 +5,13 @@ import (
 	"strings"
 )
 
+const (
+	knownFailedRiskPenalty              = 2.0
+	memoryWeightTagKey                  = "memory_weight_tag"
+	memoryWeightTagCandidateEnhancement = "candidate_enhancement"
+	memoryWeightTagBoost                = 0.25
+)
+
 // FusionOptions 定义候选融合的可选参数。
 type FusionOptions struct {
 	KnownFailedActions map[string]bool
@@ -27,7 +34,7 @@ func FuseCandidates(items []Candidate, options FusionOptions) []Candidate {
 			continue
 		}
 		if options.KnownFailedActions != nil && options.KnownFailedActions[key] {
-			item.RiskScore = maxFloat(item.RiskScore, 1)
+			item.RiskScore = maxFloat(item.RiskScore, knownFailedRiskPenalty)
 		}
 		existing, ok := merged[key]
 		if !ok {
@@ -102,7 +109,18 @@ func commandKey(item Candidate) string {
 }
 
 func fusionScore(item Candidate) float64 {
-	return item.Confidence + item.EscapeScore + item.NoveltyScore*0.5 - item.RiskScore
+	score := item.Confidence + item.EscapeScore + item.NoveltyScore*0.5 - item.RiskScore
+	if hasCandidateEnhancementTag(item) && item.RiskScore < knownFailedRiskPenalty {
+		score += memoryWeightTagBoost
+	}
+	return score
+}
+
+func hasCandidateEnhancementTag(item Candidate) bool {
+	if item.Metadata == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(item.Metadata[memoryWeightTagKey]), memoryWeightTagCandidateEnhancement)
 }
 
 func maxFloat(left float64, right float64) float64 {

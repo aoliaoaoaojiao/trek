@@ -3,8 +3,10 @@ package providers
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -13,7 +15,11 @@ import (
 	enginestate "trek/internal/engine/state"
 )
 
-const defaultLLMTimeout = 15 * time.Second
+const (
+	defaultLLMTimeout          = 15 * time.Second
+	llmRetryBackoff429         = 20 * time.Second
+	llmRetryBackoffServerError = 2 * time.Second
+)
 
 // LLMHTTPProviderConfig 定义基于 HTTP 的 LLM 候选提供器配置。
 type LLMHTTPProviderConfig struct {
@@ -31,6 +37,7 @@ type LLMHTTPProvider struct {
 	model    string
 	client   *http.Client
 	headers  map[string]string
+	sleep    func(time.Duration)
 }
 
 // NewLLMHTTPProvider 创建 HTTP LLM 提供器。
@@ -57,6 +64,7 @@ func NewLLMHTTPProvider(cfg LLMHTTPProviderConfig) (*LLMHTTPProvider, error) {
 		model:    strings.TrimSpace(cfg.Model),
 		client:   &http.Client{Timeout: timeout},
 		headers:  headers,
+		sleep:    time.Sleep,
 	}, nil
 }
 
@@ -70,8 +78,8 @@ func (p *LLMHTTPProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]c
 	payload := llmRequest{
 		Model:            p.model,
 		Instruction:      prompt.SystemContent,
-		UserMessage:       prompt.UserContent,
-		Context:           prompt.ContextFields,
+		UserMessage:      prompt.UserContent,
+		Context:          prompt.ContextFields,
 		ScreenshotBase64: prompt.ScreenshotBase64(),
 	}
 	data, err := json.Marshal(payload)
@@ -79,30 +87,12 @@ func (p *LLMHTTPProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]c
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, p.endpoint, bytes.NewReader(data))
+	body, status, err := p.postWithRetry(data)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	if p.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+p.apiKey)
-	}
-	for key, value := range p.headers {
-		req.Header.Set(key, value)
-	}
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("llm endpoint 响应异常: status=%d body=%s", resp.StatusCode, truncateText(string(body), 512))
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("llm endpoint 响应异常: status=%d body=%s", status, truncateText(string(body), 512))
 	}
 
 	var output llmResponse
@@ -112,12 +102,72 @@ func (p *LLMHTTPProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]c
 	return parseLLMCandidates(output), nil
 }
 
+func (p *LLMHTTPProvider) postWithRetry(payload []byte) ([]byte, int, error) {
+	tryOnce := func() ([]byte, int, error) {
+		req, err := http.NewRequest(http.MethodPost, p.endpoint, bytes.NewReader(payload))
+		if err != nil {
+			return nil, 0, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if p.apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		}
+		for key, value := range p.headers {
+			req.Header.Set(key, value)
+		}
+		resp, err := p.client.Do(req)
+		if err != nil {
+			return nil, 0, err
+		}
+		defer resp.Body.Close()
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return nil, resp.StatusCode, readErr
+		}
+		return body, resp.StatusCode, nil
+	}
+
+	body, status, err := tryOnce()
+	if err != nil {
+		if isTimeoutError(err) {
+			p.retrySleep(llmRetryBackoffServerError)
+			return tryOnce()
+		}
+		return nil, 0, err
+	}
+	if status == http.StatusTooManyRequests {
+		p.retrySleep(llmRetryBackoff429)
+		return tryOnce()
+	}
+	if status >= 500 {
+		p.retrySleep(llmRetryBackoffServerError)
+		return tryOnce()
+	}
+	return body, status, nil
+}
+
+func (p *LLMHTTPProvider) retrySleep(delay time.Duration) {
+	if p == nil || p.sleep == nil {
+		time.Sleep(delay)
+		return
+	}
+	p.sleep(delay)
+}
+
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
 type llmRequest struct {
-	Model            string               `json:"model,omitempty"`
-	Instruction      string               `json:"instruction"`
-	UserMessage      string               `json:"user_message,omitempty"`
+	Model            string                `json:"model,omitempty"`
+	Instruction      string                `json:"instruction"`
+	UserMessage      string                `json:"user_message,omitempty"`
 	Context          RecoveryContextFields `json:"context"`
-	ScreenshotBase64 string             `json:"screenshot_base64,omitempty"`
+	ScreenshotBase64 string                `json:"screenshot_base64,omitempty"`
 }
 
 type llmResponse struct {
@@ -128,14 +178,14 @@ type llmResponse struct {
 // llmCandidate 是 LLM 返回的候选动作。
 // Point 使用归一化坐标 [0,1]：x 水平（左→右），y 垂直（上→下）。
 type llmCandidate struct {
-	Intent      string        `json:"intent"`
-	ActionType  string        `json:"action_type"`
-	Point       *llmPoint     `json:"point,omitempty"`
-	Bounds      []float64     `json:"bounds,omitempty"` // 向后兼容：旧 provider 仍可能返回 bounds
-	Confidence  float64       `json:"confidence"`
-	EscapeScore float64       `json:"escape_score"`
-	Reason      string        `json:"reason"`
-	TargetHint  string        `json:"target_hint"`
+	Intent      string    `json:"intent"`
+	ActionType  string    `json:"action_type"`
+	Point       *llmPoint `json:"point,omitempty"`
+	Bounds      []float64 `json:"bounds,omitempty"` // 向后兼容：旧 provider 仍可能返回 bounds
+	Confidence  float64   `json:"confidence"`
+	EscapeScore float64   `json:"escape_score"`
+	Reason      string    `json:"reason"`
+	TargetHint  string    `json:"target_hint"`
 }
 
 // llmPoint 是归一化坐标点。

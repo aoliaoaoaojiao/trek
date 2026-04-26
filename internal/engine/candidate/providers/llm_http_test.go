@@ -2,9 +2,12 @@ package providers
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
 	enginestate "trek/internal/engine/state"
@@ -197,3 +200,135 @@ func TestLLMHTTPProviderScreenshotInPayload(t *testing.T) {
 		t.Fatalf("构建候选失败: %v", err)
 	}
 }
+
+func TestLLMHTTPProviderRetriesOn429(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":"rate limit"}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"candidates": []map[string]any{
+				{"action_type": "BACK", "confidence": 0.9},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider, err := NewLLMHTTPProvider(LLMHTTPProviderConfig{Endpoint: server.URL})
+	if err != nil {
+		t.Fatalf("创建 provider 失败: %v", err)
+	}
+	var delays []time.Duration
+	provider.sleep = func(delay time.Duration) {
+		delays = append(delays, delay)
+	}
+
+	items, err := provider.BuildCandidates(enginestate.TraversalContext{Mode: "Recover"})
+	if err != nil {
+		t.Fatalf("构建候选失败: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("候选数量错误: %d", len(items))
+	}
+	if callCount != 2 {
+		t.Fatalf("429 场景应重试一次，实际请求次数: %d", callCount)
+	}
+	if len(delays) != 1 || delays[0] != llmRetryBackoff429 {
+		t.Fatalf("429 场景退避时间错误: %+v", delays)
+	}
+}
+
+func TestLLMHTTPProviderRetriesOn5xx(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(`{"error":"bad gateway"}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"candidates": []map[string]any{
+				{"action_type": "BACK", "confidence": 0.9},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider, err := NewLLMHTTPProvider(LLMHTTPProviderConfig{Endpoint: server.URL})
+	if err != nil {
+		t.Fatalf("创建 provider 失败: %v", err)
+	}
+	var delays []time.Duration
+	provider.sleep = func(delay time.Duration) {
+		delays = append(delays, delay)
+	}
+
+	items, err := provider.BuildCandidates(enginestate.TraversalContext{Mode: "Recover"})
+	if err != nil {
+		t.Fatalf("构建候选失败: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("候选数量错误: %d", len(items))
+	}
+	if callCount != 2 {
+		t.Fatalf("5xx 场景应重试一次，实际请求次数: %d", callCount)
+	}
+	if len(delays) != 1 || delays[0] != llmRetryBackoffServerError {
+		t.Fatalf("5xx 场景退避时间错误: %+v", delays)
+	}
+}
+
+func TestLLMHTTPProviderRetriesOnTimeout(t *testing.T) {
+	provider, err := NewLLMHTTPProvider(LLMHTTPProviderConfig{Endpoint: "http://example.local/test"})
+	if err != nil {
+		t.Fatalf("创建 provider 失败: %v", err)
+	}
+	var delays []time.Duration
+	provider.sleep = func(delay time.Duration) {
+		delays = append(delays, delay)
+	}
+	provider.client = &http.Client{
+		Transport: &timeoutRetryTransport{},
+	}
+
+	items, err := provider.BuildCandidates(enginestate.TraversalContext{Mode: "Recover"})
+	if err != nil {
+		t.Fatalf("超时重试后应成功，实际错误: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("候选数量错误: %d", len(items))
+	}
+	if len(delays) != 1 || delays[0] != llmRetryBackoffServerError {
+		t.Fatalf("超时场景退避时间错误: %+v", delays)
+	}
+}
+
+type timeoutRetryTransport struct {
+	callCount int
+}
+
+func (t *timeoutRetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.callCount++
+	if t.callCount == 1 {
+		return nil, timeoutNetError{msg: "timeout"}
+	}
+	body := io.NopCloser(strings.NewReader(`{"candidates":[{"action_type":"BACK","confidence":0.9}]}`))
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       body,
+		Header:     make(http.Header),
+	}, nil
+}
+
+type timeoutNetError struct {
+	msg string
+}
+
+func (e timeoutNetError) Error() string   { return e.msg }
+func (e timeoutNetError) Timeout() bool   { return true }
+func (e timeoutNetError) Temporary() bool { return true }

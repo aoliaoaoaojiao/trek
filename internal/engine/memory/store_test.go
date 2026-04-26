@@ -109,7 +109,7 @@ func TestStoreFindPrefersExactMatch(t *testing.T) {
 	}
 
 	ctx := enginestate.BuildTraversalContext(enginestate.BuildInput{
-		Mode:             string(enginestate.ModeRecover),
+		Mode:             enginestate.ModeRecover,
 		PageSignature:    "page-a",
 		ClusterSignature: "cluster-a",
 		BlockReason:      "scroll_no_change",

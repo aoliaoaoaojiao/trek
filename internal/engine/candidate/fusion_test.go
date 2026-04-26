@@ -68,3 +68,55 @@ func TestFuseCandidatesAppliesKnownFailedRiskPenalty(t *testing.T) {
 		t.Fatalf("已知失败动作应被风险惩罚后降序，实际首选: %+v", result[0].Command)
 	}
 }
+
+func TestFuseCandidatesBoostsCandidateEnhancementMemoryTag(t *testing.T) {
+	back := Candidate{
+		Command:    &types.ActionCommand{Act: types.BACK},
+		Source:     SourceMemory,
+		Confidence: 0.55,
+		Metadata: map[string]string{
+			"memory_weight_tag": "candidate_enhancement",
+		},
+	}
+	click := Candidate{
+		Command:    &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
+		Source:     SourceHeuristic,
+		Confidence: 0.7,
+	}
+
+	result := FuseCandidates([]Candidate{click, back}, FusionOptions{})
+	if len(result) != 2 {
+		t.Fatalf("预期融合后保留 2 条候选，实际: %d", len(result))
+	}
+	if result[0].Command == nil || result[0].Command.Act != types.BACK {
+		t.Fatalf("带 candidate_enhancement tag 的 memory 候选应获得加权，实际首选: %+v", result[0].Command)
+	}
+}
+
+func TestFuseCandidatesKnownFailedPenaltyDominatesMemoryTagBoost(t *testing.T) {
+	back := Candidate{
+		Command:    &types.ActionCommand{Act: types.BACK},
+		Source:     SourceMemory,
+		Confidence: 0.95,
+		Metadata: map[string]string{
+			"memory_weight_tag": "candidate_enhancement",
+		},
+	}
+	click := Candidate{
+		Command:    &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
+		Source:     SourceHeuristic,
+		Confidence: 0.4,
+	}
+
+	result := FuseCandidates([]Candidate{back, click}, FusionOptions{
+		KnownFailedActions: map[string]bool{
+			back.Command.ToJSON(): true,
+		},
+	})
+	if len(result) != 2 {
+		t.Fatalf("预期融合后保留 2 条候选，实际: %d", len(result))
+	}
+	if result[0].Command == nil || result[0].Command.Act != types.CLICK {
+		t.Fatalf("已知失败惩罚应压过 memory tag 加权，实际首选: %+v", result[0].Command)
+	}
+}

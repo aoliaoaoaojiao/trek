@@ -18,6 +18,15 @@ type LLMBudget interface {
 	Record(ctx enginestate.TraversalContext)
 }
 
+// RecoveryPlanner 是恢复规划器的统一接口。
+//
+// 将 Planner 从具体类型抽象为接口，便于替换不同的恢复规划实现
+// （如基于规则的规划器、基于上下文的规划器等），
+// 同时保持 Runner 对恢复规划器的依赖解耦。
+type RecoveryPlanner interface {
+	BuildRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+}
+
 // PlannerConfig 是恢复规划器的最小配置骨架。
 type PlannerConfig struct {
 	Memory                  CandidateProvider

@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"trek/internal/engine/decision/shared/types"
 	"trek/internal/engine/recovery"
 	enginestate "trek/internal/engine/state"
+	"trek/internal/engine/traversal"
 	"trek/logger"
 	"trek/pkg/driver/common"
 	"trek/pkg/session"
@@ -38,7 +40,18 @@ const (
 	defaultBlockNoChangeThreshold            = 3
 	defaultRecoveryCooldownSteps             = 2
 	defaultTwoStateLoopThreshold             = 2
+	defaultHighVisitThreshold                = 8
+	defaultLowRewardWindow                   = 6
+	defaultCandidateEnhancementMinStepGap    = 12
+	defaultCandidateAmbiguityTopGapThreshold = 0.15
 	maxRecentTraceEntries                    = 8
+)
+
+const (
+	blockReasonScrollNoChange   = "scroll_no_change"
+	blockReasonSamePageNoChange = "same_page_no_change"
+	blockReasonTwoStatePingPong = "two_state_ping_pong"
+	blockReasonHighVisitLowGain = "high_visit_low_reward"
 )
 
 // StopReason 表示 Monkey 运行停止原因。
@@ -93,6 +106,8 @@ type Config struct {
 	RecoveryCooldownSteps       int
 	RecoveryLLMBudgetMaxCalls   int
 	RecoveryLLMBudgetWindowStep int
+	EnableExploreLLMEnhancement *bool
+	CandidateEnhancementMinStepGap int
 }
 
 type EffectiveTouchArea struct {
@@ -135,6 +150,8 @@ type Report struct {
 	OutOfAppRecoveries         int
 	RecoveryCooldownEnterCount int
 	RecoveryCooldownStepCount  int
+	CandidateEnhancementCalls  int
+	CandidateEnhancementSelects int
 	Records                    []StepRecord
 }
 
@@ -164,6 +181,11 @@ type StepResultObserver interface {
 	OnStepResult(result session.StepResultInput) error
 }
 
+// TraversalOutcomeObserver 是可选接口，用于接收统一动作结果并回写算法在线学习。
+type TraversalOutcomeObserver interface {
+	ObserveTraversalOutcome(ctx enginestate.TraversalContext, action *types.ActionCommand, outcome traversal.ActionOutcome) error
+}
+
 // BlockRecoveryDecider 是可选接口：当 Runner 识别到“滚动无进展阻塞”时，
 // 由决策层提供恢复动作；未实现时 Runner 使用 BACK 兜底。
 type BlockRecoveryDecider interface {
@@ -190,9 +212,19 @@ type RecoveryLLMProvider interface {
 	BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
 }
 
+// RecoveryCandidateSelector 在恢复阶段从融合候选集中选择最终动作。
+type RecoveryCandidateSelector interface {
+	SelectRecoveryAction(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types.ActionCommand, error)
+}
+
 // RecoveryMemoryWriter 在恢复动作执行后写回成功/失败经验。
 type RecoveryMemoryWriter interface {
 	RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, item candidate.Candidate, escaped bool) error
+}
+
+// CandidateEnhancementMemoryWriter 写回候选增强动作的正负样本。
+type CandidateEnhancementMemoryWriter interface {
+	RecordCandidateEnhancementOutcome(ctx enginestate.TraversalContext, item candidate.Candidate, improved bool) error
 }
 
 // RecoveryFailedActionProvider 提供可持久化的已知失败恢复动作集合。
@@ -351,20 +383,31 @@ type Runner struct {
 	healthMonitor        *healthSignalMonitor
 	blockDetector        *blockDetector
 	recoveryState        *recoveryStateMachine
-	recoveryPlanner      *recovery.Planner
+	recoveryPlanner      recovery.RecoveryPlanner
+	candidateEnhanceBudget recovery.LLMBudget
+	lastEnhancementStep  int
 	recentTrace          []enginestate.ActionTrace
 	pageVisitCount       map[string]int
 	actionCount          map[string]int
 	recoveryFailedAction map[string]bool
 	pendingBlockRecovery bool
 	lastRecoveryAttempt  *recoveryAttempt
+	lastEnhancementAttempt *enhancementAttempt
 	cooldownEnterCount   int
 	cooldownStepCount    int
+	enhancementCallCount int
+	enhancementHitCount  int
 }
 
 type recoveryAttempt struct {
 	ctx       enginestate.TraversalContext
 	candidate candidate.Candidate
+}
+
+type enhancementAttempt struct {
+	ctx       enginestate.TraversalContext
+	candidate candidate.Candidate
+	step      int
 }
 
 // NewRunner 创建 Monkey Runner。
@@ -377,6 +420,13 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 	}
 
 	cfg = normalizeConfig(cfg)
+	var enhanceBudget recovery.LLMBudget
+	if cfg.RecoveryLLMBudgetMaxCalls > 0 {
+		enhanceBudget = recovery.NewSlidingWindowLLMBudget(
+			cfg.RecoveryLLMBudgetMaxCalls,
+			cfg.RecoveryLLMBudgetWindowStep,
+		)
+	}
 	return &Runner{
 		decider:              decider,
 		driver:               driver,
@@ -384,6 +434,8 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 		rng:                  rand.New(rand.NewSource(time.Now().UnixNano())),
 		blockDetector:        newBlockDetector(cfg.BlockNoChangeThreshold),
 		recoveryState:        newRecoveryStateMachineWithCooldown(cfg.RecoveryCooldownSteps),
+		candidateEnhanceBudget: enhanceBudget,
+		lastEnhancementStep:  -1,
 		recentTrace:          make([]enginestate.ActionTrace, 0, maxRecentTraceEntries),
 		pageVisitCount:       make(map[string]int),
 		actionCount:          make(map[string]int),
@@ -403,9 +455,13 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	r.actionCount = report.ActionCount
 	r.cooldownEnterCount = 0
 	r.cooldownStepCount = 0
+	r.enhancementCallCount = 0
+	r.enhancementHitCount = 0
 	defer func() {
 		report.RecoveryCooldownEnterCount = r.cooldownEnterCount
 		report.RecoveryCooldownStepCount = r.cooldownStepCount
+		report.CandidateEnhancementCalls = r.enhancementCallCount
+		report.CandidateEnhancementSelects = r.enhancementHitCount
 		report.FinishedAt = time.Now()
 		report.DurationMs = report.FinishedAt.Sub(report.StartedAt).Milliseconds()
 		logger.Infof("monkey run finished: reason=%s total=%d success=%d failed=%d duration_ms=%d",
@@ -530,7 +586,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			Screenshot:       screenshot,
 		}
 
-		cmd, err := r.nextCommandWithRecovery(pageName, input)
+		cmd, err := r.nextCommandWithRecovery(step, beforePage, pageName, input)
 		if err != nil {
 			record.Err = err.Error()
 			r.markFailed(report, record, stepStart)
@@ -568,6 +624,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		if err = r.execute(cmd); err != nil {
 			record.Err = err.Error()
 			afterPage := r.capturePageSnapshot(pageSource, pageName)
+			r.notifyTraversalOutcome(step, beforePage, afterPage, cmd, false)
 			r.recordRecoveryOutcome(false)
 			crash, anr := r.currentHealthSignals()
 			r.notifyStepResult(step, cmd, false, err.Error(), time.Since(stepStart).Milliseconds(), crash, anr, beforePage, afterPage)
@@ -598,6 +655,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		afterPage := r.capturePageSnapshot(pageSource, pageName)
 		escaped := afterPage != nil &&
 			pageSignature(beforePage.PageName, beforePage.XML) != pageSignature(afterPage.PageName, afterPage.XML)
+		r.notifyTraversalOutcome(step, beforePage, afterPage, cmd, true)
 		if r.shouldEnableBlockRecovery() && r.blockDetector.Observe(cmd, beforePage, afterPage) {
 			r.handleBlockDetected(r.blockDetector.LastReason())
 			logger.Warnf("monkey step=%d detected block loop reason=%s mode=%s pending=%t",
@@ -663,6 +721,68 @@ func (r *Runner) notifyStepResult(step int, cmd *types.ActionCommand, success bo
 		Before:     before,
 		After:      after,
 	})
+}
+
+func (r *Runner) notifyTraversalOutcome(step int, before session.PageSnapshot, after *session.PageSnapshot, cmd *types.ActionCommand, success bool) {
+	ctx := r.buildTraversalContext(step, before, nil, nil)
+	outcome := r.deriveTraversalOutcome(ctx, cmd, before, after, success)
+	if observer, ok := r.decider.(TraversalOutcomeObserver); ok && observer != nil {
+		if err := observer.ObserveTraversalOutcome(ctx, cmd, outcome); err != nil {
+			logger.Warnf("observe traversal outcome failed: step=%d outcome=%s err=%v", step, outcome, err)
+		}
+	}
+	r.recordCandidateEnhancementOutcome(step, cmd, outcome)
+}
+
+func (r *Runner) deriveTraversalOutcome(
+	ctx enginestate.TraversalContext,
+	cmd *types.ActionCommand,
+	before session.PageSnapshot,
+	after *session.PageSnapshot,
+	success bool,
+) traversal.ActionOutcome {
+	if cmd == nil || !success || after == nil {
+		return traversal.OutcomeNoOp
+	}
+	if cmd.Act == types.NOP {
+		return traversal.OutcomeNoOp
+	}
+	beforeSig := pageSignature(before.PageName, before.XML)
+	afterSig := pageSignature(after.PageName, after.XML)
+	if beforeSig == "" || afterSig == "" {
+		return traversal.OutcomeNoOp
+	}
+	if beforeSig == afterSig {
+		return traversal.OutcomeSameState
+	}
+	if ctx.Mode == TraversalModeRecover || ctx.Mode == TraversalModeSuspectBlocked {
+		return traversal.OutcomeEscapeBlock
+	}
+	return traversal.OutcomeNewState
+}
+
+func (r *Runner) recordCandidateEnhancementOutcome(step int, cmd *types.ActionCommand, outcome traversal.ActionOutcome) {
+	if r == nil || cmd == nil || r.lastEnhancementAttempt == nil {
+		return
+	}
+	attempt := r.lastEnhancementAttempt
+	if attempt.step != step {
+		return
+	}
+	defer func() {
+		r.lastEnhancementAttempt = nil
+	}()
+	if attempt.candidate.Command == nil || attempt.candidate.Command.ToJSON() != cmd.ToJSON() {
+		return
+	}
+	writer, ok := r.decider.(CandidateEnhancementMemoryWriter)
+	if !ok || writer == nil {
+		return
+	}
+	improved := outcome == traversal.OutcomeNewState || outcome == traversal.OutcomeEscapeBlock
+	if err := writer.RecordCandidateEnhancementOutcome(attempt.ctx, attempt.candidate, improved); err != nil {
+		logger.Warnf("record candidate enhancement outcome failed: improved=%t err=%v", improved, err)
+	}
 }
 
 func (r *Runner) execute(cmd *types.ActionCommand) error {
@@ -1000,19 +1120,38 @@ func (r *Runner) tryRecover(consecutiveFailures int) {
 }
 
 func (r *Runner) nextCommand(pageName string, input session.ActionInput) (*types.ActionCommand, error) {
+	cmd, _, err := r.nextCommandWithCandidates(pageName, input)
+	return cmd, err
+}
+
+func (r *Runner) nextCommandWithCandidates(pageName string, input session.ActionInput) (*types.ActionCommand, []WeightedCandidate, error) {
 	if wd, ok := r.decider.(WeightedDecider); ok {
 		candidates, err := wd.NextWeightedActionsWithInput(pageName, input)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return r.pickWeightedCandidate(candidates), nil
+		return r.pickWeightedCandidate(candidates), candidates, nil
 	}
-	return r.decider.NextActionWithInput(pageName, input)
+	cmd, err := r.decider.NextActionWithInput(pageName, input)
+	return cmd, nil, err
 }
 
-func (r *Runner) nextCommandWithRecovery(pageName string, input session.ActionInput) (*types.ActionCommand, error) {
+func (r *Runner) nextCommandWithRecovery(step int, beforePage session.PageSnapshot, pageName string, input session.ActionInput) (*types.ActionCommand, error) {
+	r.lastEnhancementAttempt = nil
 	if !r.pendingBlockRecovery {
-		return r.nextCommand(pageName, input)
+		cmd, weighted, err := r.nextCommandWithCandidates(pageName, input)
+		if err != nil || cmd == nil {
+			return cmd, err
+		}
+		enhanced, enhanceErr := r.tryEnhanceCandidates(step, beforePage, cmd, weighted)
+		if enhanceErr != nil {
+			logger.Warnf("enhance candidates failed, fallback to base action: %v", enhanceErr)
+			return cmd, nil
+		}
+		if enhanced != nil {
+			return enhanced, nil
+		}
+		return cmd, nil
 	}
 	r.pendingBlockRecovery = false
 	r.lastRecoveryAttempt = nil
@@ -1027,6 +1166,91 @@ func (r *Runner) nextCommandWithRecovery(pageName string, input session.ActionIn
 	}
 	logger.Infof("block recovery command selected: %s", cmd.DetailLogString())
 	return cmd, nil
+}
+
+func (r *Runner) tryEnhanceCandidates(step int, beforePage session.PageSnapshot, baseCmd *types.ActionCommand, weighted []WeightedCandidate) (*types.ActionCommand, error) {
+	if r == nil || baseCmd == nil {
+		return nil, nil
+	}
+	if !r.shouldEnableExploreLLMEnhancement() {
+		return nil, nil
+	}
+	ctx := r.buildTraversalContext(step, beforePage, nil, nil)
+	if !r.shouldTriggerCandidateEnhancement(ctx, step, baseCmd, weighted) {
+		return nil, nil
+	}
+
+	llmProvider, ok := r.decider.(RecoveryLLMProvider)
+	if !ok || llmProvider == nil {
+		return nil, nil
+	}
+	selector, ok := r.decider.(RecoveryCandidateSelector)
+	if !ok || selector == nil {
+		return nil, nil
+	}
+	if !r.allowCandidateEnhancementLLM(ctx) {
+		return nil, nil
+	}
+
+	llmItems, err := llmProvider.BuildLLMRecoveryCandidates(ctx)
+	if err != nil {
+		return nil, err
+	}
+	r.enhancementCallCount++
+	r.recordCandidateEnhancementLLMCall(ctx, step)
+	if len(llmItems) == 0 {
+		return nil, nil
+	}
+
+	items := make([]candidate.Candidate, 0, len(llmItems)+1)
+	items = append(items, candidateFromCommand(baseCmd, candidate.SourceAlgorithm))
+	items = append(items, llmItems...)
+	knownFailed, err := r.collectKnownFailedRecoveryActions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fused := candidate.FuseCandidates(items, candidate.FusionOptions{
+		KnownFailedActions: knownFailed,
+	})
+	selected, err := selector.SelectRecoveryAction(ctx, fused)
+	if err != nil {
+		return nil, err
+	}
+	if selected == nil {
+		return nil, nil
+	}
+	if selected.ToJSON() == baseCmd.ToJSON() {
+		return nil, nil
+	}
+	if chosen := findCandidateByCommand(fused, selected); chosen != nil {
+		r.lastEnhancementAttempt = &enhancementAttempt{ctx: ctx, candidate: *chosen, step: step}
+	} else {
+		r.lastEnhancementAttempt = &enhancementAttempt{
+			ctx:       ctx,
+			candidate: candidateFromCommand(selected, candidate.SourceLLM),
+			step:      step,
+		}
+	}
+	r.enhancementHitCount++
+	logger.Infof("candidate enhancement selected action: base=%s enhanced=%s", baseCmd.DetailLogString(), selected.DetailLogString())
+	return selected, nil
+}
+
+func findCandidateByCommand(items []candidate.Candidate, cmd *types.ActionCommand) *candidate.Candidate {
+	if cmd == nil {
+		return nil
+	}
+	key := cmd.ToJSON()
+	for _, item := range items {
+		if item.Command == nil {
+			continue
+		}
+		if item.Command.ToJSON() == key {
+			copyItem := item
+			return &copyItem
+		}
+	}
+	return nil
 }
 
 func (r *Runner) handleBlockDetected(reason string) {
@@ -1074,10 +1298,10 @@ func (r *Runner) advanceRecoveryStateOnStep() {
 }
 
 func (r *Runner) buildTraversalContext(step int, page session.PageSnapshot, pageVisitCount map[string]int, actionCount map[string]int) enginestate.TraversalContext {
-	mode := string(TraversalModeExplore)
+	mode := TraversalModeExplore
 	blockReason := ""
 	if r != nil && r.recoveryState != nil {
-		mode = string(r.recoveryState.Mode())
+		mode = r.recoveryState.Mode()
 		blockReason = r.recoveryState.BlockReason()
 	}
 	if pageVisitCount == nil && r != nil {
@@ -1154,6 +1378,16 @@ func (r *Runner) nextBlockRecoveryCommand(pageName string, input session.ActionI
 		fused := candidate.FuseCandidates(items, candidate.FusionOptions{
 			KnownFailedActions: knownFailed,
 		})
+		if selector, ok := r.decider.(RecoveryCandidateSelector); ok && selector != nil {
+			selected, selectErr := selector.SelectRecoveryAction(ctx, fused)
+			if selectErr != nil {
+				return nil, selectErr
+			}
+			if selected != nil {
+				r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, candidate: candidateFromCommand(selected, candidate.SourceAlgorithm)}
+				return selected, nil
+			}
+		}
 		if item := firstCandidateWithCommand(fused); item != nil {
 			r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, candidate: *item}
 			return item.Command, nil
@@ -1186,7 +1420,7 @@ func (r *Runner) nextBlockRecoveryCommand(pageName string, input session.ActionI
 	return fallback, nil
 }
 
-func (r *Runner) getRecoveryPlanner() *recovery.Planner {
+func (r *Runner) getRecoveryPlanner() recovery.RecoveryPlanner {
 	if r == nil {
 		return nil
 	}
@@ -1403,6 +1637,9 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.RecoveryLLMBudgetWindowStep < 0 {
 		cfg.RecoveryLLMBudgetWindowStep = 0
 	}
+	if cfg.CandidateEnhancementMinStepGap <= 0 {
+		cfg.CandidateEnhancementMinStepGap = defaultCandidateEnhancementMinStepGap
+	}
 	if cfg.EffectiveTouchArea != nil {
 		cfg.EffectiveTouchArea.Serial = strings.TrimSpace(cfg.EffectiveTouchArea.Serial)
 		cfg.EffectiveTouchArea.PackageName = strings.TrimSpace(cfg.EffectiveTouchArea.PackageName)
@@ -1424,12 +1661,108 @@ func (r *Runner) shouldEnableBlockRecovery() bool {
 	return *r.cfg.EnableBlockRecovery
 }
 
+func (r *Runner) shouldEnableExploreLLMEnhancement() bool {
+	if r == nil || r.cfg.EnableExploreLLMEnhancement == nil {
+		return false
+	}
+	return *r.cfg.EnableExploreLLMEnhancement
+}
+
+func (r *Runner) shouldTriggerCandidateEnhancement(ctx enginestate.TraversalContext, step int, baseCmd *types.ActionCommand, weighted []WeightedCandidate) bool {
+	if r == nil || baseCmd == nil {
+		return false
+	}
+	if ctx.Mode == TraversalModeRecover || ctx.Mode == TraversalModeCooldown {
+		return false
+	}
+	if isAppRestartAction(baseCmd.Act) || baseCmd.Act == types.NOP {
+		return false
+	}
+	if step-r.lastEnhancementStep < r.cfg.CandidateEnhancementMinStepGap {
+		return false
+	}
+	if !r.isHighValuePage(ctx) {
+		return false
+	}
+	return r.hasLowCandidateDistinction(ctx, weighted)
+}
+
+func (r *Runner) isHighValuePage(ctx enginestate.TraversalContext) bool {
+	if ctx.Mode == TraversalModeSuspectBlocked {
+		return true
+	}
+	visitCount := 0
+	if r != nil && r.pageVisitCount != nil {
+		visitCount = r.pageVisitCount[ctx.PageName]
+	}
+	// Explore 下仅在页面早期访问阶段触发，保持保守。
+	return visitCount > 0 && visitCount <= 2
+}
+
+func (r *Runner) hasLowCandidateDistinction(ctx enginestate.TraversalContext, weighted []WeightedCandidate) bool {
+	if len(weighted) == 0 {
+		// 未提供候选权重时，仅在 SuspectBlocked 允许触发。
+		return ctx.Mode == TraversalModeSuspectBlocked
+	}
+	positive := make([]float64, 0, len(weighted))
+	for _, item := range weighted {
+		if item.Command == nil || item.Weight <= 0 {
+			continue
+		}
+		positive = append(positive, item.Weight)
+	}
+	if len(positive) < 2 {
+		return false
+	}
+	sort.SliceStable(positive, func(i, j int) bool { return positive[i] > positive[j] })
+	total := 0.0
+	for _, w := range positive {
+		total += w
+	}
+	if total <= 0 {
+		return false
+	}
+	top1 := positive[0] / total
+	top2 := positive[1] / total
+	// 规则 1：前三个候选占比接近且头部差距小，视为区分度低。
+	if len(positive) >= 3 && top1 <= 0.5 {
+		return true
+	}
+	// 规则 2：前两名差距过小，视为难以区分。
+	return (top1 - top2) <= defaultCandidateAmbiguityTopGapThreshold
+}
+
+func (r *Runner) allowCandidateEnhancementLLM(ctx enginestate.TraversalContext) bool {
+	if r == nil {
+		return false
+	}
+	if r.candidateEnhanceBudget == nil {
+		return true
+	}
+	return r.candidateEnhanceBudget.Allow(ctx)
+}
+
+func (r *Runner) recordCandidateEnhancementLLMCall(ctx enginestate.TraversalContext, step int) {
+	if r == nil {
+		return
+	}
+	r.lastEnhancementStep = step
+	if r.candidateEnhanceBudget != nil {
+		r.candidateEnhanceBudget.Record(ctx)
+	}
+}
+
 type blockDetector struct {
 	noChangeThreshold         int
 	twoStateLoopThreshold     int
+	highVisitThreshold        int
+	lowRewardWindow           int
 	consecutiveNoChangeScroll int
+	consecutiveSamePageNoMove int
 	consecutiveTwoStateLoops  int
 	recentAfterSignatures     []string
+	recentObservedSignatures  []string
+	pageVisitCount            map[string]int
 	lastReason                string
 }
 
@@ -1440,7 +1773,11 @@ func newBlockDetector(noChangeThreshold int) *blockDetector {
 	return &blockDetector{
 		noChangeThreshold:     noChangeThreshold,
 		twoStateLoopThreshold: defaultTwoStateLoopThreshold,
+		highVisitThreshold:    defaultHighVisitThreshold,
+		lowRewardWindow:       defaultLowRewardWindow,
 		recentAfterSignatures: make([]string, 0, 8),
+		recentObservedSignatures: make([]string, 0, 16),
+		pageVisitCount:           make(map[string]int),
 	}
 }
 
@@ -1451,10 +1788,16 @@ func (d *blockDetector) Observe(cmd *types.ActionCommand, before session.PageSna
 	}
 
 	triggerNoChangeScroll := false
+	triggerSamePageNoMove := false
 	triggerTwoStateLoop := false
+	triggerHighVisitLowGain := false
 
 	beforeSig := pageSignature(before.PageName, before.XML)
 	afterSig := pageSignature(after.PageName, after.XML)
+	if !isBlockDetectorIgnoredAction(cmd.Act) && afterSig != "" {
+		d.pageVisitCount[afterSig]++
+		d.pushObservedSignature(afterSig)
+	}
 
 	if cmd.IsScrollAction() && beforeSig != "" && beforeSig == afterSig {
 		d.consecutiveNoChangeScroll++
@@ -1463,7 +1806,17 @@ func (d *blockDetector) Observe(cmd *types.ActionCommand, before session.PageSna
 	}
 	if d.consecutiveNoChangeScroll >= d.noChangeThreshold {
 		triggerNoChangeScroll = true
-		d.lastReason = fmt.Sprintf("scroll_no_change_%d", d.consecutiveNoChangeScroll)
+		d.lastReason = blockReasonScrollNoChange
+	}
+
+	if !isBlockDetectorIgnoredAction(cmd.Act) && !cmd.IsScrollAction() && beforeSig != "" && beforeSig == afterSig {
+		d.consecutiveSamePageNoMove++
+	} else {
+		d.consecutiveSamePageNoMove = 0
+	}
+	if d.consecutiveSamePageNoMove >= d.noChangeThreshold {
+		triggerSamePageNoMove = true
+		d.lastReason = blockReasonSamePageNoChange
 	}
 
 	if !isBlockDetectorIgnoredAction(cmd.Act) && beforeSig != "" && afterSig != "" && beforeSig != afterSig {
@@ -1478,10 +1831,25 @@ func (d *blockDetector) Observe(cmd *types.ActionCommand, before session.PageSna
 	}
 	if d.consecutiveTwoStateLoops >= d.twoStateLoopThreshold {
 		triggerTwoStateLoop = true
-		d.lastReason = fmt.Sprintf("two_state_ping_pong_%d", d.consecutiveTwoStateLoops)
+		d.lastReason = blockReasonTwoStatePingPong
 	}
 
-	return triggerNoChangeScroll || triggerTwoStateLoop
+	if d.isHighVisitLowReward(afterSig) {
+		triggerHighVisitLowGain = true
+		d.lastReason = blockReasonHighVisitLowGain
+	}
+
+	if triggerTwoStateLoop {
+		d.lastReason = blockReasonTwoStatePingPong
+	} else if triggerNoChangeScroll {
+		d.lastReason = blockReasonScrollNoChange
+	} else if triggerSamePageNoMove {
+		d.lastReason = blockReasonSamePageNoChange
+	} else if triggerHighVisitLowGain {
+		d.lastReason = blockReasonHighVisitLowGain
+	}
+
+	return triggerNoChangeScroll || triggerSamePageNoMove || triggerTwoStateLoop || triggerHighVisitLowGain
 }
 
 func (d *blockDetector) Reset() {
@@ -1489,8 +1857,11 @@ func (d *blockDetector) Reset() {
 		return
 	}
 	d.consecutiveNoChangeScroll = 0
+	d.consecutiveSamePageNoMove = 0
 	d.consecutiveTwoStateLoops = 0
 	d.recentAfterSignatures = d.recentAfterSignatures[:0]
+	d.recentObservedSignatures = d.recentObservedSignatures[:0]
+	clear(d.pageVisitCount)
 	d.lastReason = ""
 }
 
@@ -1511,6 +1882,16 @@ func (d *blockDetector) pushAfterSignature(sig string) {
 	}
 }
 
+func (d *blockDetector) pushObservedSignature(sig string) {
+	if d == nil || strings.TrimSpace(sig) == "" {
+		return
+	}
+	d.recentObservedSignatures = append(d.recentObservedSignatures, sig)
+	if len(d.recentObservedSignatures) > 16 {
+		d.recentObservedSignatures = d.recentObservedSignatures[len(d.recentObservedSignatures)-16:]
+	}
+}
+
 func (d *blockDetector) isTailABAB() bool {
 	if d == nil || len(d.recentAfterSignatures) < 4 {
 		return false
@@ -1523,8 +1904,35 @@ func (d *blockDetector) isTailABAB() bool {
 	return a == c && b == e && a != b
 }
 
+func (d *blockDetector) isHighVisitLowReward(afterSig string) bool {
+	if d == nil || strings.TrimSpace(afterSig) == "" {
+		return false
+	}
+	if d.pageVisitCount[afterSig] < d.highVisitThreshold {
+		return false
+	}
+	if d.lowRewardWindow <= 0 || len(d.recentObservedSignatures) < d.lowRewardWindow {
+		return false
+	}
+	start := len(d.recentObservedSignatures) - d.lowRewardWindow
+	tail := d.recentObservedSignatures[start:]
+	unique := make(map[string]struct{}, len(tail))
+	for _, sig := range tail {
+		if sig == "" {
+			continue
+		}
+		unique[sig] = struct{}{}
+	}
+	// 低收益定义：最近窗口主要停留在极少数页面簇（<=2）。
+	return len(unique) <= 2
+}
+
 func isBlockDetectorIgnoredAction(act types.ActionType) bool {
 	return act == types.NOP || act == types.START || act == types.RESTART || act == types.CLEAN_RESTART || act == types.ACTIVATE
+}
+
+func isAppRestartAction(act types.ActionType) bool {
+	return act == types.START || act == types.RESTART || act == types.CLEAN_RESTART
 }
 
 func pageSignature(pageName string, xml string) string {

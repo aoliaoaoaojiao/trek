@@ -35,7 +35,7 @@ func (b *stubBudget) Record(ctx enginestate.TraversalContext) {
 
 func TestPlannerBuildRecoveryCandidatesAggregatesProvidersInOrder(t *testing.T) {
 	ctx := enginestate.BuildTraversalContext(enginestate.BuildInput{
-		Mode:        string(enginestate.ModeRecover),
+		Mode:        enginestate.ModeRecover,
 		PageName:    "MainActivity",
 		BlockReason: "scroll_no_change",
 	})
@@ -78,7 +78,7 @@ func TestPlannerBuildRecoveryCandidatesAggregatesProvidersInOrder(t *testing.T) 
 
 func TestPlannerSkipsLLMWhenMemoryHasHighConfidenceCandidate(t *testing.T) {
 	ctx := enginestate.BuildTraversalContext(enginestate.BuildInput{
-		Mode:        string(enginestate.ModeRecover),
+		Mode:        enginestate.ModeRecover,
 		PageName:    "MainActivity",
 		BlockReason: "two_state_ping_pong",
 	})
@@ -119,7 +119,7 @@ func TestPlannerSkipsLLMWhenMemoryHasHighConfidenceCandidate(t *testing.T) {
 func TestPlannerSkipsLLMWhenBudgetDenied(t *testing.T) {
 	ctx := enginestate.BuildTraversalContext(enginestate.BuildInput{
 		Step:        10,
-		Mode:        string(enginestate.ModeRecover),
+		Mode:        enginestate.ModeRecover,
 		PageName:    "MainActivity",
 		BlockReason: "same_page_no_change",
 	})

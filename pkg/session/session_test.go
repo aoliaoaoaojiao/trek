@@ -13,6 +13,7 @@ import (
 	types2 "trek/internal/engine/decision/shared/types"
 	"trek/internal/engine/memory"
 	enginestate "trek/internal/engine/state"
+	"trek/internal/engine/traversal"
 )
 
 func TestSessionNextAction(t *testing.T) {
@@ -277,6 +278,121 @@ func TestSessionBuildMemoryRecoveryCandidates(t *testing.T) {
 	}
 }
 
+func TestSessionBuildHeuristicRecoveryCandidates(t *testing.T) {
+	session := NewSession(Config{PackageName: "com.demo"})
+
+	configPath := filepath.Join(t.TempDir(), "plugin.js")
+	configContent := `const plugin = {
+  beforeDecide(ctx) {
+    if (ctx.runtime.block_recovery && ctx.runtime.block_recovery.requested) {
+      return trek.action.back()
+    }
+    return null
+  }
+};`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("写入测试文件失败: %v", err)
+	}
+	if err := session.LoadConfigFile(configPath); err != nil {
+		t.Fatalf("加载配置失败: %v", err)
+	}
+
+	items, err := session.BuildHeuristicRecoveryCandidates(enginestate.TraversalContext{
+		Mode:      "Recover",
+		PageName:  "MainActivity",
+		XML:       `<hierarchy><node class="android.widget.TextView"/></hierarchy>`,
+		Screenshot: []byte{1, 2, 3},
+	})
+	if err != nil {
+		t.Fatalf("构建 heuristic 恢复候选失败: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("预期 1 条 heuristic 候选，实际: %d", len(items))
+	}
+	if items[0].Source != candidate.SourceHeuristic {
+		t.Fatalf("候选来源应为 heuristic，实际: %s", items[0].Source)
+	}
+	if items[0].Command == nil || items[0].Command.Act != types2.BACK {
+		t.Fatalf("候选动作应为 BACK，实际: %+v", items[0].Command)
+	}
+}
+
+func TestSessionBuildHeuristicRecoveryCandidatesRejectRestart(t *testing.T) {
+	session := NewSession(Config{PackageName: "com.demo"})
+
+	configPath := filepath.Join(t.TempDir(), "plugin.js")
+	configContent := `const plugin = {
+  beforeDecide(ctx) {
+    if (ctx.runtime.block_recovery && ctx.runtime.block_recovery.requested) {
+      return trek.action.restart()
+    }
+    return null
+  }
+};`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("写入测试文件失败: %v", err)
+	}
+	if err := session.LoadConfigFile(configPath); err != nil {
+		t.Fatalf("加载配置失败: %v", err)
+	}
+
+	items, err := session.BuildHeuristicRecoveryCandidates(enginestate.TraversalContext{
+		Mode:     "Recover",
+		PageName: "MainActivity",
+		XML:      `<hierarchy><node class="android.widget.TextView"/></hierarchy>`,
+	})
+	if err != nil {
+		t.Fatalf("构建 heuristic 恢复候选失败: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("重启动作不应进入恢复候选，实际: %+v", items)
+	}
+}
+
+func TestSessionSelectRecoveryActionPrefersAlgorithmCandidate(t *testing.T) {
+	session := NewSession(Config{
+		PackageName: "com.demo",
+		Algorithm:   decision.AlgorithmReuse,
+		DeviceType:  types2.Phone,
+	})
+	ctx := enginestate.TraversalContext{Mode: "Recover"}
+	items := []candidate.Candidate{
+		{
+			Command:    &types2.ActionCommand{Act: types2.BACK},
+			Source:     candidate.SourceAlgorithm,
+			Confidence: 0.3,
+		},
+		{
+			Command:    &types2.ActionCommand{Act: types2.CLICK, Pos: *types2.NewRect(0.1, 0.1, 0.2, 0.2)},
+			Source:     candidate.SourceLLM,
+			Confidence: 0.9,
+		},
+	}
+	cmd, err := session.SelectRecoveryAction(ctx, items)
+	if err != nil {
+		t.Fatalf("SelectRecoveryAction 失败: %v", err)
+	}
+	if cmd == nil || cmd.Act != types2.BACK {
+		t.Fatalf("预期优先选择 algorithm 候选 BACK，实际: %+v", cmd)
+	}
+}
+
+func TestSessionObserveTraversalOutcomeNoError(t *testing.T) {
+	session := NewSession(Config{
+		PackageName: "com.demo",
+		Algorithm:   decision.AlgorithmReuse,
+		DeviceType:  types2.Phone,
+	})
+	err := session.ObserveTraversalOutcome(
+		enginestate.TraversalContext{Mode: "Explore", PageName: "MainActivity"},
+		&types2.ActionCommand{Act: types2.CLICK, Pos: *types2.NewRect(0.1, 0.1, 0.2, 0.2)},
+		traversal.OutcomeNewState,
+	)
+	if err != nil {
+		t.Fatalf("ObserveTraversalOutcome 不应报错: %v", err)
+	}
+}
+
 func TestSessionRecordRecoveryMemoryOutcome(t *testing.T) {
 	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
 	session := NewSession(Config{
@@ -364,6 +480,44 @@ func TestSessionRecordRecoveryMemoryOutcomeAggregatesCounts(t *testing.T) {
 	}
 	if all[0].Outcome != memory.OutcomeFailed {
 		t.Fatalf("最新 outcome 应为 failed，实际: %s", all[0].Outcome)
+	}
+}
+
+func TestSessionRecordCandidateEnhancementOutcome(t *testing.T) {
+	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
+	session := NewSession(Config{
+		PackageName:        "com.demo",
+		RecoveryMemoryFile: memoryPath,
+	})
+	ctx := enginestate.TraversalContext{
+		Mode:             "Explore",
+		PageSignature:    "page.sig",
+		ClusterSignature: "cluster.sig",
+		RecentTrace: []enginestate.ActionTrace{
+			{ActionKey: "click"},
+		},
+	}
+	item := candidate.Candidate{
+		Command: &types2.ActionCommand{Act: types2.CLICK, Pos: *types2.NewRect(0.1, 0.1, 0.2, 0.2)},
+		Source:  candidate.SourceLLM,
+	}
+	if err := session.RecordCandidateEnhancementOutcome(ctx, item, true); err != nil {
+		t.Fatalf("写回候选增强结果失败: %v", err)
+	}
+
+	store, err := memory.NewStore(memoryPath)
+	if err != nil {
+		t.Fatalf("读取 memory store 失败: %v", err)
+	}
+	all := store.All()
+	if len(all) != 1 {
+		t.Fatalf("预期写入 1 条记录，实际: %d", len(all))
+	}
+	if all[0].BlockReason != memory.BlockReasonCandidateEnhancement {
+		t.Fatalf("预期 block_reason=%s，实际: %s", memory.BlockReasonCandidateEnhancement, all[0].BlockReason)
+	}
+	if all[0].Outcome != memory.OutcomeEscaped || all[0].SuccessCount != 1 {
+		t.Fatalf("预期写入 improved 正样本，实际: outcome=%s success=%d", all[0].Outcome, all[0].SuccessCount)
 	}
 }
 

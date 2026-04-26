@@ -9,6 +9,7 @@ import (
 const (
 	OutcomeEscaped = "escaped"
 	OutcomeFailed  = "failed"
+	BlockReasonCandidateEnhancement = "candidate_enhancement"
 )
 
 // RecoveryMemoryRecord 是恢复经验的最小持久化记录。

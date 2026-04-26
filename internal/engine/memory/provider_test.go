@@ -42,7 +42,7 @@ func TestProviderBuildCandidatesFromStore(t *testing.T) {
 
 	provider := NewProvider(store)
 	ctx := enginestate.BuildTraversalContext(enginestate.BuildInput{
-		Mode:             string(enginestate.ModeRecover),
+		Mode:             enginestate.ModeRecover,
 		PageSignature:    "page-a",
 		ClusterSignature: "cluster-a",
 		BlockReason:      "scroll_no_change",
@@ -67,5 +67,88 @@ func TestProviderBuildCandidatesFromStore(t *testing.T) {
 	}
 	if items[0].Confidence <= 0 {
 		t.Fatalf("候选 confidence 应大于 0，实际: %.3f", items[0].Confidence)
+	}
+}
+
+func TestProviderBoostsCandidateEnhancementInExplore(t *testing.T) {
+	store, err := NewStore(filepath.Join(t.TempDir(), "memory.jsonl"))
+	if err != nil {
+		t.Fatalf("创建 store 失败: %v", err)
+	}
+	now := time.Now().UTC()
+
+	enhanced := RecoveryMemoryRecord{
+		MemoryKey:        BuildMemoryKey("page-a", BlockReasonCandidateEnhancement, "CLICK", string(enginestate.ModeExplore)),
+		PageSignature:    "page-a",
+		ClusterSignature: "cluster-a",
+		BlockReason:      BlockReasonCandidateEnhancement,
+		TraceSignature:   "CLICK",
+		Mode:             string(enginestate.ModeExplore),
+		Candidate:        candidate.NewCandidate(&types2.ActionCommand{Act: types2.CLICK, Pos: *types2.NewRect(0.1, 0.1, 0.2, 0.2)}, candidate.SourceMemory, "增强点击", nil),
+		Outcome:          OutcomeEscaped,
+		SuccessCount:     1,
+		FailCount:        1,
+		LastUsedAt:       now,
+		CreatedAt:        now,
+	}
+	normal := RecoveryMemoryRecord{
+		MemoryKey:        BuildMemoryKey("page-a", "same_page_no_change", "BACK", string(enginestate.ModeExplore)),
+		PageSignature:    "page-a",
+		ClusterSignature: "cluster-a",
+		BlockReason:      "same_page_no_change",
+		TraceSignature:   "BACK",
+		Mode:             string(enginestate.ModeExplore),
+		Candidate:        candidate.NewCandidate(&types2.ActionCommand{Act: types2.BACK}, candidate.SourceMemory, "普通返回", nil),
+		Outcome:          OutcomeEscaped,
+		SuccessCount:     1,
+		FailCount:        1,
+		LastUsedAt:       now,
+		CreatedAt:        now,
+	}
+	if err := store.Append(enhanced); err != nil {
+		t.Fatalf("写入增强记录失败: %v", err)
+	}
+	if err := store.Append(normal); err != nil {
+		t.Fatalf("写入普通记录失败: %v", err)
+	}
+
+	provider := NewProvider(store)
+	items, err := provider.BuildCandidates(enginestate.BuildTraversalContext(enginestate.BuildInput{
+		Mode:             enginestate.ModeExplore,
+		PageSignature:    "page-a",
+		ClusterSignature: "cluster-a",
+	}))
+	if err != nil {
+		t.Fatalf("构建候选失败: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("候选数量错误: %d", len(items))
+	}
+
+	confByAction := map[types2.ActionType]float64{}
+	for _, item := range items {
+		if item.Command == nil {
+			continue
+		}
+		confByAction[item.Command.Act] = item.Confidence
+	}
+	if confByAction[types2.CLICK] <= confByAction[types2.BACK] {
+		t.Fatalf("Explore 下增强样本应获得更高置信度: click=%.3f back=%.3f", confByAction[types2.CLICK], confByAction[types2.BACK])
+	}
+}
+
+func TestProviderDoesNotBoostCandidateEnhancementInRecover(t *testing.T) {
+	record := RecoveryMemoryRecord{
+		BlockReason:  BlockReasonCandidateEnhancement,
+		SuccessCount: 1,
+		FailCount:    1,
+	}
+	ctx := enginestate.BuildTraversalContext(enginestate.BuildInput{
+		Mode: enginestate.ModeRecover,
+	})
+	base := successRate(record)
+	got := providerConfidence(record, ctx)
+	if got != base {
+		t.Fatalf("Recover 下不应加权: got=%.3f want=%.3f", got, base)
 	}
 }

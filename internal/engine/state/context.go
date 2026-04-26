@@ -25,7 +25,7 @@ type VisitStats struct {
 // TraversalContext 是第一阶段统一运行上下文骨架。
 type TraversalContext struct {
 	Step             int
-	Mode             string
+	Mode             Mode
 	PageName         string
 	PageSignature    string
 	ClusterSignature string
@@ -39,7 +39,7 @@ type TraversalContext struct {
 // BuildInput 用于构建 TraversalContext。
 type BuildInput struct {
 	Step             int
-	Mode             string
+	Mode             Mode
 	PageName         string
 	PageSignature    string
 	ClusterSignature string

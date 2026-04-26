@@ -12,7 +12,7 @@ func TestBuildTraversalContextClonesVisitStatsAndTrace(t *testing.T) {
 
 	ctx := BuildTraversalContext(BuildInput{
 		Step:             12,
-		Mode:             string(ModeRecover),
+		Mode:             ModeRecover,
 		PageName:         "MainActivity",
 		PageSignature:    "page-signature",
 		ClusterSignature: "cluster-signature",
@@ -27,7 +27,7 @@ func TestBuildTraversalContextClonesVisitStatsAndTrace(t *testing.T) {
 	if ctx.Step != 12 {
 		t.Fatalf("step 不符合预期: %d", ctx.Step)
 	}
-	if ctx.Mode != string(ModeRecover) {
+	if ctx.Mode != ModeRecover {
 		t.Fatalf("mode 不符合预期: %s", ctx.Mode)
 	}
 	if ctx.BlockReason != "scroll_no_change" {

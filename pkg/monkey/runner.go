@@ -11,7 +11,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/recovery"
+	enginestate "trek/internal/engine/state"
 	"trek/logger"
 	"trek/pkg/driver/common"
 	"trek/pkg/session"
@@ -33,7 +36,9 @@ const (
 	defaultForegroundMonitorInterval         = 300 * time.Millisecond
 	defaultHealthSignalMonitorInterval       = 500 * time.Millisecond
 	defaultBlockNoChangeThreshold            = 3
+	defaultRecoveryCooldownSteps             = 2
 	defaultTwoStateLoopThreshold             = 2
+	maxRecentTraceEntries                    = 8
 )
 
 // StopReason 表示 Monkey 运行停止原因。
@@ -85,6 +90,9 @@ type Config struct {
 	EffectiveTouchArea          *EffectiveTouchArea
 	EnableBlockRecovery         *bool
 	BlockNoChangeThreshold      int
+	RecoveryCooldownSteps       int
+	RecoveryLLMBudgetMaxCalls   int
+	RecoveryLLMBudgetWindowStep int
 }
 
 type EffectiveTouchArea struct {
@@ -111,21 +119,23 @@ type StepRecord struct {
 
 // Report 是 Monkey 运行报告。
 type Report struct {
-	StartedAt           time.Time
-	FinishedAt          time.Time
-	DurationMs          int64
-	StopReason          StopReason
-	Preflight           *common.EnvironmentCheckResult
-	PreflightError      string
-	StepsPlanned        int
-	StepsTotal          int
-	StepsSucceeded      int
-	StepsFailed         int
-	ConsecutiveFailures int
-	ActionCount         map[string]int
-	PageVisitCount      map[string]int
-	OutOfAppRecoveries  int
-	Records             []StepRecord
+	StartedAt                  time.Time
+	FinishedAt                 time.Time
+	DurationMs                 int64
+	StopReason                 StopReason
+	Preflight                  *common.EnvironmentCheckResult
+	PreflightError             string
+	StepsPlanned               int
+	StepsTotal                 int
+	StepsSucceeded             int
+	StepsFailed                int
+	ConsecutiveFailures        int
+	ActionCount                map[string]int
+	PageVisitCount             map[string]int
+	OutOfAppRecoveries         int
+	RecoveryCooldownEnterCount int
+	RecoveryCooldownStepCount  int
+	Records                    []StepRecord
 }
 
 // Decider 是动作决策接口，*session.Session 可直接满足。
@@ -158,6 +168,36 @@ type StepResultObserver interface {
 // 由决策层提供恢复动作；未实现时 Runner 使用 BACK 兜底。
 type BlockRecoveryDecider interface {
 	NextBlockRecoveryAction(pageName string, input session.ActionInput) (*types.ActionCommand, error)
+}
+
+// ContextAwareBlockRecoveryDecider 是面向第一阶段统一上下文的可选恢复接口。
+type ContextAwareBlockRecoveryDecider interface {
+	NextBlockRecoveryActionWithContext(ctx enginestate.TraversalContext, input session.ActionInput) (*types.ActionCommand, error)
+}
+
+// RecoveryMemoryProvider 提供恢复阶段 memory 候选。
+type RecoveryMemoryProvider interface {
+	BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+}
+
+// RecoveryHeuristicProvider 提供恢复阶段 heuristic 候选。
+type RecoveryHeuristicProvider interface {
+	BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+}
+
+// RecoveryLLMProvider 提供恢复阶段 llm 候选。
+type RecoveryLLMProvider interface {
+	BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+}
+
+// RecoveryMemoryWriter 在恢复动作执行后写回成功/失败经验。
+type RecoveryMemoryWriter interface {
+	RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, item candidate.Candidate, escaped bool) error
+}
+
+// RecoveryFailedActionProvider 提供可持久化的已知失败恢复动作集合。
+type RecoveryFailedActionProvider interface {
+	BuildKnownFailedRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error)
 }
 
 type currentPackageProvider interface {
@@ -310,7 +350,21 @@ type Runner struct {
 	monitor              *foregroundPackageMonitor
 	healthMonitor        *healthSignalMonitor
 	blockDetector        *blockDetector
+	recoveryState        *recoveryStateMachine
+	recoveryPlanner      *recovery.Planner
+	recentTrace          []enginestate.ActionTrace
+	pageVisitCount       map[string]int
+	actionCount          map[string]int
+	recoveryFailedAction map[string]bool
 	pendingBlockRecovery bool
+	lastRecoveryAttempt  *recoveryAttempt
+	cooldownEnterCount   int
+	cooldownStepCount    int
+}
+
+type recoveryAttempt struct {
+	ctx       enginestate.TraversalContext
+	candidate candidate.Candidate
 }
 
 // NewRunner 创建 Monkey Runner。
@@ -324,11 +378,16 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 
 	cfg = normalizeConfig(cfg)
 	return &Runner{
-		decider:       decider,
-		driver:        driver,
-		cfg:           cfg,
-		rng:           rand.New(rand.NewSource(time.Now().UnixNano())),
-		blockDetector: newBlockDetector(cfg.BlockNoChangeThreshold),
+		decider:              decider,
+		driver:               driver,
+		cfg:                  cfg,
+		rng:                  rand.New(rand.NewSource(time.Now().UnixNano())),
+		blockDetector:        newBlockDetector(cfg.BlockNoChangeThreshold),
+		recoveryState:        newRecoveryStateMachineWithCooldown(cfg.RecoveryCooldownSteps),
+		recentTrace:          make([]enginestate.ActionTrace, 0, maxRecentTraceEntries),
+		pageVisitCount:       make(map[string]int),
+		actionCount:          make(map[string]int),
+		recoveryFailedAction: make(map[string]bool),
 	}, nil
 }
 
@@ -340,7 +399,13 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		ActionCount:    make(map[string]int),
 		PageVisitCount: make(map[string]int),
 	}
+	r.pageVisitCount = report.PageVisitCount
+	r.actionCount = report.ActionCount
+	r.cooldownEnterCount = 0
+	r.cooldownStepCount = 0
 	defer func() {
+		report.RecoveryCooldownEnterCount = r.cooldownEnterCount
+		report.RecoveryCooldownStepCount = r.cooldownStepCount
 		report.FinishedAt = time.Now()
 		report.DurationMs = report.FinishedAt.Sub(report.StartedAt).Milliseconds()
 		logger.Infof("monkey run finished: reason=%s total=%d success=%d failed=%d duration_ms=%d",
@@ -385,6 +450,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			logger.Warnf("monkey canceled by context")
 			return report, nil
 		}
+		r.advanceRecoveryStateOnStep()
 		if time.Now().After(deadline) {
 			report.StopReason = StopTimeout
 			logger.Warnf("monkey timeout reached")
@@ -495,12 +561,14 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		record.Action = cmd.Act.String()
 		report.ActionCount[record.Action]++
 		report.StepsTotal++
+		r.recordActionTrace(beforePage, cmd)
 
 		logger.Infof("monkey step=%d execute cmd={%s}%s%s", step, cmd.DetailLogString(), formatTapPointLog(cmd), formatSwipePointLog(cmd))
 
 		if err = r.execute(cmd); err != nil {
 			record.Err = err.Error()
 			afterPage := r.capturePageSnapshot(pageSource, pageName)
+			r.recordRecoveryOutcome(false)
 			crash, anr := r.currentHealthSignals()
 			r.notifyStepResult(step, cmd, false, err.Error(), time.Since(stepStart).Milliseconds(), crash, anr, beforePage, afterPage)
 			r.markFailed(report, record, stepStart)
@@ -528,12 +596,19 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		}
 
 		afterPage := r.capturePageSnapshot(pageSource, pageName)
+		escaped := afterPage != nil &&
+			pageSignature(beforePage.PageName, beforePage.XML) != pageSignature(afterPage.PageName, afterPage.XML)
 		if r.shouldEnableBlockRecovery() && r.blockDetector.Observe(cmd, beforePage, afterPage) {
-			r.pendingBlockRecovery = true
-			logger.Warnf("monkey step=%d detected block loop reason=%s, schedule recovery on next step",
-				step, r.blockDetector.LastReason())
-			r.blockDetector.Reset()
+			r.handleBlockDetected(r.blockDetector.LastReason())
+			logger.Warnf("monkey step=%d detected block loop reason=%s mode=%s pending=%t",
+				step, r.blockDetector.LastReason(), r.recoveryState.Mode(), r.pendingBlockRecovery)
+			if r.pendingBlockRecovery {
+				r.blockDetector.Reset()
+			}
+		} else if afterPage != nil && r.recoveryState != nil && r.recoveryState.Mode() == TraversalModeRecover {
+			r.handleProgress(escaped)
 		}
+		r.recordRecoveryOutcome(escaped)
 		crash, anr := r.currentHealthSignals()
 		r.notifyStepResult(step, cmd, true, "", time.Since(stepStart).Milliseconds(), crash, anr, beforePage, afterPage)
 		r.appendRecord(report, record, stepStart)
@@ -940,6 +1015,7 @@ func (r *Runner) nextCommandWithRecovery(pageName string, input session.ActionIn
 		return r.nextCommand(pageName, input)
 	}
 	r.pendingBlockRecovery = false
+	r.lastRecoveryAttempt = nil
 	cmd, err := r.nextBlockRecoveryCommand(pageName, input)
 	if err != nil {
 		logger.Warnf("build block recovery command failed, fallback to normal command: %v", err)
@@ -953,18 +1029,282 @@ func (r *Runner) nextCommandWithRecovery(pageName string, input session.ActionIn
 	return cmd, nil
 }
 
+func (r *Runner) handleBlockDetected(reason string) {
+	if r == nil {
+		return
+	}
+	if r.recoveryState == nil {
+		r.recoveryState = newRecoveryStateMachineWithCooldown(r.cfg.RecoveryCooldownSteps)
+	}
+	beforeMode := r.recoveryState.Mode()
+	r.recoveryState.OnBlockDetected(reason)
+	r.pendingBlockRecovery = r.recoveryState.Mode() == TraversalModeRecover
+	logger.Infof("recovery state transition on block: from=%s to=%s reason=%s",
+		beforeMode, r.recoveryState.Mode(), r.recoveryState.BlockReason())
+}
+
+func (r *Runner) handleProgress(escaped bool) {
+	if r == nil || r.recoveryState == nil {
+		return
+	}
+	beforeMode := r.recoveryState.Mode()
+	r.recoveryState.OnProgress(escaped)
+	if beforeMode != TraversalModeCooldown && r.recoveryState.Mode() == TraversalModeCooldown {
+		r.cooldownEnterCount++
+	}
+	if beforeMode != r.recoveryState.Mode() {
+		logger.Infof("recovery state transition on progress: from=%s to=%s",
+			beforeMode, r.recoveryState.Mode())
+	}
+}
+
+func (r *Runner) advanceRecoveryStateOnStep() {
+	if r == nil || r.recoveryState == nil {
+		return
+	}
+	beforeMode := r.recoveryState.Mode()
+	if beforeMode == TraversalModeCooldown {
+		r.cooldownStepCount++
+	}
+	r.recoveryState.OnStepAdvance()
+	if beforeMode != r.recoveryState.Mode() {
+		logger.Infof("recovery state transition on step: from=%s to=%s",
+			beforeMode, r.recoveryState.Mode())
+	}
+}
+
+func (r *Runner) buildTraversalContext(step int, page session.PageSnapshot, pageVisitCount map[string]int, actionCount map[string]int) enginestate.TraversalContext {
+	mode := string(TraversalModeExplore)
+	blockReason := ""
+	if r != nil && r.recoveryState != nil {
+		mode = string(r.recoveryState.Mode())
+		blockReason = r.recoveryState.BlockReason()
+	}
+	if pageVisitCount == nil && r != nil {
+		pageVisitCount = r.pageVisitCount
+	}
+	if actionCount == nil && r != nil {
+		actionCount = r.actionCount
+	}
+	signature := pageSignature(page.PageName, page.XML)
+	return enginestate.BuildTraversalContext(enginestate.BuildInput{
+		Step:             step,
+		Mode:             mode,
+		PageName:         page.PageName,
+		PageSignature:    signature,
+		ClusterSignature: signature,
+		XML:              page.XML,
+		Screenshot:       page.Screenshot,
+		BlockReason:      blockReason,
+		RecentTrace:      r.cloneRecentTrace(),
+		PageVisitCount:   pageVisitCount,
+		ActionCount:      actionCount,
+	})
+}
+
+func (r *Runner) recordActionTrace(page session.PageSnapshot, cmd *types.ActionCommand) {
+	if r == nil || cmd == nil {
+		return
+	}
+	trace := enginestate.ActionTrace{
+		PageSignature: pageSignature(page.PageName, page.XML),
+		ActionKey:     commandTraceKey(cmd),
+	}
+	if strings.TrimSpace(trace.PageSignature) == "" || strings.TrimSpace(trace.ActionKey) == "" {
+		return
+	}
+	r.recentTrace = append(r.recentTrace, trace)
+	if len(r.recentTrace) > maxRecentTraceEntries {
+		r.recentTrace = r.recentTrace[len(r.recentTrace)-maxRecentTraceEntries:]
+	}
+}
+
+func (r *Runner) cloneRecentTrace() []enginestate.ActionTrace {
+	if r == nil || len(r.recentTrace) == 0 {
+		return nil
+	}
+	result := make([]enginestate.ActionTrace, len(r.recentTrace))
+	copy(result, r.recentTrace)
+	return result
+}
+
+func commandTraceKey(cmd *types.ActionCommand) string {
+	if cmd == nil {
+		return ""
+	}
+	return cmd.Act.String()
+}
+
 func (r *Runner) nextBlockRecoveryCommand(pageName string, input session.ActionInput) (*types.ActionCommand, error) {
+	ctx := r.buildTraversalContext(0, session.PageSnapshot{
+		PageName:   pageName,
+		XML:        input.XMLDescOfGuiTree,
+		Screenshot: input.Screenshot,
+	}, nil, nil)
+
+	if planner := r.getRecoveryPlanner(); planner != nil {
+		items, err := planner.BuildRecoveryCandidates(ctx)
+		if err != nil {
+			return nil, err
+		}
+		knownFailed, err := r.collectKnownFailedRecoveryActions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		fused := candidate.FuseCandidates(items, candidate.FusionOptions{
+			KnownFailedActions: knownFailed,
+		})
+		if item := firstCandidateWithCommand(fused); item != nil {
+			r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, candidate: *item}
+			return item.Command, nil
+		}
+	}
+
+	if provider, ok := r.decider.(ContextAwareBlockRecoveryDecider); ok && provider != nil {
+		cmd, err := provider.NextBlockRecoveryActionWithContext(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		if cmd != nil {
+			r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, candidate: candidateFromCommand(cmd, candidate.SourceHeuristic)}
+			return cmd, nil
+		}
+	}
 	if provider, ok := r.decider.(BlockRecoveryDecider); ok && provider != nil {
 		cmd, err := provider.NextBlockRecoveryAction(pageName, input)
 		if err != nil {
 			return nil, err
 		}
 		if cmd != nil {
+			r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, candidate: candidateFromCommand(cmd, candidate.SourceHeuristic)}
 			return cmd, nil
 		}
 	}
 	// 默认恢复动作：返回 BACK，避免直接应用级 RESTART。
-	return &types.ActionCommand{Act: types.BACK}, nil
+	fallback := &types.ActionCommand{Act: types.BACK}
+	r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, candidate: candidateFromCommand(fallback, candidate.SourceHeuristic)}
+	return fallback, nil
+}
+
+func (r *Runner) getRecoveryPlanner() *recovery.Planner {
+	if r == nil {
+		return nil
+	}
+	if r.recoveryPlanner != nil {
+		return r.recoveryPlanner
+	}
+
+	config := recovery.PlannerConfig{}
+	if provider, ok := r.decider.(RecoveryMemoryProvider); ok && provider != nil {
+		config.Memory = recoveryProviderFunc(provider.BuildMemoryRecoveryCandidates)
+	}
+	if provider, ok := r.decider.(RecoveryHeuristicProvider); ok && provider != nil {
+		config.Heuristic = recoveryProviderFunc(provider.BuildHeuristicRecoveryCandidates)
+	}
+	if provider, ok := r.decider.(RecoveryLLMProvider); ok && provider != nil {
+		config.LLM = recoveryProviderFunc(provider.BuildLLMRecoveryCandidates)
+	}
+	if r.cfg.RecoveryLLMBudgetMaxCalls > 0 {
+		config.LLMBudget = recovery.NewSlidingWindowLLMBudget(
+			r.cfg.RecoveryLLMBudgetMaxCalls,
+			r.cfg.RecoveryLLMBudgetWindowStep,
+		)
+	}
+
+	if config.Memory == nil && config.Heuristic == nil && config.LLM == nil {
+		return nil
+	}
+
+	r.recoveryPlanner = recovery.NewPlanner(config)
+	return r.recoveryPlanner
+}
+
+func firstCandidateWithCommand(items []candidate.Candidate) *candidate.Candidate {
+	for _, item := range items {
+		if item.Command != nil {
+			copyItem := item
+			return &copyItem
+		}
+	}
+	return nil
+}
+
+func candidateFromCommand(cmd *types.ActionCommand, source string) candidate.Candidate {
+	if cmd == nil {
+		return candidate.Candidate{Source: source}
+	}
+	cmdCopy := *cmd
+	return candidate.Candidate{
+		Command: &cmdCopy,
+		Source:  source,
+	}
+}
+
+func (r *Runner) recordRecoveryOutcome(escaped bool) {
+	if r == nil || r.lastRecoveryAttempt == nil {
+		return
+	}
+	attempt := *r.lastRecoveryAttempt
+	defer func() {
+		r.lastRecoveryAttempt = nil
+	}()
+	r.markRecoveryActionOutcome(attempt.candidate, escaped)
+
+	writer, ok := r.decider.(RecoveryMemoryWriter)
+	if !ok || writer == nil {
+		return
+	}
+	if err := writer.RecordRecoveryMemoryOutcome(attempt.ctx, attempt.candidate, escaped); err != nil {
+		logger.Warnf("record recovery memory outcome failed: escaped=%t err=%v", escaped, err)
+	}
+}
+
+func (r *Runner) markRecoveryActionOutcome(item candidate.Candidate, escaped bool) {
+	if r == nil || item.Command == nil {
+		return
+	}
+	key := item.Command.ToJSON()
+	if strings.TrimSpace(key) == "" {
+		return
+	}
+	if r.recoveryFailedAction == nil {
+		r.recoveryFailedAction = make(map[string]bool)
+	}
+	if escaped {
+		delete(r.recoveryFailedAction, key)
+		return
+	}
+	r.recoveryFailedAction[key] = true
+}
+
+func (r *Runner) collectKnownFailedRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
+	known := make(map[string]bool, len(r.recoveryFailedAction))
+	for key, value := range r.recoveryFailedAction {
+		if value {
+			known[key] = true
+		}
+	}
+
+	provider, ok := r.decider.(RecoveryFailedActionProvider)
+	if !ok || provider == nil {
+		return known, nil
+	}
+	persisted, err := provider.BuildKnownFailedRecoveryActions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range persisted {
+		if value {
+			known[key] = true
+		}
+	}
+	return known, nil
+}
+
+type recoveryProviderFunc func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+
+func (f recoveryProviderFunc) BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+	return f(ctx)
 }
 
 func (r *Runner) pickWeightedCandidate(candidates []WeightedCandidate) *types.ActionCommand {
@@ -1053,6 +1393,15 @@ func normalizeConfig(cfg Config) Config {
 	}
 	if cfg.BlockNoChangeThreshold <= 0 {
 		cfg.BlockNoChangeThreshold = defaultBlockNoChangeThreshold
+	}
+	if cfg.RecoveryCooldownSteps <= 0 {
+		cfg.RecoveryCooldownSteps = defaultRecoveryCooldownSteps
+	}
+	if cfg.RecoveryLLMBudgetMaxCalls < 0 {
+		cfg.RecoveryLLMBudgetMaxCalls = 0
+	}
+	if cfg.RecoveryLLMBudgetWindowStep < 0 {
+		cfg.RecoveryLLMBudgetWindowStep = 0
 	}
 	if cfg.EffectiveTouchArea != nil {
 		cfg.EffectiveTouchArea.Serial = strings.TrimSpace(cfg.EffectiveTouchArea.Serial)

@@ -2,18 +2,32 @@ package session
 
 import (
 	"fmt"
+	"os"
 	"strings"
+	"time"
+	"trek/internal/engine/candidate"
+	candidateproviders "trek/internal/engine/candidate/providers"
 	"trek/internal/engine/decision"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/memory"
 	engineruntime "trek/internal/engine/runtime"
+	enginestate "trek/internal/engine/state"
 	"trek/logger"
 )
 
 // Config 闂佺顕х换妤呭醇椤忓懐鈻旈柍褜鍓欓埢搴ㄥ灳閸愯尙顦扮紓浣瑰礃濞夋洟鍩㈤崗鐓庮嚤婵ê纾Ο鍫ユ煕閹烘挾绠撴い顐ｅ姍瀹曠娀寮借濡﹢鏌℃担钘夌劷闁?
 type Config struct {
-	PackageName string
-	Algorithm   decision.AlgorithmType
-	DeviceType  types.DeviceType
+	PackageName              string
+	Algorithm                decision.AlgorithmType
+	DeviceType               types.DeviceType
+	RecoveryMemoryFile       string
+	RecoveryLLMEndpoint      string
+	RecoveryLLMAPIKey        string
+	RecoveryLLMModel         string
+	RecoveryLLMOpenAIModel   string
+	RecoveryLLMOpenAIAPIKey  string
+	RecoveryLLMOpenAIBaseURL string
+	RecoveryLLMTimeout       time.Duration
 }
 
 // ActionInput 闂佺顕х换妤呭醇椤忓懐鈻旈悗锝傛櫇椤忚鲸鎱ㄥ┑鍕姎闁哥姴鎳愮划鐢稿冀椤掑倻鐐曢梺绋跨箞閸庤崵妲愬┑瀣哗妞ゆ牗绋戦惁?XML 婵炴垶鎸哥€涒晠宕洪崨鏉戠倞闁诡垎鍐憰闂備緡鍋呭畝鍛婄妤ｅ啫违?
@@ -50,7 +64,14 @@ type StepResultInput struct {
 
 // Session 闂佸搫瀚烽崹浼搭敋椤旇棄绶為柡宥庡€撻弮鍌楀亾鐟欏嫮鐓紒杈ㄥ閹风姴鈹戦崱妤€姹查梺鍛婄懕缂嶅洨妲愬┑鍫滄勃闊洦纰嶉弶鎼佹煕閹邦剚鍤囬柛搴㈡尦瀹曟濡搁妷褎鎷卞┑鈽嗗灙閳ь剙纾埀顒勵棑缁辨帡宕卞顑╂繈鏌?
 type Session struct {
-	config Config
+	config         Config
+	memoryStore    *memory.Store
+	memoryProvider *memory.Provider
+	llmProvider    recoveryLLMCandidateProvider
+}
+
+type recoveryLLMCandidateProvider interface {
+	BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
 }
 
 // NewSession 闂佸憡甯楃粙鎴犵磽閹捐妫樺Λ棰佽兌缁愭鎮归崶銊х畵闁艰崵鍠栧畷姘攽閸♀晜缍忛梺鍛婄墬閻楃姷鍒掗婊勫闁靛牆顦敮宕囩磽閸愭儳鏋旈柍?
@@ -63,8 +84,71 @@ func NewSession(config Config) *Session {
 	}
 
 	session := &Session{config: config}
+	session.initRecoveryMemoryProvider()
+	session.initRecoveryLLMProvider()
 	session.Reset()
 	return session
+}
+
+func (s *Session) initRecoveryMemoryProvider() {
+	path := strings.TrimSpace(s.config.RecoveryMemoryFile)
+	if path == "" {
+		return
+	}
+	store, err := memory.NewStore(path)
+	if err != nil {
+		logger.Warnf("session 初始化 recovery memory 失败: path=%s err=%v", path, err)
+		return
+	}
+	s.memoryStore = store
+	s.memoryProvider = memory.NewProvider(store)
+	logger.Infof("session recovery memory 已启用: path=%s", path)
+}
+
+func (s *Session) initRecoveryLLMProvider() {
+	endpoint := strings.TrimSpace(s.config.RecoveryLLMEndpoint)
+	apiKey := strings.TrimSpace(s.config.RecoveryLLMAPIKey)
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(os.Getenv("TREK_RECOVERY_LLM_API_KEY"))
+	}
+
+	// 显式 endpoint 优先，便于兼容任意网关。
+	if endpoint != "" {
+		provider, err := candidateproviders.NewLLMHTTPProvider(candidateproviders.LLMHTTPProviderConfig{
+			Endpoint: endpoint,
+			APIKey:   apiKey,
+			Model:    strings.TrimSpace(s.config.RecoveryLLMModel),
+			Timeout:  s.config.RecoveryLLMTimeout,
+		})
+		if err != nil {
+			logger.Warnf("session 初始化 recovery llm provider 失败: endpoint=%s err=%v", endpoint, err)
+			return
+		}
+		s.llmProvider = provider
+		logger.Infof("session recovery llm provider 已启用: endpoint=%s", endpoint)
+		return
+	}
+
+	openAIModel := strings.TrimSpace(s.config.RecoveryLLMOpenAIModel)
+	if openAIModel == "" {
+		return
+	}
+	openAIKey := strings.TrimSpace(s.config.RecoveryLLMOpenAIAPIKey)
+	if openAIKey == "" {
+		openAIKey = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	}
+	provider, err := candidateproviders.NewOpenAIResponsesProvider(candidateproviders.OpenAIResponsesProviderConfig{
+		BaseURL: strings.TrimSpace(s.config.RecoveryLLMOpenAIBaseURL),
+		APIKey:  openAIKey,
+		Model:   openAIModel,
+		Timeout: s.config.RecoveryLLMTimeout,
+	})
+	if err != nil {
+		logger.Warnf("session 初始化 openai recovery llm provider 失败: model=%s err=%v", openAIModel, err)
+		return
+	}
+	s.llmProvider = provider
+	logger.Infof("session openai recovery llm provider 已启用: model=%s", openAIModel)
 }
 
 // Reset 闂備焦褰冪粔鍫曟偪閸℃稑绀冮柛娑欐綑閸斻儲淇婇妞诲亾瀹曞洠鍋撻悜鐣屽祦闁割偅娲栧▍銏ゆ煛閸屾稒绶查柛銊ョ仛閹便劎鈧綆浜滈?agent闂?
@@ -151,6 +235,74 @@ func (s *Session) NextBlockRecoveryAction(pageName string, input ActionInput) (*
 	return operate, nil
 }
 
+// BuildMemoryRecoveryCandidates 将 memory 经验转为恢复候选，供 runner 的 RecoveryPlanner 调用。
+func (s *Session) BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+	if s == nil || s.memoryProvider == nil {
+		return nil, nil
+	}
+	return s.memoryProvider.BuildCandidates(ctx)
+}
+
+// BuildKnownFailedRecoveryActions 返回恢复阶段已知失败动作，用于候选融合惩罚。
+func (s *Session) BuildKnownFailedRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
+	result := make(map[string]bool)
+	if s == nil || s.memoryStore == nil {
+		return result, nil
+	}
+	items := s.memoryStore.Find(ctx)
+	for _, item := range items {
+		if item.Candidate.Command == nil {
+			continue
+		}
+		if item.FailCount > item.SuccessCount || strings.EqualFold(item.Outcome, memory.OutcomeFailed) {
+			result[item.Candidate.Command.ToJSON()] = true
+		}
+	}
+	return result, nil
+}
+
+// BuildLLMRecoveryCandidates 调用外部 LLM 服务构建恢复候选。
+func (s *Session) BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+	if s == nil || s.llmProvider == nil {
+		return nil, nil
+	}
+	return s.llmProvider.BuildCandidates(ctx)
+}
+
+// RecordRecoveryMemoryOutcome 写回一次恢复动作结果，用于跨会话复用。
+func (s *Session) RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, item candidate.Candidate, escaped bool) error {
+	if s == nil || s.memoryStore == nil || item.Command == nil {
+		return nil
+	}
+	traceSignature := buildTraceSignature(ctx.RecentTrace)
+	outcome := memory.OutcomeFailed
+	successCount := 0
+	failCount := 1
+	escapeScore := 0.0
+	if escaped {
+		outcome = memory.OutcomeEscaped
+		successCount = 1
+		failCount = 0
+		escapeScore = 1
+	}
+	record := memory.RecoveryMemoryRecord{
+		MemoryKey:        memory.BuildMemoryKey(ctx.PageSignature, ctx.BlockReason, traceSignature, ctx.Mode),
+		PageSignature:    ctx.PageSignature,
+		ClusterSignature: ctx.ClusterSignature,
+		BlockReason:      ctx.BlockReason,
+		TraceSignature:   traceSignature,
+		Mode:             ctx.Mode,
+		Candidate:        item,
+		Outcome:          outcome,
+		EscapeScore:      escapeScore,
+		SuccessCount:     successCount,
+		FailCount:        failCount,
+		LastUsedAt:       time.Now(),
+		CreatedAt:        time.Now(),
+	}
+	return s.memoryStore.AppendOutcome(record)
+}
+
 // SetObservationMode 设置感知模式（xml-only / image-only / hybrid）。
 func (s *Session) SetObservationMode(mode string) error {
 	return engineruntime.SetObservationMode(mode)
@@ -217,4 +369,19 @@ func (s *Session) OnStepResult(input StepResultInput) error {
 
 func isAppRestartAction(act types.ActionType) bool {
 	return act == types.START || act == types.RESTART || act == types.CLEAN_RESTART
+}
+
+func buildTraceSignature(trace []enginestate.ActionTrace) string {
+	if len(trace) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(trace))
+	for _, item := range trace {
+		key := strings.TrimSpace(item.ActionKey)
+		if key == "" {
+			continue
+		}
+		parts = append(parts, key)
+	}
+	return strings.Join(parts, ">")
 }

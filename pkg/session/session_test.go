@@ -1,11 +1,18 @@
 package session
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision"
 	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/memory"
+	enginestate "trek/internal/engine/state"
 )
 
 func TestSessionNextAction(t *testing.T) {
@@ -207,5 +214,273 @@ func TestSessionNextBlockRecoveryActionRejectsRestartActions(t *testing.T) {
 	}
 	if action != nil {
 		t.Fatalf("阻塞恢复不应返回重启动作，实际: %+v", action)
+	}
+}
+
+func TestSessionBuildMemoryRecoveryCandidates(t *testing.T) {
+	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
+	store, err := memory.NewStore(memoryPath)
+	if err != nil {
+		t.Fatalf("初始化 memory store 失败: %v", err)
+	}
+	record := memory.RecoveryMemoryRecord{
+		MemoryKey:        memory.BuildMemoryKey("page.sig", "same_page_no_change", "back", "recover"),
+		PageSignature:    "page.sig",
+		ClusterSignature: "cluster.sig",
+		BlockReason:      "same_page_no_change",
+		TraceSignature:   "back",
+		Mode:             "recover",
+		Candidate: candidate.NewCandidate(
+			&types2.ActionCommand{Act: types2.BACK},
+			candidate.SourceAlgorithm,
+			"回退上一层",
+			map[string]string{"seed": "1"},
+		),
+		Outcome:      memory.OutcomeEscaped,
+		EscapeScore:  0.8,
+		SuccessCount: 3,
+		FailCount:    1,
+		LastUsedAt:   time.Now(),
+		CreatedAt:    time.Now(),
+	}
+	if err := store.Append(record); err != nil {
+		t.Fatalf("写入 memory 记录失败: %v", err)
+	}
+
+	session := NewSession(Config{
+		PackageName:        "com.demo",
+		RecoveryMemoryFile: memoryPath,
+	})
+	items, err := session.BuildMemoryRecoveryCandidates(enginestate.TraversalContext{
+		Mode:             "recover",
+		PageSignature:    "page.sig",
+		ClusterSignature: "cluster.sig",
+		BlockReason:      "same_page_no_change",
+		RecentTrace: []enginestate.ActionTrace{
+			{ActionKey: "back"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("构建 memory 恢复候选失败: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("预期命中 1 条候选，实际: %d", len(items))
+	}
+	if items[0].Source != candidate.SourceMemory {
+		t.Fatalf("候选来源应为 memory，实际: %s", items[0].Source)
+	}
+	if items[0].Command == nil || items[0].Command.Act != types2.BACK {
+		t.Fatalf("候选动作应为 BACK，实际: %+v", items[0].Command)
+	}
+	if items[0].Metadata["memory_key"] == "" {
+		t.Fatalf("候选缺少 memory_key 元数据")
+	}
+}
+
+func TestSessionRecordRecoveryMemoryOutcome(t *testing.T) {
+	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
+	session := NewSession(Config{
+		PackageName:        "com.demo",
+		RecoveryMemoryFile: memoryPath,
+	})
+
+	err := session.RecordRecoveryMemoryOutcome(
+		enginestate.TraversalContext{
+			Mode:             "Recover",
+			PageSignature:    "page.sig",
+			ClusterSignature: "cluster.sig",
+			BlockReason:      "same_page_no_change",
+			RecentTrace: []enginestate.ActionTrace{
+				{ActionKey: "back"},
+				{ActionKey: "click"},
+			},
+		},
+		candidate.Candidate{
+			Command: &types2.ActionCommand{Act: types2.BACK},
+			Source:  candidate.SourceHeuristic,
+		},
+		true,
+	)
+	if err != nil {
+		t.Fatalf("写回 recovery memory 失败: %v", err)
+	}
+
+	store, err := memory.NewStore(memoryPath)
+	if err != nil {
+		t.Fatalf("读取 memory store 失败: %v", err)
+	}
+	all := store.All()
+	if len(all) != 1 {
+		t.Fatalf("预期写入 1 条记录，实际: %d", len(all))
+	}
+	if all[0].Outcome != memory.OutcomeEscaped {
+		t.Fatalf("预期 outcome=escaped，实际: %s", all[0].Outcome)
+	}
+	if all[0].SuccessCount != 1 || all[0].FailCount != 0 {
+		t.Fatalf("预期成功/失败计数为 1/0，实际: %d/%d", all[0].SuccessCount, all[0].FailCount)
+	}
+	if all[0].TraceSignature != "back>click" {
+		t.Fatalf("预期 trace 签名为 back>click，实际: %s", all[0].TraceSignature)
+	}
+}
+
+func TestSessionRecordRecoveryMemoryOutcomeAggregatesCounts(t *testing.T) {
+	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
+	session := NewSession(Config{
+		PackageName:        "com.demo",
+		RecoveryMemoryFile: memoryPath,
+	})
+	ctx := enginestate.TraversalContext{
+		Mode:             "Recover",
+		PageSignature:    "page.sig",
+		ClusterSignature: "cluster.sig",
+		BlockReason:      "same_page_no_change",
+		RecentTrace: []enginestate.ActionTrace{
+			{ActionKey: "back"},
+		},
+	}
+	item := candidate.Candidate{
+		Command: &types2.ActionCommand{Act: types2.BACK},
+		Source:  candidate.SourceMemory,
+	}
+
+	if err := session.RecordRecoveryMemoryOutcome(ctx, item, true); err != nil {
+		t.Fatalf("写回成功样本失败: %v", err)
+	}
+	if err := session.RecordRecoveryMemoryOutcome(ctx, item, false); err != nil {
+		t.Fatalf("写回失败样本失败: %v", err)
+	}
+
+	store, err := memory.NewStore(memoryPath)
+	if err != nil {
+		t.Fatalf("读取 memory store 失败: %v", err)
+	}
+	all := store.All()
+	if len(all) != 1 {
+		t.Fatalf("聚合后预期 1 条记录，实际: %d", len(all))
+	}
+	if all[0].SuccessCount != 1 || all[0].FailCount != 1 {
+		t.Fatalf("聚合计数错误: success=%d fail=%d", all[0].SuccessCount, all[0].FailCount)
+	}
+	if all[0].Outcome != memory.OutcomeFailed {
+		t.Fatalf("最新 outcome 应为 failed，实际: %s", all[0].Outcome)
+	}
+}
+
+func TestSessionBuildKnownFailedRecoveryActions(t *testing.T) {
+	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
+	session := NewSession(Config{
+		PackageName:        "com.demo",
+		RecoveryMemoryFile: memoryPath,
+	})
+	ctx := enginestate.TraversalContext{
+		Mode:             "Recover",
+		PageSignature:    "page.sig",
+		ClusterSignature: "cluster.sig",
+		BlockReason:      "same_page_no_change",
+		RecentTrace: []enginestate.ActionTrace{
+			{ActionKey: "back"},
+		},
+	}
+	item := candidate.Candidate{
+		Command: &types2.ActionCommand{Act: types2.BACK},
+		Source:  candidate.SourceMemory,
+	}
+	if err := session.RecordRecoveryMemoryOutcome(ctx, item, false); err != nil {
+		t.Fatalf("写回失败样本失败: %v", err)
+	}
+
+	known, err := session.BuildKnownFailedRecoveryActions(ctx)
+	if err != nil {
+		t.Fatalf("提取失败动作失败: %v", err)
+	}
+	if !known[item.Command.ToJSON()] {
+		t.Fatalf("预期包含 BACK 失败动作 key")
+	}
+}
+
+func TestSessionBuildLLMRecoveryCandidates(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method 错误: %s", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			t.Fatalf("Authorization 错误: %s", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"candidates": []map[string]any{
+				{
+					"intent":      "返回",
+					"action_type": "BACK",
+					"confidence":  0.7,
+					"reason":      "弹窗疑似遮挡",
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	session := NewSession(Config{
+		PackageName:         "com.demo",
+		RecoveryLLMEndpoint: server.URL,
+		RecoveryLLMAPIKey:   "test-key",
+		RecoveryLLMModel:    "gpt-x",
+		RecoveryLLMTimeout:  2 * time.Second,
+	})
+	items, err := session.BuildLLMRecoveryCandidates(enginestate.TraversalContext{
+		Step:        5,
+		Mode:        "Recover",
+		PageName:    "MainActivity",
+		BlockReason: "same_page_no_change",
+	})
+	if err != nil {
+		t.Fatalf("构建 llm 恢复候选失败: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("预期 1 条 llm 候选，实际: %d", len(items))
+	}
+	if items[0].Source != candidate.SourceLLM {
+		t.Fatalf("候选来源应为 llm，实际: %s", items[0].Source)
+	}
+	if items[0].Command == nil || items[0].Command.Act != types2.BACK {
+		t.Fatalf("候选动作应为 BACK，实际: %+v", items[0].Command)
+	}
+	if items[0].Metadata["llm_reason"] == "" {
+		t.Fatalf("预期包含 llm_reason 元数据")
+	}
+}
+
+func TestSessionBuildLLMRecoveryCandidatesWithOpenAIResponsesProvider(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method 错误: %s", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-test" {
+			t.Fatalf("Authorization 错误: %s", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"output_text": `{"candidates":[{"intent":"返回","action_type":"BACK","confidence":0.8}]}`,
+		})
+	}))
+	defer server.Close()
+
+	session := NewSession(Config{
+		PackageName:              "com.demo",
+		RecoveryLLMOpenAIModel:   "gpt-4.1-mini",
+		RecoveryLLMOpenAIAPIKey:  "sk-test",
+		RecoveryLLMOpenAIBaseURL: server.URL,
+		RecoveryLLMTimeout:       2 * time.Second,
+	})
+	items, err := session.BuildLLMRecoveryCandidates(enginestate.TraversalContext{
+		Step:        6,
+		Mode:        "Recover",
+		PageName:    "MainActivity",
+		BlockReason: "same_page_no_change",
+	})
+	if err != nil {
+		t.Fatalf("openai provider 构建候选失败: %v", err)
+	}
+	if len(items) != 1 || items[0].Command == nil || items[0].Command.Act != types2.BACK {
+		t.Fatalf("openai provider 返回候选不符合预期: %+v", items)
 	}
 }

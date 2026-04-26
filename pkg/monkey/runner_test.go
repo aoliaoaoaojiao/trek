@@ -7,7 +7,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	enginestate "trek/internal/engine/state"
 	"trek/pkg/driver/common"
 	"trek/pkg/session"
 )
@@ -56,6 +58,26 @@ type recoveryAwareDecider struct {
 	recoveryCalls  int
 }
 
+type contextAwareRecoveryDecider struct {
+	recoveryAwareDecider
+	lastContext enginestate.TraversalContext
+}
+
+type plannerAwareRecoveryDecider struct {
+	contextAwareRecoveryDecider
+	memoryCandidates    []candidate.Candidate
+	heuristicCandidates []candidate.Candidate
+	llmCandidates       []candidate.Candidate
+	persistedFailed     map[string]bool
+	memoryCalls         int
+	heuristicCalls      int
+	llmCalls            int
+	outcomeCalls        int
+	lastOutcomeEscaped  bool
+	lastOutcomeContext  enginestate.TraversalContext
+	lastOutcomeItem     candidate.Candidate
+}
+
 type transformingDecider struct {
 	fakeDecider
 	pageName       string
@@ -94,6 +116,46 @@ func (d *recoveryAwareDecider) NextBlockRecoveryAction(pageName string, input se
 		return nil, nil
 	}
 	return d.recoveryAction, nil
+}
+
+func (d *contextAwareRecoveryDecider) NextBlockRecoveryActionWithContext(ctx enginestate.TraversalContext, input session.ActionInput) (*types.ActionCommand, error) {
+	d.recoveryCalls++
+	d.lastContext = ctx
+	if d.recoveryAction == nil {
+		return nil, nil
+	}
+	return d.recoveryAction, nil
+}
+
+func (d *plannerAwareRecoveryDecider) BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+	d.memoryCalls++
+	return d.memoryCandidates, nil
+}
+
+func (d *plannerAwareRecoveryDecider) BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+	d.heuristicCalls++
+	return d.heuristicCandidates, nil
+}
+
+func (d *plannerAwareRecoveryDecider) BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+	d.llmCalls++
+	return d.llmCandidates, nil
+}
+
+func (d *plannerAwareRecoveryDecider) BuildKnownFailedRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
+	result := make(map[string]bool, len(d.persistedFailed))
+	for key, value := range d.persistedFailed {
+		result[key] = value
+	}
+	return result, nil
+}
+
+func (d *plannerAwareRecoveryDecider) RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, item candidate.Candidate, escaped bool) error {
+	d.outcomeCalls++
+	d.lastOutcomeEscaped = escaped
+	d.lastOutcomeContext = ctx
+	d.lastOutcomeItem = item
+	return nil
 }
 
 type fakePageSource struct {
@@ -1070,7 +1132,7 @@ func TestRunnerDetectNoChangeScrollAndTriggerRecovery(t *testing.T) {
 	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}
 
 	runner, err := NewRunner(decider, driver, Config{
-		MaxSteps:               4,
+		MaxSteps:               5,
 		StepInterval:           0,
 		KeepStepRecords:        true,
 		StopOnCrash:            true,
@@ -1152,12 +1214,13 @@ func TestRunnerDetectTwoStatePingPongAndTriggerRecovery(t *testing.T) {
 			`<node class="PageB"/>`, `<node class="PageA"/>`,
 			`<node class="PageA"/>`, `<node class="PageB"/>`,
 			`<node class="PageB"/>`, `<node class="PageA"/>`,
+			`<node class="PageA"/>`, `<node class="PageB"/>`,
 		},
 	}
 	driver := &fakeDriver{pageSource: pageSource}
 
 	runner, err := NewRunner(decider, driver, Config{
-		MaxSteps:               6,
+		MaxSteps:               7,
 		StepInterval:           0,
 		KeepStepRecords:        true,
 		StopOnCrash:            true,
@@ -1180,6 +1243,61 @@ func TestRunnerDetectTwoStatePingPongAndTriggerRecovery(t *testing.T) {
 	}
 	if driver.backCount == 0 {
 		t.Fatalf("预期执行恢复 BACK 动作")
+	}
+}
+
+func TestRunnerReportContainsCooldownStats(t *testing.T) {
+	decider := &recoveryAwareDecider{
+		fakeDecider: fakeDecider{
+			commands: []*types.ActionCommand{
+				{Act: types.SCROLL_BOTTOM_UP, Pos: *types.NewRect(0, 0, 1, 1)},
+			},
+		},
+		recoveryAction: &types.ActionCommand{Act: types.BACK},
+	}
+	// 顺序：
+	// step1 before=A after=A
+	// step2 before=A after=A -> 进入 SuspectBlocked
+	// step3 before=A after=A -> 进入 Recover（pending）
+	// step4 before=A after=B -> 执行恢复动作并进入 Cooldown
+	// step5 before=B after=B -> 命中一次 Cooldown 步进
+	driver := &fakeDriver{
+		pageSource: &fakePageSource{
+			xmls: []string{
+				`<node class="PageA"/>`, `<node class="PageA"/>`,
+				`<node class="PageA"/>`, `<node class="PageA"/>`,
+				`<node class="PageA"/>`, `<node class="PageA"/>`,
+				`<node class="PageA"/>`, `<node class="PageB"/>`,
+				`<node class="PageB"/>`, `<node class="PageB"/>`,
+			},
+		},
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		MaxSteps:               5,
+		StepInterval:           0,
+		KeepStepRecords:        true,
+		StopOnCrash:            true,
+		StopOnANR:              true,
+		BlockNoChangeThreshold: 2,
+		RecoveryCooldownSteps:  2,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if report.RecoveryCooldownEnterCount <= 0 {
+		t.Fatalf("预期记录 cooldown 进入次数，实际: %d", report.RecoveryCooldownEnterCount)
+	}
+	if report.RecoveryCooldownStepCount <= 0 {
+		t.Fatalf("预期记录 cooldown 步进命中次数，实际: %d", report.RecoveryCooldownStepCount)
 	}
 }
 

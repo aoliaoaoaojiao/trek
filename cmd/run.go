@@ -1,6 +1,5 @@
 /*
 Copyright © 2026 Trek
-
 */
 package cmd
 
@@ -23,17 +22,28 @@ import (
 
 // runOptions 存储 run 子命令的标志值。
 var runOptions = struct {
-	packageName       string
-	deviceSerial      string
-	configPath        string
-	algorithm         string
-	maxSteps          int
-	maxDuration       time.Duration
-	stepInterval      time.Duration
-	captureScreenshot bool
-	keepStepRecords   bool
-	probePageName     bool
-	autoCurrentApp    bool
+	packageName            string
+	deviceSerial           string
+	configPath             string
+	recoveryMemoryFile     string
+	recoveryCooldownSteps  int
+	recoveryLLMEndpoint    string
+	recoveryLLMAPIKey      string
+	recoveryLLMModel       string
+	recoveryOpenAIModel    string
+	recoveryOpenAIAPIKey   string
+	recoveryOpenAIBaseURL  string
+	recoveryLLMTimeout     time.Duration
+	recoveryLLMMaxCalls    int
+	recoveryLLMWindowSteps int
+	algorithm              string
+	maxSteps               int
+	maxDuration            time.Duration
+	stepInterval           time.Duration
+	captureScreenshot      bool
+	keepStepRecords        bool
+	probePageName          bool
+	autoCurrentApp         bool
 }{}
 
 // runCmd 定义 run 子命令。
@@ -52,6 +62,17 @@ func init() {
 	runCmd.Flags().StringVar(&runOptions.packageName, "package", "", "被测应用包名（必填，或使用 --auto-current-app 自动获取）")
 	runCmd.Flags().StringVar(&runOptions.deviceSerial, "serial", "", "设备序列号（可选，默认自动选择）")
 	runCmd.Flags().StringVar(&runOptions.configPath, "config", "", "配置文件路径（可选，仅支持 .js，支持绝对/相对路径）")
+	runCmd.Flags().StringVar(&runOptions.recoveryMemoryFile, "recovery-memory-file", "", "恢复经验库 jsonl 文件路径（可选）")
+	runCmd.Flags().IntVar(&runOptions.recoveryCooldownSteps, "recovery-cooldown-steps", 2, "恢复成功后的冷却步数，冷却期间抑制再次进入 recover")
+	runCmd.Flags().StringVar(&runOptions.recoveryLLMEndpoint, "recovery-llm-endpoint", "", "恢复模式 LLM HTTP 接口地址（可选）")
+	runCmd.Flags().StringVar(&runOptions.recoveryLLMAPIKey, "recovery-llm-api-key", "", "恢复模式 LLM 接口鉴权 key（可选，未传则读取 TREK_RECOVERY_LLM_API_KEY）")
+	runCmd.Flags().StringVar(&runOptions.recoveryLLMModel, "recovery-llm-model", "", "恢复模式 LLM 模型名（可选，透传给接口）")
+	runCmd.Flags().StringVar(&runOptions.recoveryOpenAIModel, "recovery-openai-model", "", "恢复模式 OpenAI 模型名（可选，配置后走 OpenAI Responses API）")
+	runCmd.Flags().StringVar(&runOptions.recoveryOpenAIAPIKey, "recovery-openai-api-key", "", "OpenAI API Key（可选，未传则读取 OPENAI_API_KEY）")
+	runCmd.Flags().StringVar(&runOptions.recoveryOpenAIBaseURL, "recovery-openai-base-url", "", "OpenAI Responses API 地址（可选，默认 https://api.openai.com/v1/responses）")
+	runCmd.Flags().DurationVar(&runOptions.recoveryLLMTimeout, "recovery-llm-timeout", 15*time.Second, "恢复模式 LLM 接口超时时间")
+	runCmd.Flags().IntVar(&runOptions.recoveryLLMMaxCalls, "recovery-llm-max-calls", 0, "恢复模式下 LLM 候选最大调用次数（0 表示不限制）")
+	runCmd.Flags().IntVar(&runOptions.recoveryLLMWindowSteps, "recovery-llm-window-steps", 0, "恢复模式下 LLM 调用统计窗口步数（0 表示全局统计）")
 	runCmd.Flags().StringVar(&runOptions.algorithm, "algorithm", "reuse", "决策算法（可选: reuse, uctbandit）")
 	runCmd.Flags().IntVar(&runOptions.maxSteps, "max-steps", 300, "最大执行步数")
 	runCmd.Flags().DurationVar(&runOptions.maxDuration, "max-duration", 10*time.Minute, "最大运行时长")
@@ -64,17 +85,28 @@ func init() {
 
 // runMonkey 执行 monkey 测试的核心逻辑。
 func runMonkey(logLevelStr string, opts struct {
-	packageName       string
-	deviceSerial      string
-	configPath        string
-	algorithm         string
-	maxSteps          int
-	maxDuration       time.Duration
-	stepInterval      time.Duration
-	captureScreenshot bool
-	keepStepRecords   bool
-	probePageName     bool
-	autoCurrentApp    bool
+	packageName            string
+	deviceSerial           string
+	configPath             string
+	recoveryMemoryFile     string
+	recoveryCooldownSteps  int
+	recoveryLLMEndpoint    string
+	recoveryLLMAPIKey      string
+	recoveryLLMModel       string
+	recoveryOpenAIModel    string
+	recoveryOpenAIAPIKey   string
+	recoveryOpenAIBaseURL  string
+	recoveryLLMTimeout     time.Duration
+	recoveryLLMMaxCalls    int
+	recoveryLLMWindowSteps int
+	algorithm              string
+	maxSteps               int
+	maxDuration            time.Duration
+	stepInterval           time.Duration
+	captureScreenshot      bool
+	keepStepRecords        bool
+	probePageName          bool
+	autoCurrentApp         bool
 }) error {
 	if err := logger.SetLevel(logLevelStr); err != nil {
 		return fmt.Errorf("设置日志级别失败: %w", err)
@@ -144,8 +176,16 @@ func runMonkey(logLevelStr string, opts struct {
 	}
 
 	sess := session.NewSession(session.Config{
-		PackageName: packageName,
-		Algorithm:   algorithmType,
+		PackageName:              packageName,
+		Algorithm:                algorithmType,
+		RecoveryMemoryFile:       strings.TrimSpace(opts.recoveryMemoryFile),
+		RecoveryLLMEndpoint:      strings.TrimSpace(opts.recoveryLLMEndpoint),
+		RecoveryLLMAPIKey:        strings.TrimSpace(opts.recoveryLLMAPIKey),
+		RecoveryLLMModel:         strings.TrimSpace(opts.recoveryLLMModel),
+		RecoveryLLMOpenAIModel:   strings.TrimSpace(opts.recoveryOpenAIModel),
+		RecoveryLLMOpenAIAPIKey:  strings.TrimSpace(opts.recoveryOpenAIAPIKey),
+		RecoveryLLMOpenAIBaseURL: strings.TrimSpace(opts.recoveryOpenAIBaseURL),
+		RecoveryLLMTimeout:       opts.recoveryLLMTimeout,
 	})
 	if opts.configPath != "" {
 		if err := sess.LoadConfigFile(opts.configPath); err != nil {
@@ -155,18 +195,21 @@ func runMonkey(logLevelStr string, opts struct {
 	}
 
 	cfg := monkey.Config{
-		PackageName:        packageName,
-		DeviceSerial:       deviceSerial,
-		MaxSteps:           opts.maxSteps,
-		MaxDuration:        opts.maxDuration,
-		StepInterval:       opts.stepInterval,
-		PageSourceType:     pageSourceType,
-		PageNameStrategy:   strings.TrimSpace(staticCfg.PageNameStrategy),
-		CaptureScreenshot:  opts.captureScreenshot,
-		KeepStepRecords:    opts.keepStepRecords,
-		StopOnCrash:        true,
-		StopOnANR:          true,
-		EffectiveTouchArea: buildEffectiveTouchAreaConfig(staticCfg, packageName, deviceSerial),
+		PackageName:                 packageName,
+		DeviceSerial:                deviceSerial,
+		MaxSteps:                    opts.maxSteps,
+		MaxDuration:                 opts.maxDuration,
+		StepInterval:                opts.stepInterval,
+		PageSourceType:              pageSourceType,
+		PageNameStrategy:            strings.TrimSpace(staticCfg.PageNameStrategy),
+		CaptureScreenshot:           opts.captureScreenshot,
+		KeepStepRecords:             opts.keepStepRecords,
+		StopOnCrash:                 true,
+		StopOnANR:                   true,
+		EffectiveTouchArea:          buildEffectiveTouchAreaConfig(staticCfg, packageName, deviceSerial),
+		RecoveryCooldownSteps:       opts.recoveryCooldownSteps,
+		RecoveryLLMBudgetMaxCalls:   opts.recoveryLLMMaxCalls,
+		RecoveryLLMBudgetWindowStep: opts.recoveryLLMWindowSteps,
 	}
 
 	if opts.probePageName {
@@ -186,6 +229,8 @@ func runMonkey(logLevelStr string, opts struct {
 	fmt.Printf("运行完成: stop_reason=%s total=%d success=%d failed=%d duration_ms=%d\n",
 		report.StopReason, report.StepsTotal, report.StepsSucceeded, report.StepsFailed, report.DurationMs)
 	fmt.Printf("页面统计: %+v\n", report.PageVisitCount)
+	fmt.Printf("恢复冷却统计: cooldown_enter=%d cooldown_step_hits=%d\n",
+		report.RecoveryCooldownEnterCount, report.RecoveryCooldownStepCount)
 	return nil
 }
 

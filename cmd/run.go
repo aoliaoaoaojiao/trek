@@ -22,28 +22,35 @@ import (
 
 // runOptions 存储 run 子命令的标志值。
 var runOptions = struct {
-	packageName            string
-	deviceSerial           string
-	configPath             string
-	recoveryMemoryFile     string
-	recoveryCooldownSteps  int
-	recoveryLLMEndpoint    string
-	recoveryLLMAPIKey      string
-	recoveryLLMModel       string
-	recoveryOpenAIModel    string
-	recoveryOpenAIAPIKey   string
-	recoveryOpenAIBaseURL  string
-	recoveryLLMTimeout     time.Duration
-	recoveryLLMMaxCalls    int
-	recoveryLLMWindowSteps int
-	algorithm              string
-	maxSteps               int
-	maxDuration            time.Duration
-	stepInterval           time.Duration
-	captureScreenshot      bool
-	keepStepRecords        bool
-	probePageName          bool
-	autoCurrentApp         bool
+	packageName                       string
+	deviceSerial                      string
+	configPath                        string
+	recoveryMemoryFile                string
+	recoveryCooldownSteps             int
+	recoveryLLMEndpoint               string
+	recoveryLLMAPIKey                 string
+	recoveryLLMModel                  string
+	recoveryOpenAIModel               string
+	recoveryOpenAIAPIKey              string
+	recoveryOpenAIBaseURL             string
+	recoveryLLMTimeout                time.Duration
+	recoveryLLMMaxCalls               int
+	recoveryLLMWindowSteps            int
+	recoveryTwoStateLoopThreshold     int
+	recoveryHighVisitThreshold        int
+	recoveryLowRewardWindow           int
+	candidateAmbiguityTopGapThreshold float64
+	highValuePageVisitLimit           int
+	candidateRiskDropThreshold        float64
+	candidateMinFusionScore           float64
+	algorithm                         string
+	maxSteps                          int
+	maxDuration                       time.Duration
+	stepInterval                      time.Duration
+	captureScreenshot                 bool
+	keepStepRecords                   bool
+	probePageName                     bool
+	autoCurrentApp                    bool
 }{}
 
 // runCmd 定义 run 子命令。
@@ -73,6 +80,13 @@ func init() {
 	runCmd.Flags().DurationVar(&runOptions.recoveryLLMTimeout, "recovery-llm-timeout", 15*time.Second, "恢复模式 LLM 接口超时时间")
 	runCmd.Flags().IntVar(&runOptions.recoveryLLMMaxCalls, "recovery-llm-max-calls", 0, "恢复模式下 LLM 候选最大调用次数（0 表示不限制）")
 	runCmd.Flags().IntVar(&runOptions.recoveryLLMWindowSteps, "recovery-llm-window-steps", 0, "恢复模式下 LLM 调用统计窗口步数（0 表示全局统计）")
+	runCmd.Flags().IntVar(&runOptions.recoveryTwoStateLoopThreshold, "recovery-two-state-loop-threshold", 2, "触发 two_state_ping_pong 的最小往返次数")
+	runCmd.Flags().IntVar(&runOptions.recoveryHighVisitThreshold, "recovery-high-visit-threshold", 8, "触发 high_visit_low_reward 的页面访问阈值")
+	runCmd.Flags().IntVar(&runOptions.recoveryLowRewardWindow, "recovery-low-reward-window", 6, "low_reward 判定窗口步数")
+	runCmd.Flags().Float64Var(&runOptions.candidateAmbiguityTopGapThreshold, "candidate-ambiguity-top-gap-threshold", 0.15, "候选前两名归一化权重差阈值，小于等于该值视为区分度低")
+	runCmd.Flags().IntVar(&runOptions.highValuePageVisitLimit, "high-value-page-visit-limit", 2, "Explore 模式下视为高价值页面的最大访问次数")
+	runCmd.Flags().Float64Var(&runOptions.candidateRiskDropThreshold, "candidate-risk-drop-threshold", 2.1, "候选融合时高风险直接剔除阈值（RiskScore >= 阈值）")
+	runCmd.Flags().Float64Var(&runOptions.candidateMinFusionScore, "candidate-min-fusion-score", -0.3, "候选融合最小得分阈值")
 	runCmd.Flags().StringVar(&runOptions.algorithm, "algorithm", "reuse", "决策算法（可选: reuse, uctbandit）")
 	runCmd.Flags().IntVar(&runOptions.maxSteps, "max-steps", 300, "最大执行步数")
 	runCmd.Flags().DurationVar(&runOptions.maxDuration, "max-duration", 10*time.Minute, "最大运行时长")
@@ -85,28 +99,35 @@ func init() {
 
 // runMonkey 执行 monkey 测试的核心逻辑。
 func runMonkey(logLevelStr string, opts struct {
-	packageName            string
-	deviceSerial           string
-	configPath             string
-	recoveryMemoryFile     string
-	recoveryCooldownSteps  int
-	recoveryLLMEndpoint    string
-	recoveryLLMAPIKey      string
-	recoveryLLMModel       string
-	recoveryOpenAIModel    string
-	recoveryOpenAIAPIKey   string
-	recoveryOpenAIBaseURL  string
-	recoveryLLMTimeout     time.Duration
-	recoveryLLMMaxCalls    int
-	recoveryLLMWindowSteps int
-	algorithm              string
-	maxSteps               int
-	maxDuration            time.Duration
-	stepInterval           time.Duration
-	captureScreenshot      bool
-	keepStepRecords        bool
-	probePageName          bool
-	autoCurrentApp         bool
+	packageName                       string
+	deviceSerial                      string
+	configPath                        string
+	recoveryMemoryFile                string
+	recoveryCooldownSteps             int
+	recoveryLLMEndpoint               string
+	recoveryLLMAPIKey                 string
+	recoveryLLMModel                  string
+	recoveryOpenAIModel               string
+	recoveryOpenAIAPIKey              string
+	recoveryOpenAIBaseURL             string
+	recoveryLLMTimeout                time.Duration
+	recoveryLLMMaxCalls               int
+	recoveryLLMWindowSteps            int
+	recoveryTwoStateLoopThreshold     int
+	recoveryHighVisitThreshold        int
+	recoveryLowRewardWindow           int
+	candidateAmbiguityTopGapThreshold float64
+	highValuePageVisitLimit           int
+	candidateRiskDropThreshold        float64
+	candidateMinFusionScore           float64
+	algorithm                         string
+	maxSteps                          int
+	maxDuration                       time.Duration
+	stepInterval                      time.Duration
+	captureScreenshot                 bool
+	keepStepRecords                   bool
+	probePageName                     bool
+	autoCurrentApp                    bool
 }) error {
 	if err := logger.SetLevel(logLevelStr); err != nil {
 		return fmt.Errorf("设置日志级别失败: %w", err)
@@ -195,21 +216,28 @@ func runMonkey(logLevelStr string, opts struct {
 	}
 
 	cfg := monkey.Config{
-		PackageName:                 packageName,
-		DeviceSerial:                deviceSerial,
-		MaxSteps:                    opts.maxSteps,
-		MaxDuration:                 opts.maxDuration,
-		StepInterval:                opts.stepInterval,
-		PageSourceType:              pageSourceType,
-		PageNameStrategy:            strings.TrimSpace(staticCfg.PageNameStrategy),
-		CaptureScreenshot:           opts.captureScreenshot,
-		KeepStepRecords:             opts.keepStepRecords,
-		StopOnCrash:                 true,
-		StopOnANR:                   true,
-		EffectiveTouchArea:          buildEffectiveTouchAreaConfig(staticCfg, packageName, deviceSerial),
-		RecoveryCooldownSteps:       opts.recoveryCooldownSteps,
-		RecoveryLLMBudgetMaxCalls:   opts.recoveryLLMMaxCalls,
-		RecoveryLLMBudgetWindowStep: opts.recoveryLLMWindowSteps,
+		PackageName:                       packageName,
+		DeviceSerial:                      deviceSerial,
+		MaxSteps:                          opts.maxSteps,
+		MaxDuration:                       opts.maxDuration,
+		StepInterval:                      opts.stepInterval,
+		PageSourceType:                    pageSourceType,
+		PageNameStrategy:                  strings.TrimSpace(staticCfg.PageNameStrategy),
+		CaptureScreenshot:                 opts.captureScreenshot,
+		KeepStepRecords:                   opts.keepStepRecords,
+		StopOnCrash:                       true,
+		StopOnANR:                         true,
+		EffectiveTouchArea:                buildEffectiveTouchAreaConfig(staticCfg, packageName, deviceSerial),
+		RecoveryCooldownSteps:             opts.recoveryCooldownSteps,
+		RecoveryLLMBudgetMaxCalls:         opts.recoveryLLMMaxCalls,
+		RecoveryLLMBudgetWindowStep:       opts.recoveryLLMWindowSteps,
+		TwoStateLoopThreshold:             opts.recoveryTwoStateLoopThreshold,
+		HighVisitThreshold:                opts.recoveryHighVisitThreshold,
+		LowRewardWindow:                   opts.recoveryLowRewardWindow,
+		CandidateAmbiguityTopGapThreshold: opts.candidateAmbiguityTopGapThreshold,
+		HighValuePageVisitLimit:           opts.highValuePageVisitLimit,
+		CandidateRiskDropThreshold:        opts.candidateRiskDropThreshold,
+		CandidateMinFusionScore:           opts.candidateMinFusionScore,
 	}
 
 	if opts.probePageName {
@@ -231,6 +259,8 @@ func runMonkey(logLevelStr string, opts struct {
 	fmt.Printf("页面统计: %+v\n", report.PageVisitCount)
 	fmt.Printf("恢复冷却统计: cooldown_enter=%d cooldown_step_hits=%d\n",
 		report.RecoveryCooldownEnterCount, report.RecoveryCooldownStepCount)
+	fmt.Printf("LLM 统计: recovery_calls=%d recovery_budget_denied=%d enhancement_calls=%d enhancement_hits=%d enhancement_budget_denied=%d\n",
+		report.RecoveryLLMCalls, report.RecoveryLLMBudgetDenied, report.CandidateEnhancementCalls, report.CandidateEnhancementSelects, report.EnhancementLLMBudgetDenied)
 	return nil
 }
 

@@ -84,10 +84,12 @@ type plannerAwareRecoveryDecider struct {
 	algorithmCandidates     []candidate.Candidate
 	weightedCandidates      []WeightedCandidate
 	persistedFailed         map[string]bool
+	persistedSuccess        map[string]bool
 	algorithmCalls          int
 	memoryCalls             int
 	heuristicCalls          int
 	llmCalls                int
+	lastLLMContext          enginestate.TraversalContext
 	selectCalls             int
 	selectedRecoveryCmd     *types.ActionCommand
 	outcomeCalls            int
@@ -166,6 +168,7 @@ func (d *plannerAwareRecoveryDecider) BuildHeuristicRecoveryCandidates(ctx engin
 
 func (d *plannerAwareRecoveryDecider) BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
 	d.llmCalls++
+	d.lastLLMContext = ctx
 	return d.llmCandidates, nil
 }
 
@@ -183,6 +186,14 @@ func (d *plannerAwareRecoveryDecider) NextWeightedActionsWithInput(pageName stri
 func (d *plannerAwareRecoveryDecider) BuildKnownFailedRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
 	result := make(map[string]bool, len(d.persistedFailed))
 	for key, value := range d.persistedFailed {
+		result[key] = value
+	}
+	return result, nil
+}
+
+func (d *plannerAwareRecoveryDecider) BuildKnownSuccessfulRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
+	result := make(map[string]bool, len(d.persistedSuccess))
+	for key, value := range d.persistedSuccess {
 		result[key] = value
 	}
 	return result, nil
@@ -1561,6 +1572,9 @@ func TestRunnerExploreLLMEnhancementEnabled(t *testing.T) {
 	if !decider.lastEnhancementImproved {
 		t.Fatalf("预期增强后 outcome 记为 improved=true")
 	}
+	if len(decider.lastLLMContext.LocalCandidates) == 0 {
+		t.Fatalf("预期增强 llm 上下文包含本地候选摘要")
+	}
 }
 
 func TestRunnerExploreLLMEnhancementDisabledByDefault(t *testing.T) {
@@ -1669,7 +1683,7 @@ func TestRunnerExploreLLMEnhancementSkipsWhenCandidatesDistinct(t *testing.T) {
 }
 
 func TestBlockDetectorUsesStableReasonForScrollNoChange(t *testing.T) {
-	detector := newBlockDetector(3)
+	detector := newBlockDetector(3, 0, 0, 0)
 	cmd := &types.ActionCommand{Act: types.SCROLL_BOTTOM_UP, Pos: *types.NewRect(0, 0, 1, 1)}
 	before := session.PageSnapshot{PageName: "MainActivity", XML: `<node class="MainActivity"/>`}
 	after := &session.PageSnapshot{PageName: "MainActivity", XML: `<node class="MainActivity"/>`}
@@ -1687,7 +1701,7 @@ func TestBlockDetectorUsesStableReasonForScrollNoChange(t *testing.T) {
 }
 
 func TestBlockDetectorDetectsSamePageNoChange(t *testing.T) {
-	detector := newBlockDetector(3)
+	detector := newBlockDetector(3, 0, 0, 0)
 	cmd := &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}
 	before := session.PageSnapshot{PageName: "MainActivity", XML: `<node class="MainActivity"/>`}
 	after := &session.PageSnapshot{PageName: "MainActivity", XML: `<node class="MainActivity"/>`}
@@ -1705,7 +1719,7 @@ func TestBlockDetectorDetectsSamePageNoChange(t *testing.T) {
 }
 
 func TestBlockDetectorDetectsHighVisitLowReward(t *testing.T) {
-	detector := newBlockDetector(20)
+	detector := newBlockDetector(20, 0, 0, 0)
 	cmd := &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}
 	after := &session.PageSnapshot{PageName: "PageA", XML: `<node class="PageA"/>`}
 

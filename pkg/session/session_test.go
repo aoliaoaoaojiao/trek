@@ -618,6 +618,38 @@ func TestSessionBuildKnownFailedRecoveryActions(t *testing.T) {
 	}
 }
 
+func TestSessionBuildKnownSuccessfulRecoveryActions(t *testing.T) {
+	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
+	session := NewSession(Config{
+		PackageName:        "com.demo",
+		RecoveryMemoryFile: memoryPath,
+	})
+	ctx := enginestate.TraversalContext{
+		Mode:             "Recover",
+		PageSignature:    "page.sig",
+		ClusterSignature: "cluster.sig",
+		BlockReason:      "same_page_no_change",
+		RecentTrace: []enginestate.ActionTrace{
+			{ActionKey: "back"},
+		},
+	}
+	item := candidate.Candidate{
+		Command: &types2.ActionCommand{Act: types2.BACK},
+		Source:  candidate.SourceMemory,
+	}
+	if err := session.RecordRecoveryMemoryOutcome(ctx, item, true); err != nil {
+		t.Fatalf("写回成功样本失败: %v", err)
+	}
+
+	known, err := session.BuildKnownSuccessfulRecoveryActions(ctx)
+	if err != nil {
+		t.Fatalf("提取成功动作失败: %v", err)
+	}
+	if !known[item.Command.ToJSON()] {
+		t.Fatalf("预期包含 BACK 成功动作 key")
+	}
+}
+
 func TestSessionBuildLLMRecoveryCandidates(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

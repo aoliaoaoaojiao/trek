@@ -34,4 +34,6 @@ type PlannerConfig struct {
 	LLM                     CandidateProvider
 	LLMBudget               LLMBudget
 	HighConfidenceThreshold float64
+	OnLLMCall               func(ctx enginestate.TraversalContext)
+	OnLLMBudgetDenied       func(ctx enginestate.TraversalContext)
 }

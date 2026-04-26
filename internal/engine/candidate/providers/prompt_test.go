@@ -29,9 +29,9 @@ func TestBuildRecoveryPrompt_SystemContent(t *testing.T) {
 func TestBuildRecoveryPrompt_UserContent_Structured(t *testing.T) {
 	ctx := enginestate.TraversalContext{
 		Step:        42,
-		Mode:         "Recover",
-		PageName:     "MainActivity",
-		BlockReason:  "same_page_no_change",
+		Mode:        "Recover",
+		PageName:    "MainActivity",
+		BlockReason: "same_page_no_change",
 		RecentTrace: []enginestate.ActionTrace{
 			{PageSignature: "sig_home", ActionKey: "click_btn_login"},
 			{PageSignature: "sig_login", ActionKey: "scroll_down"},
@@ -40,6 +40,11 @@ func TestBuildRecoveryPrompt_UserContent_Structured(t *testing.T) {
 			PageVisitCount: map[string]int{"MainActivity": 5, "LoginPage": 2},
 			ActionCount:    map[string]int{"click_btn_login": 3, "scroll_down": 1},
 		},
+		LocalCandidates: []enginestate.CandidateSummary{
+			{ActionType: "BACK", Source: "memory", Confidence: 0.9, EscapeScore: 0.8, RiskScore: 0.1, Intent: "返回上一层"},
+		},
+		KnownFailedActions:  []string{`{"act":"CLICK","x":0.5}`},
+		KnownSuccessActions: []string{`{"act":"BACK"}`},
 	}
 	prompt := buildRecoveryPrompt(ctx)
 
@@ -63,6 +68,15 @@ func TestBuildRecoveryPrompt_UserContent_Structured(t *testing.T) {
 	}
 	if !strings.Contains(prompt.UserContent, "最近操作轨迹") {
 		t.Fatalf("UserContent 应包含操作轨迹: %s", prompt.UserContent)
+	}
+	if !strings.Contains(prompt.UserContent, "本地候选摘要") {
+		t.Fatalf("UserContent 应包含本地候选摘要: %s", prompt.UserContent)
+	}
+	if !strings.Contains(prompt.UserContent, "已知失败动作") {
+		t.Fatalf("UserContent 应包含已知失败动作: %s", prompt.UserContent)
+	}
+	if !strings.Contains(prompt.UserContent, "已知成功动作") {
+		t.Fatalf("UserContent 应包含已知成功动作: %s", prompt.UserContent)
 	}
 }
 
@@ -170,6 +184,11 @@ func TestBuildRecoveryPrompt_ContextFieldsPreserved(t *testing.T) {
 			PageVisitCount: map[string]int{"MainActivity": 5},
 			ActionCount:    map[string]int{"click_btn": 3},
 		},
+		LocalCandidates: []enginestate.CandidateSummary{
+			{ActionType: "BACK", Source: "memory", Confidence: 0.8},
+		},
+		KnownFailedActions:  []string{"A", "B"},
+		KnownSuccessActions: []string{"C"},
 	}
 	prompt := buildRecoveryPrompt(ctx)
 
@@ -181,6 +200,12 @@ func TestBuildRecoveryPrompt_ContextFieldsPreserved(t *testing.T) {
 	}
 	if prompt.ContextFields.ClusterSignature != "cluster_xyz" {
 		t.Fatalf("ClusterSignature 应为 cluster_xyz, 实际: %s", prompt.ContextFields.ClusterSignature)
+	}
+	if len(prompt.ContextFields.LocalCandidates) != 1 {
+		t.Fatalf("LocalCandidates 应保留，实际: %d", len(prompt.ContextFields.LocalCandidates))
+	}
+	if len(prompt.ContextFields.KnownFailedActions) != 2 || len(prompt.ContextFields.KnownSuccessActions) != 1 {
+		t.Fatalf("Known actions 应保留，实际 failed=%v success=%v", prompt.ContextFields.KnownFailedActions, prompt.ContextFields.KnownSuccessActions)
 	}
 }
 
@@ -285,5 +310,8 @@ func TestBuildRecoveryPrompt_EmptyContext(t *testing.T) {
 	}
 	if prompt.ContextFields.PageVisitCount != nil {
 		t.Fatalf("空 ctx 的 PageVisitCount 应为 nil, 实际: %v", prompt.ContextFields.PageVisitCount)
+	}
+	if prompt.ContextFields.KnownFailedActions != nil || prompt.ContextFields.KnownSuccessActions != nil {
+		t.Fatalf("空 ctx 的 known actions 应为 nil")
 	}
 }

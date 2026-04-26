@@ -41,12 +41,12 @@ func (p *Planner) BuildRecoveryCandidates(ctx enginestate.TraversalContext) ([]c
 	if !p.allowLLM(ctx) {
 		return items, nil
 	}
-
-	llmItems, err := p.buildFromProvider(p.config.LLM, ctx)
+	llmCtx := enrichLLMContext(ctx, items)
+	llmItems, err := p.buildFromProvider(p.config.LLM, llmCtx)
 	if err != nil {
 		return nil, err
 	}
-	p.recordLLMCall(ctx)
+	p.recordLLMCall(llmCtx)
 	items = append(items, llmItems...)
 	return items, nil
 }
@@ -74,12 +74,46 @@ func (p *Planner) allowLLM(ctx enginestate.TraversalContext) bool {
 	if p.config.LLMBudget == nil {
 		return true
 	}
-	return p.config.LLMBudget.Allow(ctx)
+	allowed := p.config.LLMBudget.Allow(ctx)
+	if !allowed && p.config.OnLLMBudgetDenied != nil {
+		p.config.OnLLMBudgetDenied(ctx)
+	}
+	return allowed
 }
 
 func (p *Planner) recordLLMCall(ctx enginestate.TraversalContext) {
+	if p != nil && p.config.OnLLMCall != nil {
+		p.config.OnLLMCall(ctx)
+	}
 	if p == nil || p.config.LLMBudget == nil {
 		return
 	}
 	p.config.LLMBudget.Record(ctx)
+}
+
+func enrichLLMContext(ctx enginestate.TraversalContext, localCandidates []candidate.Candidate) enginestate.TraversalContext {
+	next := ctx
+	if len(localCandidates) == 0 {
+		return next
+	}
+	summaries := make([]enginestate.CandidateSummary, 0, len(ctx.LocalCandidates)+len(localCandidates))
+	if len(ctx.LocalCandidates) > 0 {
+		summaries = append(summaries, ctx.LocalCandidates...)
+	}
+	for _, item := range localCandidates {
+		if item.Command == nil {
+			continue
+		}
+		summaries = append(summaries, enginestate.CandidateSummary{
+			ActionKey:   item.Command.ToJSON(),
+			ActionType:  item.Command.Act.String(),
+			Source:      item.Source,
+			Intent:      item.Intent,
+			Confidence:  item.Confidence,
+			EscapeScore: item.EscapeScore,
+			RiskScore:   item.RiskScore,
+		})
+	}
+	next.LocalCandidates = summaries
+	return next
 }

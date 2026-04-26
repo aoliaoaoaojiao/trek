@@ -14,7 +14,11 @@ const (
 
 // FusionOptions 定义候选融合的可选参数。
 type FusionOptions struct {
-	KnownFailedActions map[string]bool
+	KnownFailedActions   map[string]bool
+	RiskDropThreshold    float64
+	EnableMinScoreFilter bool
+	MinScoreThreshold    float64
+	KeepTopOnFiltered    bool
 }
 
 // FuseCandidates 对多来源候选做去重与基础打分排序。
@@ -55,7 +59,7 @@ func FuseCandidates(items []Candidate, options FusionOptions) []Candidate {
 	sort.SliceStable(result, func(i, j int) bool {
 		return fusionScore(result[i]) > fusionScore(result[j])
 	})
-	return result
+	return applyFusionFilters(result, options)
 }
 
 func mergeCandidate(base Candidate, incoming Candidate) Candidate {
@@ -128,4 +132,24 @@ func maxFloat(left float64, right float64) float64 {
 		return right
 	}
 	return left
+}
+
+func applyFusionFilters(items []Candidate, options FusionOptions) []Candidate {
+	if len(items) == 0 {
+		return nil
+	}
+	filtered := make([]Candidate, 0, len(items))
+	for _, item := range items {
+		if options.RiskDropThreshold > 0 && item.RiskScore >= options.RiskDropThreshold {
+			continue
+		}
+		if options.EnableMinScoreFilter && fusionScore(item) < options.MinScoreThreshold {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	if len(filtered) == 0 && options.KeepTopOnFiltered {
+		return []Candidate{items[0]}
+	}
+	return filtered
 }

@@ -418,6 +418,52 @@ func TestRunnerRecoveryPlannerRespectsLLMBudgetConfig(t *testing.T) {
 	if decider.llmCalls != 1 {
 		t.Fatalf("预算应限制 llm provider 只调用一次，实际: %d", decider.llmCalls)
 	}
+	if runner.recoveryLLMCallCount != 1 {
+		t.Fatalf("runner 应记录 recovery llm 调用次数，实际: %d", runner.recoveryLLMCallCount)
+	}
+	if runner.recoveryLLMDeniedCount != 1 {
+		t.Fatalf("runner 应记录 recovery llm 预算拒绝次数，实际: %d", runner.recoveryLLMDeniedCount)
+	}
+}
+
+func TestRunnerRecoveryPlannerPassesKnownActionsToLLMContext(t *testing.T) {
+	successCmd := &types.ActionCommand{Act: types.BACK}
+	failedCmd := &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}
+	decider := &plannerAwareRecoveryDecider{
+		llmCandidates: []candidate.Candidate{
+			candidate.NewCandidate(successCmd, candidate.SourceLLM, "llm_back", nil),
+		},
+		persistedFailed: map[string]bool{
+			failedCmd.ToJSON(): true,
+		},
+		persistedSuccess: map[string]bool{
+			successCmd.ToJSON(): true,
+		},
+	}
+	runner, err := NewRunner(decider, &fakeDriver{}, Config{
+		StepInterval:              0,
+		StopOnCrash:               true,
+		StopOnANR:                 true,
+		RecoveryLLMBudgetMaxCalls: 1,
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	runner.pendingBlockRecovery = true
+	_, err = runner.nextCommandWithRecovery(1, session.PageSnapshot{
+		PageName: "MainActivity",
+		XML:      `<hierarchy/>`,
+	}, "MainActivity", session.ActionInput{XMLDescOfGuiTree: `<hierarchy/>`})
+	if err != nil {
+		t.Fatalf("恢复取动作失败: %v", err)
+	}
+	if len(decider.lastLLMContext.KnownFailedActions) == 0 {
+		t.Fatalf("预期 llm 上下文包含已知失败动作")
+	}
+	if len(decider.lastLLMContext.KnownSuccessActions) == 0 {
+		t.Fatalf("预期 llm 上下文包含已知成功动作")
+	}
 }
 
 func TestRunnerRecoveryPlannerUsesFusedCandidateRanking(t *testing.T) {

@@ -330,6 +330,24 @@ func (s *Session) BuildKnownFailedRecoveryActions(ctx enginestate.TraversalConte
 	return result, nil
 }
 
+// BuildKnownSuccessfulRecoveryActions 返回恢复阶段已知成功动作，用于提示词增强。
+func (s *Session) BuildKnownSuccessfulRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
+	result := make(map[string]bool)
+	if s == nil || s.memoryStore == nil {
+		return result, nil
+	}
+	items := s.memoryStore.Find(ctx)
+	for _, item := range items {
+		if item.Candidate.Command == nil {
+			continue
+		}
+		if item.SuccessCount > item.FailCount || strings.EqualFold(item.Outcome, memory.OutcomeEscaped) {
+			result[item.Candidate.Command.ToJSON()] = true
+		}
+	}
+	return result, nil
+}
+
 // BuildLLMRecoveryCandidates 调用外部 LLM 服务构建恢复候选。
 func (s *Session) BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
 	if s == nil || s.llmProvider == nil {

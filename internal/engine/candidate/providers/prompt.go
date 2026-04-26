@@ -16,14 +16,16 @@ import (
 //   - 截图通过 ImageContent 传递，Provider 决定编码方式（base64 URL / input_image / 等）
 //
 // OpenAI Chat Completions provider 映射：
-//   SystemContent → {role: "system", content: "..."}
-//   UserContent   → {role: "user", content: [{type: "text", ...}, {type: "image_url", ...}]}
+//
+//	SystemContent → {role: "system", content: "..."}
+//	UserContent   → {role: "user", content: [{type: "text", ...}, {type: "image_url", ...}]}
 //
 // HTTP provider 映射：
-//   SystemContent → instruction 字段
-//   UserContent   → user_message 字段
-//   ImageContent  → screenshot_base64 字段
-//   ContextFields → context 字段
+//
+//	SystemContent → instruction 字段
+//	UserContent   → user_message 字段
+//	ImageContent  → screenshot_base64 字段
+//	ContextFields → context 字段
 type RecoveryPrompt struct {
 	// SystemContent 是系统级完整指令，包含角色定位、输出格式、坐标规则。
 	SystemContent string
@@ -43,15 +45,18 @@ type RecoveryPrompt struct {
 // RecoveryContextFields 是从 TraversalContext 提取的语义上下文字段，
 // 供各 provider 按自身格式序列化。
 type RecoveryContextFields struct {
-	Step             int                        `json:"step"`
-	Mode             string                     `json:"mode"`
-	PageName         string                     `json:"page_name"`
-	PageSignature    string                     `json:"page_signature"`
-	ClusterSignature string                     `json:"cluster_signature"`
-	BlockReason      string                     `json:"block_reason"`
-	RecentTrace      []enginestate.ActionTrace  `json:"recent_trace,omitempty"`
-	PageVisitCount   map[string]int             `json:"page_visit_count,omitempty"`
-	ActionCount      map[string]int             `json:"action_count,omitempty"`
+	Step                int                            `json:"step"`
+	Mode                string                         `json:"mode"`
+	PageName            string                         `json:"page_name"`
+	PageSignature       string                         `json:"page_signature"`
+	ClusterSignature    string                         `json:"cluster_signature"`
+	BlockReason         string                         `json:"block_reason"`
+	RecentTrace         []enginestate.ActionTrace      `json:"recent_trace,omitempty"`
+	PageVisitCount      map[string]int                 `json:"page_visit_count,omitempty"`
+	ActionCount         map[string]int                 `json:"action_count,omitempty"`
+	LocalCandidates     []enginestate.CandidateSummary `json:"local_candidates,omitempty"`
+	KnownFailedActions  []string                       `json:"known_failed_actions,omitempty"`
+	KnownSuccessActions []string                       `json:"known_success_actions,omitempty"`
 }
 
 // ScreenshotBase64 返回截图的 base64 编码字符串，供 HTTP provider 使用。
@@ -90,15 +95,18 @@ func buildRecoveryPrompt(ctx enginestate.TraversalContext) RecoveryPrompt {
 		Screenshot:          cloneBytes(ctx.Screenshot),
 		ScreenshotMediaType: mediaType,
 		ContextFields: RecoveryContextFields{
-			Step:             ctx.Step,
-			Mode:             string(ctx.Mode),
-			PageName:         ctx.PageName,
-			PageSignature:    ctx.PageSignature,
-			ClusterSignature: ctx.ClusterSignature,
-			BlockReason:      ctx.BlockReason,
-			RecentTrace:      cloneTrace(ctx.RecentTrace),
-			PageVisitCount:   cloneIntMap(ctx.VisitStats.PageVisitCount),
-			ActionCount:      cloneIntMap(ctx.VisitStats.ActionCount),
+			Step:                ctx.Step,
+			Mode:                string(ctx.Mode),
+			PageName:            ctx.PageName,
+			PageSignature:       ctx.PageSignature,
+			ClusterSignature:    ctx.ClusterSignature,
+			BlockReason:         ctx.BlockReason,
+			RecentTrace:         cloneTrace(ctx.RecentTrace),
+			PageVisitCount:      cloneIntMap(ctx.VisitStats.PageVisitCount),
+			ActionCount:         cloneIntMap(ctx.VisitStats.ActionCount),
+			LocalCandidates:     cloneCandidateSummary(ctx.LocalCandidates),
+			KnownFailedActions:  cloneStringSlice(limitStrings(ctx.KnownFailedActions, 12)),
+			KnownSuccessActions: cloneStringSlice(limitStrings(ctx.KnownSuccessActions, 12)),
 		},
 		ResponseSchema: recoveryCandidateSchema(),
 	}
@@ -139,6 +147,25 @@ func buildUserMessage(ctx enginestate.TraversalContext) string {
 			sb.WriteString(fmt.Sprintf("  %s → %s\n", trace.PageSignature, trace.ActionKey))
 		}
 	}
+	if len(ctx.LocalCandidates) > 0 {
+		sb.WriteString("本地候选摘要:\n")
+		for _, item := range limitCandidates(ctx.LocalCandidates, 8) {
+			sb.WriteString(fmt.Sprintf("  [%s] %s conf=%.2f esc=%.2f risk=%.2f intent=%s\n",
+				item.Source, item.ActionType, item.Confidence, item.EscapeScore, item.RiskScore, strings.TrimSpace(item.Intent)))
+		}
+	}
+	if len(ctx.KnownFailedActions) > 0 {
+		sb.WriteString("已知失败动作:\n")
+		for _, item := range limitStrings(ctx.KnownFailedActions, 12) {
+			sb.WriteString(fmt.Sprintf("  %s\n", item))
+		}
+	}
+	if len(ctx.KnownSuccessActions) > 0 {
+		sb.WriteString("已知成功动作:\n")
+		for _, item := range limitStrings(ctx.KnownSuccessActions, 12) {
+			sb.WriteString(fmt.Sprintf("  %s\n", item))
+		}
+	}
 
 	// 如果有 XML 页面源，附加为参考
 	if ctx.XML != "" {
@@ -170,8 +197,8 @@ func recoveryCandidateSchema() map[string]any {
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"intent":       map[string]any{"type": "string", "description": "动作意图描述"},
-						"action_type":  map[string]any{"type": "string", "enum": []string{"BACK", "CLICK", "LONG_CLICK", "SCROLL_TOP_DOWN", "SCROLL_BOTTOM_UP", "SCROLL_LEFT_RIGHT", "SCROLL_RIGHT_LEFT", "SCROLL_BOTTOM_UP_N", "ACTIVATE"}},
+						"intent":      map[string]any{"type": "string", "description": "动作意图描述"},
+						"action_type": map[string]any{"type": "string", "enum": []string{"BACK", "CLICK", "LONG_CLICK", "SCROLL_TOP_DOWN", "SCROLL_BOTTOM_UP", "SCROLL_LEFT_RIGHT", "SCROLL_RIGHT_LEFT", "SCROLL_BOTTOM_UP_N", "ACTIVATE"}},
 						"point": map[string]any{
 							"type":        "object",
 							"description": "目标元素中心点的归一化坐标，x 水平 [0,1]，y 垂直 [0,1]",
@@ -224,4 +251,42 @@ func cloneIntMap(src map[string]int) map[string]int {
 		result[key] = value
 	}
 	return result
+}
+
+func cloneCandidateSummary(src []enginestate.CandidateSummary) []enginestate.CandidateSummary {
+	if len(src) == 0 {
+		return nil
+	}
+	result := make([]enginestate.CandidateSummary, len(src))
+	copy(result, src)
+	return result
+}
+
+func cloneStringSlice(src []string) []string {
+	if len(src) == 0 {
+		return nil
+	}
+	result := make([]string, len(src))
+	copy(result, src)
+	return result
+}
+
+func limitStrings(src []string, limit int) []string {
+	if len(src) == 0 || limit <= 0 {
+		return nil
+	}
+	if len(src) <= limit {
+		return src
+	}
+	return src[:limit]
+}
+
+func limitCandidates(src []enginestate.CandidateSummary, limit int) []enginestate.CandidateSummary {
+	if len(src) == 0 || limit <= 0 {
+		return nil
+	}
+	if len(src) <= limit {
+		return src
+	}
+	return src[:limit]
 }

@@ -11,10 +11,12 @@ type stubProvider struct {
 	candidates []candidate.Candidate
 	calls      int
 	err        error
+	lastCtx    enginestate.TraversalContext
 }
 
 func (s *stubProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
 	s.calls++
+	s.lastCtx = ctx
 	return s.candidates, s.err
 }
 
@@ -153,6 +155,70 @@ func TestPlannerSkipsLLMWhenBudgetDenied(t *testing.T) {
 	}
 	if budget.recordCalls != 0 {
 		t.Fatalf("预算拒绝时不应记录调用，实际: %d", budget.recordCalls)
+	}
+}
+
+func TestPlannerPassesLocalCandidateSummaryToLLMContext(t *testing.T) {
+	ctx := enginestate.BuildTraversalContext(enginestate.BuildInput{
+		Step:        3,
+		Mode:        enginestate.ModeRecover,
+		PageName:    "MainActivity",
+		BlockReason: "same_page_no_change",
+	})
+	memory := &stubProvider{
+		candidates: []candidate.Candidate{
+			candidate.NewCandidate(&types.ActionCommand{Act: types.BACK}, candidate.SourceMemory, "返回", nil),
+		},
+	}
+	heuristic := &stubProvider{
+		candidates: []candidate.Candidate{
+			candidate.NewCandidate(&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}, candidate.SourceHeuristic, "点击", nil),
+		},
+	}
+	llm := &stubProvider{}
+
+	planner := NewPlanner(PlannerConfig{
+		Memory:    memory,
+		Heuristic: heuristic,
+		LLM:       llm,
+	})
+	_, err := planner.BuildRecoveryCandidates(ctx)
+	if err != nil {
+		t.Fatalf("构建恢复候选失败: %v", err)
+	}
+	if llm.calls != 1 {
+		t.Fatalf("预期调用 llm provider，实际: %d", llm.calls)
+	}
+	if len(llm.lastCtx.LocalCandidates) < 2 {
+		t.Fatalf("预期 llm 上下文包含 memory+heuristic 本地候选摘要，实际: %d", len(llm.lastCtx.LocalCandidates))
+	}
+}
+
+func TestPlannerRecordsLLMCallbacks(t *testing.T) {
+	ctx := enginestate.BuildTraversalContext(enginestate.BuildInput{
+		Step:        5,
+		Mode:        enginestate.ModeRecover,
+		PageName:    "MainActivity",
+		BlockReason: "same_page_no_change",
+	})
+	llm := &stubProvider{
+		candidates: []candidate.Candidate{
+			candidate.NewCandidate(&types.ActionCommand{Act: types.BACK}, candidate.SourceLLM, "llm", nil),
+		},
+	}
+	llmCalls := 0
+	denied := 0
+	planner := NewPlanner(PlannerConfig{
+		LLM:               llm,
+		OnLLMCall:         func(ctx enginestate.TraversalContext) { llmCalls++ },
+		OnLLMBudgetDenied: func(ctx enginestate.TraversalContext) { denied++ },
+	})
+	_, err := planner.BuildRecoveryCandidates(ctx)
+	if err != nil {
+		t.Fatalf("构建恢复候选失败: %v", err)
+	}
+	if llmCalls != 1 || denied != 0 {
+		t.Fatalf("预期调用回调统计正确，实际 call=%d denied=%d", llmCalls, denied)
 	}
 }
 

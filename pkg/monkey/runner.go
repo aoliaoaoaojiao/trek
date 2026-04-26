@@ -44,6 +44,9 @@ const (
 	defaultLowRewardWindow                         = 6
 	defaultCandidateEnhancementMinStepGap          = 12
 	defaultCandidateAmbiguityTopGapThreshold       = 0.15
+	defaultHighValuePageVisitLimit                 = 2
+	defaultCandidateRiskDropThreshold              = 2.1
+	defaultCandidateMinFusionScore                 = -0.3
 	maxRecentTraceEntries                          = 8
 )
 
@@ -76,38 +79,45 @@ type PageNameResolver func(xml string) string
 
 // Config 是 Smart Monkey Runner 配置。
 type Config struct {
-	PackageName                    string
-	DeviceSerial                   string
-	AutoStartOnRun                 *bool
-	ActionThrottleEnabled          *bool
-	RandomizeThrottle              bool
-	EnableFailureRecovery          *bool
-	FailureRecoveryInterval        int
-	MaxSteps                       int
-	MaxDuration                    time.Duration
-	StepInterval                   time.Duration
-	MaxConsecutiveFailures         int
-	PageSourceType                 string
-	CaptureScreenshot              bool
-	LongClickDuration              time.Duration
-	ScrollDuration                 time.Duration
-	ScrollSteps                    int64
-	ScrollRepeat                   int
-	StopOnCrash                    bool
-	StopOnANR                      bool
-	KeepStepRecords                bool
-	PageNameResolver               PageNameResolver
-	PageNameStrategy               string
-	ForegroundMonitorInterval      time.Duration
-	HealthSignalMonitorInterval    time.Duration
-	EffectiveTouchArea             *EffectiveTouchArea
-	EnableBlockRecovery            *bool
-	BlockNoChangeThreshold         int
-	RecoveryCooldownSteps          int
-	RecoveryLLMBudgetMaxCalls      int
-	RecoveryLLMBudgetWindowStep    int
-	EnableExploreLLMEnhancement    *bool
-	CandidateEnhancementMinStepGap int
+	PackageName                       string
+	DeviceSerial                      string
+	AutoStartOnRun                    *bool
+	ActionThrottleEnabled             *bool
+	RandomizeThrottle                 bool
+	EnableFailureRecovery             *bool
+	FailureRecoveryInterval           int
+	MaxSteps                          int
+	MaxDuration                       time.Duration
+	StepInterval                      time.Duration
+	MaxConsecutiveFailures            int
+	PageSourceType                    string
+	CaptureScreenshot                 bool
+	LongClickDuration                 time.Duration
+	ScrollDuration                    time.Duration
+	ScrollSteps                       int64
+	ScrollRepeat                      int
+	StopOnCrash                       bool
+	StopOnANR                         bool
+	KeepStepRecords                   bool
+	PageNameResolver                  PageNameResolver
+	PageNameStrategy                  string
+	ForegroundMonitorInterval         time.Duration
+	HealthSignalMonitorInterval       time.Duration
+	EffectiveTouchArea                *EffectiveTouchArea
+	EnableBlockRecovery               *bool
+	BlockNoChangeThreshold            int
+	RecoveryCooldownSteps             int
+	RecoveryLLMBudgetMaxCalls         int
+	RecoveryLLMBudgetWindowStep       int
+	EnableExploreLLMEnhancement       *bool
+	CandidateEnhancementMinStepGap    int
+	CandidateAmbiguityTopGapThreshold float64
+	HighValuePageVisitLimit           int
+	TwoStateLoopThreshold             int
+	HighVisitThreshold                int
+	LowRewardWindow                   int
+	CandidateRiskDropThreshold        float64
+	CandidateMinFusionScore           float64
 }
 
 type EffectiveTouchArea struct {
@@ -152,6 +162,9 @@ type Report struct {
 	RecoveryCooldownStepCount   int
 	CandidateEnhancementCalls   int
 	CandidateEnhancementSelects int
+	RecoveryLLMCalls            int
+	RecoveryLLMBudgetDenied     int
+	EnhancementLLMBudgetDenied  int
 	Records                     []StepRecord
 }
 
@@ -235,6 +248,11 @@ type CandidateEnhancementMemoryWriter interface {
 // RecoveryFailedActionProvider 提供可持久化的已知失败恢复动作集合。
 type RecoveryFailedActionProvider interface {
 	BuildKnownFailedRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error)
+}
+
+// RecoverySuccessfulActionProvider 提供可持久化的已知成功恢复动作集合。
+type RecoverySuccessfulActionProvider interface {
+	BuildKnownSuccessfulRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error)
 }
 
 type currentPackageProvider interface {
@@ -395,6 +413,7 @@ type Runner struct {
 	pageVisitCount         map[string]int
 	actionCount            map[string]int
 	recoveryFailedAction   map[string]bool
+	recoverySuccessAction  map[string]bool
 	pendingBlockRecovery   bool
 	lastRecoveryAttempt    *recoveryAttempt
 	lastEnhancementAttempt *enhancementAttempt
@@ -402,6 +421,9 @@ type Runner struct {
 	cooldownStepCount      int
 	enhancementCallCount   int
 	enhancementHitCount    int
+	recoveryLLMCallCount   int
+	recoveryLLMDeniedCount int
+	enhanceLLMDeniedCount  int
 }
 
 type recoveryAttempt struct {
@@ -437,7 +459,7 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 		driver:                 driver,
 		cfg:                    cfg,
 		rng:                    rand.New(rand.NewSource(time.Now().UnixNano())),
-		blockDetector:          newBlockDetector(cfg.BlockNoChangeThreshold),
+		blockDetector:          newBlockDetector(cfg.BlockNoChangeThreshold, cfg.TwoStateLoopThreshold, cfg.HighVisitThreshold, cfg.LowRewardWindow),
 		recoveryState:          newRecoveryStateMachineWithCooldown(cfg.RecoveryCooldownSteps),
 		candidateEnhanceBudget: enhanceBudget,
 		lastEnhancementStep:    -1,
@@ -445,6 +467,7 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 		pageVisitCount:         make(map[string]int),
 		actionCount:            make(map[string]int),
 		recoveryFailedAction:   make(map[string]bool),
+		recoverySuccessAction:  make(map[string]bool),
 	}, nil
 }
 
@@ -462,11 +485,17 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	r.cooldownStepCount = 0
 	r.enhancementCallCount = 0
 	r.enhancementHitCount = 0
+	r.recoveryLLMCallCount = 0
+	r.recoveryLLMDeniedCount = 0
+	r.enhanceLLMDeniedCount = 0
 	defer func() {
 		report.RecoveryCooldownEnterCount = r.cooldownEnterCount
 		report.RecoveryCooldownStepCount = r.cooldownStepCount
 		report.CandidateEnhancementCalls = r.enhancementCallCount
 		report.CandidateEnhancementSelects = r.enhancementHitCount
+		report.RecoveryLLMCalls = r.recoveryLLMCallCount
+		report.RecoveryLLMBudgetDenied = r.recoveryLLMDeniedCount
+		report.EnhancementLLMBudgetDenied = r.enhanceLLMDeniedCount
 		report.FinishedAt = time.Now()
 		report.DurationMs = report.FinishedAt.Sub(report.StartedAt).Milliseconds()
 		logger.Infof("monkey run finished: reason=%s total=%d success=%d failed=%d duration_ms=%d",
@@ -1213,7 +1242,11 @@ func (r *Runner) trySelectFromTraversalCandidates(
 		return nil, err
 	}
 	fused := candidate.FuseCandidates(items, candidate.FusionOptions{
-		KnownFailedActions: knownFailed,
+		KnownFailedActions:   knownFailed,
+		RiskDropThreshold:    r.cfg.CandidateRiskDropThreshold,
+		EnableMinScoreFilter: true,
+		MinScoreThreshold:    r.cfg.CandidateMinFusionScore,
+		KeepTopOnFiltered:    true,
 	})
 	selected, err := selector.SelectRecoveryAction(ctx, fused)
 	if err != nil {
@@ -1233,6 +1266,17 @@ func (r *Runner) tryEnhanceCandidates(step int, beforePage session.PageSnapshot,
 		return nil, nil
 	}
 	ctx := r.buildTraversalContext(step, beforePage, nil, nil)
+	ctx.LocalCandidates = summarizeWeightedCandidates(weighted, baseCmd)
+	knownFailed, err := r.collectKnownFailedRecoveryActions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	knownSuccess, err := r.collectKnownSuccessfulRecoveryActions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctx.KnownFailedActions = actionKeyList(knownFailed)
+	ctx.KnownSuccessActions = actionKeyList(knownSuccess)
 	if !r.shouldTriggerCandidateEnhancement(ctx, step, baseCmd, weighted) {
 		return nil, nil
 	}
@@ -1246,6 +1290,7 @@ func (r *Runner) tryEnhanceCandidates(step int, beforePage session.PageSnapshot,
 		return nil, nil
 	}
 	if !r.allowCandidateEnhancementLLM(ctx) {
+		r.enhanceLLMDeniedCount++
 		return nil, nil
 	}
 
@@ -1262,12 +1307,12 @@ func (r *Runner) tryEnhanceCandidates(step int, beforePage session.PageSnapshot,
 	items := make([]candidate.Candidate, 0, len(llmItems)+1)
 	items = append(items, candidateFromCommand(baseCmd, candidate.SourceAlgorithm))
 	items = append(items, llmItems...)
-	knownFailed, err := r.collectKnownFailedRecoveryActions(ctx)
-	if err != nil {
-		return nil, err
-	}
 	fused := candidate.FuseCandidates(items, candidate.FusionOptions{
-		KnownFailedActions: knownFailed,
+		KnownFailedActions:   knownFailed,
+		RiskDropThreshold:    r.cfg.CandidateRiskDropThreshold,
+		EnableMinScoreFilter: true,
+		MinScoreThreshold:    r.cfg.CandidateMinFusionScore,
+		KeepTopOnFiltered:    true,
 	})
 	selected, err := selector.SelectRecoveryAction(ctx, fused)
 	if err != nil {
@@ -1422,18 +1467,28 @@ func (r *Runner) nextBlockRecoveryCommand(pageName string, input session.ActionI
 		XML:        input.XMLDescOfGuiTree,
 		Screenshot: input.Screenshot,
 	}, nil, nil)
+	knownFailed, knownErr := r.collectKnownFailedRecoveryActions(ctx)
+	if knownErr != nil {
+		return nil, knownErr
+	}
+	knownSuccess, knownSuccessErr := r.collectKnownSuccessfulRecoveryActions(ctx)
+	if knownSuccessErr != nil {
+		return nil, knownSuccessErr
+	}
+	ctx.KnownFailedActions = actionKeyList(knownFailed)
+	ctx.KnownSuccessActions = actionKeyList(knownSuccess)
 
 	if planner := r.getRecoveryPlanner(); planner != nil {
 		items, err := planner.BuildRecoveryCandidates(ctx)
 		if err != nil {
 			return nil, err
 		}
-		knownFailed, err := r.collectKnownFailedRecoveryActions(ctx)
-		if err != nil {
-			return nil, err
-		}
 		fused := candidate.FuseCandidates(items, candidate.FusionOptions{
-			KnownFailedActions: knownFailed,
+			KnownFailedActions:   knownFailed,
+			RiskDropThreshold:    r.cfg.CandidateRiskDropThreshold,
+			EnableMinScoreFilter: true,
+			MinScoreThreshold:    r.cfg.CandidateMinFusionScore,
+			KeepTopOnFiltered:    true,
 		})
 		if selector, ok := r.decider.(RecoveryCandidateSelector); ok && selector != nil {
 			selected, selectErr := selector.SelectRecoveryAction(ctx, fused)
@@ -1501,6 +1556,12 @@ func (r *Runner) getRecoveryPlanner() recovery.RecoveryPlanner {
 			r.cfg.RecoveryLLMBudgetWindowStep,
 		)
 	}
+	config.OnLLMCall = func(ctx enginestate.TraversalContext) {
+		r.recoveryLLMCallCount++
+	}
+	config.OnLLMBudgetDenied = func(ctx enginestate.TraversalContext) {
+		r.recoveryLLMDeniedCount++
+	}
 
 	if config.Memory == nil && config.Heuristic == nil && config.LLM == nil {
 		return nil
@@ -1556,6 +1617,55 @@ func weightedCandidatesToAlgorithmCandidates(weighted []WeightedCandidate) []can
 	return result
 }
 
+func summarizeWeightedCandidates(weighted []WeightedCandidate, baseCmd *types.ActionCommand) []enginestate.CandidateSummary {
+	result := make([]enginestate.CandidateSummary, 0, len(weighted)+1)
+	total := 0.0
+	for _, item := range weighted {
+		if item.Command == nil || item.Weight <= 0 {
+			continue
+		}
+		total += item.Weight
+	}
+	for _, item := range weighted {
+		if item.Command == nil {
+			continue
+		}
+		confidence := 0.0
+		if total > 0 && item.Weight > 0 {
+			confidence = item.Weight / total
+		}
+		result = append(result, enginestate.CandidateSummary{
+			ActionKey:  item.Command.ToJSON(),
+			ActionType: item.Command.Act.String(),
+			Source:     candidate.SourceAlgorithm,
+			Confidence: confidence,
+		})
+	}
+	if len(result) == 0 && baseCmd != nil {
+		result = append(result, enginestate.CandidateSummary{
+			ActionKey:  baseCmd.ToJSON(),
+			ActionType: baseCmd.Act.String(),
+			Source:     candidate.SourceAlgorithm,
+			Confidence: 1,
+		})
+	}
+	return result
+}
+
+func actionKeyList(actions map[string]bool) []string {
+	if len(actions) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(actions))
+	for key, value := range actions {
+		if value && strings.TrimSpace(key) != "" {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func (r *Runner) recordRecoveryOutcome(escaped bool) {
 	if r == nil || r.lastRecoveryAttempt == nil {
 		return
@@ -1586,11 +1696,16 @@ func (r *Runner) markRecoveryActionOutcome(item candidate.Candidate, escaped boo
 	if r.recoveryFailedAction == nil {
 		r.recoveryFailedAction = make(map[string]bool)
 	}
+	if r.recoverySuccessAction == nil {
+		r.recoverySuccessAction = make(map[string]bool)
+	}
 	if escaped {
 		delete(r.recoveryFailedAction, key)
+		r.recoverySuccessAction[key] = true
 		return
 	}
 	r.recoveryFailedAction[key] = true
+	delete(r.recoverySuccessAction, key)
 }
 
 func (r *Runner) collectKnownFailedRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
@@ -1606,6 +1721,29 @@ func (r *Runner) collectKnownFailedRecoveryActions(ctx enginestate.TraversalCont
 		return known, nil
 	}
 	persisted, err := provider.BuildKnownFailedRecoveryActions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range persisted {
+		if value {
+			known[key] = true
+		}
+	}
+	return known, nil
+}
+
+func (r *Runner) collectKnownSuccessfulRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
+	known := make(map[string]bool, len(r.recoverySuccessAction))
+	for key, value := range r.recoverySuccessAction {
+		if value {
+			known[key] = true
+		}
+	}
+	provider, ok := r.decider.(RecoverySuccessfulActionProvider)
+	if !ok || provider == nil {
+		return known, nil
+	}
+	persisted, err := provider.BuildKnownSuccessfulRecoveryActions(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1722,6 +1860,27 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.CandidateEnhancementMinStepGap <= 0 {
 		cfg.CandidateEnhancementMinStepGap = defaultCandidateEnhancementMinStepGap
 	}
+	if cfg.CandidateAmbiguityTopGapThreshold <= 0 {
+		cfg.CandidateAmbiguityTopGapThreshold = defaultCandidateAmbiguityTopGapThreshold
+	}
+	if cfg.HighValuePageVisitLimit <= 0 {
+		cfg.HighValuePageVisitLimit = defaultHighValuePageVisitLimit
+	}
+	if cfg.TwoStateLoopThreshold <= 0 {
+		cfg.TwoStateLoopThreshold = defaultTwoStateLoopThreshold
+	}
+	if cfg.HighVisitThreshold <= 0 {
+		cfg.HighVisitThreshold = defaultHighVisitThreshold
+	}
+	if cfg.LowRewardWindow <= 0 {
+		cfg.LowRewardWindow = defaultLowRewardWindow
+	}
+	if cfg.CandidateRiskDropThreshold <= 0 {
+		cfg.CandidateRiskDropThreshold = defaultCandidateRiskDropThreshold
+	}
+	if cfg.CandidateMinFusionScore == 0 {
+		cfg.CandidateMinFusionScore = defaultCandidateMinFusionScore
+	}
 	if cfg.EffectiveTouchArea != nil {
 		cfg.EffectiveTouchArea.Serial = strings.TrimSpace(cfg.EffectiveTouchArea.Serial)
 		cfg.EffectiveTouchArea.PackageName = strings.TrimSpace(cfg.EffectiveTouchArea.PackageName)
@@ -1778,7 +1937,7 @@ func (r *Runner) isHighValuePage(ctx enginestate.TraversalContext) bool {
 		visitCount = r.pageVisitCount[ctx.PageName]
 	}
 	// Explore 下仅在页面早期访问阶段触发，保持保守。
-	return visitCount > 0 && visitCount <= 2
+	return visitCount > 0 && visitCount <= r.cfg.HighValuePageVisitLimit
 }
 
 func (r *Runner) hasLowCandidateDistinction(ctx enginestate.TraversalContext, weighted []WeightedCandidate) bool {
@@ -1811,7 +1970,7 @@ func (r *Runner) hasLowCandidateDistinction(ctx enginestate.TraversalContext, we
 		return true
 	}
 	// 规则 2：前两名差距过小，视为难以区分。
-	return (top1 - top2) <= defaultCandidateAmbiguityTopGapThreshold
+	return (top1 - top2) <= r.cfg.CandidateAmbiguityTopGapThreshold
 }
 
 func (r *Runner) allowCandidateEnhancementLLM(ctx enginestate.TraversalContext) bool {
@@ -1848,15 +2007,24 @@ type blockDetector struct {
 	lastReason                string
 }
 
-func newBlockDetector(noChangeThreshold int) *blockDetector {
+func newBlockDetector(noChangeThreshold int, twoStateLoopThreshold int, highVisitThreshold int, lowRewardWindow int) *blockDetector {
 	if noChangeThreshold <= 0 {
 		noChangeThreshold = defaultBlockNoChangeThreshold
 	}
+	if twoStateLoopThreshold <= 0 {
+		twoStateLoopThreshold = defaultTwoStateLoopThreshold
+	}
+	if highVisitThreshold <= 0 {
+		highVisitThreshold = defaultHighVisitThreshold
+	}
+	if lowRewardWindow <= 0 {
+		lowRewardWindow = defaultLowRewardWindow
+	}
 	return &blockDetector{
 		noChangeThreshold:        noChangeThreshold,
-		twoStateLoopThreshold:    defaultTwoStateLoopThreshold,
-		highVisitThreshold:       defaultHighVisitThreshold,
-		lowRewardWindow:          defaultLowRewardWindow,
+		twoStateLoopThreshold:    twoStateLoopThreshold,
+		highVisitThreshold:       highVisitThreshold,
+		lowRewardWindow:          lowRewardWindow,
 		recentAfterSignatures:    make([]string, 0, 8),
 		recentObservedSignatures: make([]string, 0, 16),
 		pageVisitCount:           make(map[string]int),

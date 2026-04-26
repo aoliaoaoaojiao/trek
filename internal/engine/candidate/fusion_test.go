@@ -120,3 +120,64 @@ func TestFuseCandidatesKnownFailedPenaltyDominatesMemoryTagBoost(t *testing.T) {
 		t.Fatalf("已知失败惩罚应压过 memory tag 加权，实际首选: %+v", result[0].Command)
 	}
 }
+
+func TestFuseCandidatesDropsHighRiskCandidates(t *testing.T) {
+	back := Candidate{
+		Command:   &types.ActionCommand{Act: types.BACK},
+		Source:    SourceMemory,
+		RiskScore: 2.2,
+	}
+	click := Candidate{
+		Command:    &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
+		Source:     SourceHeuristic,
+		Confidence: 0.5,
+	}
+	result := FuseCandidates([]Candidate{back, click}, FusionOptions{
+		RiskDropThreshold: 2.0,
+	})
+	if len(result) != 1 || result[0].Command == nil || result[0].Command.Act != types.CLICK {
+		t.Fatalf("高风险候选应被剔除，实际: %+v", result)
+	}
+}
+
+func TestFuseCandidatesAppliesMinScoreFilter(t *testing.T) {
+	low := Candidate{
+		Command:    &types.ActionCommand{Act: types.BACK},
+		Source:     SourceMemory,
+		Confidence: 0.1,
+		RiskScore:  0.4,
+	}
+	high := Candidate{
+		Command:     &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
+		Source:      SourceHeuristic,
+		Confidence:  0.7,
+		EscapeScore: 0.3,
+	}
+	result := FuseCandidates([]Candidate{low, high}, FusionOptions{
+		EnableMinScoreFilter: true,
+		MinScoreThreshold:    0.2,
+	})
+	if len(result) != 1 || result[0].Command == nil || result[0].Command.Act != types.CLICK {
+		t.Fatalf("低分候选应被过滤，实际: %+v", result)
+	}
+}
+
+func TestFuseCandidatesKeepTopOnFiltered(t *testing.T) {
+	back := Candidate{
+		Command:   &types.ActionCommand{Act: types.BACK},
+		Source:    SourceMemory,
+		RiskScore: 2.5,
+	}
+	click := Candidate{
+		Command:   &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
+		Source:    SourceHeuristic,
+		RiskScore: 2.1,
+	}
+	result := FuseCandidates([]Candidate{back, click}, FusionOptions{
+		RiskDropThreshold: 2.0,
+		KeepTopOnFiltered: true,
+	})
+	if len(result) != 1 {
+		t.Fatalf("全部过滤时应保留 top1，实际: %d", len(result))
+	}
+}

@@ -8,6 +8,7 @@ package cmd
 import (
 	"os"
 
+	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
@@ -28,9 +29,16 @@ var logLevel string
 
 // Execute 将所有子命令添加到根命令并设置标志，由 main.main() 调用。
 func Execute() {
+	loadDotEnvFiles()
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+func loadDotEnvFiles() {
+	// 仅补充未设置的环境变量，不覆盖外部显式注入的值。
+	_ = godotenv.Load(".env")
+	_ = godotenv.Load(".env.local")
 }
 
 func init() {

@@ -29,6 +29,17 @@ type mockTraversalAlgorithm struct {
 	observeFn func(ctx enginestate.TraversalContext, action *types2.ActionCommand, outcome traversal.ActionOutcome) error
 }
 
+type mockCandidateProvider struct {
+	buildFn func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+}
+
+func (m *mockCandidateProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+	if m != nil && m.buildFn != nil {
+		return m.buildFn(ctx)
+	}
+	return nil, nil
+}
+
 func (m *mockTraversalAlgorithm) Name() string { return "mock" }
 
 func (m *mockTraversalAlgorithm) ProposeCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
@@ -455,6 +466,51 @@ func TestSessionBuildAlgorithmCandidatesDelegatesTraversalAlgorithm(t *testing.T
 	}
 }
 
+func TestSessionBuildAlgorithmCandidatesMergesOCRCandidates(t *testing.T) {
+	session := NewSession(Config{
+		PackageName: "com.demo",
+		Algorithm:   decision.AlgorithmReuse,
+		DeviceType:  types2.Phone,
+	})
+	session.traversalAlgo = &mockTraversalAlgorithm{
+		proposeFn: func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+			return []candidate.Candidate{
+				{
+					Command:    &types2.ActionCommand{Act: types2.BACK},
+					Source:     candidate.SourceAlgorithm,
+					Confidence: 0.8,
+				},
+			}, nil
+		},
+	}
+	session.ocrProvider = &mockCandidateProvider{
+		buildFn: func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+			return []candidate.Candidate{
+				{
+					Command:    &types2.ActionCommand{Act: types2.CLICK, Pos: *types2.NewRect(0.1, 0.2, 0.3, 0.4)},
+					Source:     candidate.SourceOCR,
+					Confidence: 0.7,
+				},
+			}, nil
+		},
+	}
+
+	items, err := session.BuildAlgorithmCandidates(enginestate.TraversalContext{
+		Mode:       "Explore",
+		PageName:   "MainActivity",
+		Screenshot: []byte{1, 2, 3},
+	})
+	if err != nil {
+		t.Fatalf("BuildAlgorithmCandidates 失败: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("预期合并 algorithm + ocr 候选，实际: %d", len(items))
+	}
+	if items[0].Source != candidate.SourceAlgorithm || items[1].Source != candidate.SourceOCR {
+		t.Fatalf("候选来源顺序错误: %+v", items)
+	}
+}
+
 func TestSessionObserveTraversalOutcomeNoError(t *testing.T) {
 	session := NewSession(Config{
 		PackageName: "com.demo",
@@ -770,5 +826,63 @@ func TestSessionBuildLLMRecoveryCandidatesWithOpenAIResponsesProvider(t *testing
 	}
 	if len(items) != 1 || items[0].Command == nil || items[0].Command.Act != types2.BACK {
 		t.Fatalf("openai provider 返回候选不符合预期: %+v", items)
+	}
+}
+
+func TestSessionInitRecoveryLLMProviderFromEnv(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer env-key" {
+			t.Fatalf("Authorization 错误: %s", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"candidates": []map[string]any{
+				{"action_type": "BACK", "confidence": 0.9},
+			},
+		})
+	}))
+	defer server.Close()
+
+	t.Setenv("LLM_API_URL", server.URL)
+	t.Setenv("LLM_API_KEY", "env-key")
+	t.Setenv("LLM_MODEL", "env-model")
+
+	session := NewSession(Config{
+		PackageName:        "com.demo",
+		RecoveryLLMTimeout: 2 * time.Second,
+	})
+	items, err := session.BuildLLMRecoveryCandidates(enginestate.TraversalContext{Mode: "Recover"})
+	if err != nil {
+		t.Fatalf("环境变量 LLM provider 构建候选失败: %v", err)
+	}
+	if len(items) != 1 || items[0].Command == nil || items[0].Command.Act != types2.BACK {
+		t.Fatalf("环境变量 LLM provider 返回候选不符合预期: %+v", items)
+	}
+}
+
+func TestSessionInitOpenAIRecoveryProviderFromEnv(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-env" {
+			t.Fatalf("Authorization 错误: %s", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"output_text": `{"candidates":[{"intent":"返回","action_type":"BACK","confidence":0.8}]}`,
+		})
+	}))
+	defer server.Close()
+
+	t.Setenv("OPENAI_MODEL", "gpt-4.1-mini")
+	t.Setenv("OPENAI_API_KEY", "sk-env")
+	t.Setenv("OPENAI_API_URL", server.URL)
+
+	session := NewSession(Config{
+		PackageName:        "com.demo",
+		RecoveryLLMTimeout: 2 * time.Second,
+	})
+	items, err := session.BuildLLMRecoveryCandidates(enginestate.TraversalContext{Mode: "Recover"})
+	if err != nil {
+		t.Fatalf("环境变量 OpenAI provider 构建候选失败: %v", err)
+	}
+	if len(items) != 1 || items[0].Command == nil || items[0].Command.Act != types2.BACK {
+		t.Fatalf("环境变量 OpenAI provider 返回候选不符合预期: %+v", items)
 	}
 }

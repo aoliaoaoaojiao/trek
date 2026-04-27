@@ -26,13 +26,8 @@ var runOptions = struct {
 	deviceSerial                      string
 	configPath                        string
 	recoveryMemoryFile                string
+	exploreOCRTimeout                 time.Duration
 	recoveryCooldownSteps             int
-	recoveryLLMEndpoint               string
-	recoveryLLMAPIKey                 string
-	recoveryLLMModel                  string
-	recoveryOpenAIModel               string
-	recoveryOpenAIAPIKey              string
-	recoveryOpenAIBaseURL             string
 	recoveryLLMTimeout                time.Duration
 	recoveryLLMMaxCalls               int
 	recoveryLLMWindowSteps            int
@@ -70,13 +65,8 @@ func init() {
 	runCmd.Flags().StringVar(&runOptions.deviceSerial, "serial", "", "设备序列号（可选，默认自动选择）")
 	runCmd.Flags().StringVar(&runOptions.configPath, "config", "", "配置文件路径（可选，仅支持 .js，支持绝对/相对路径）")
 	runCmd.Flags().StringVar(&runOptions.recoveryMemoryFile, "recovery-memory-file", "", "恢复经验库 jsonl 文件路径（可选）")
+	runCmd.Flags().DurationVar(&runOptions.exploreOCRTimeout, "explore-ocr-timeout", 10*time.Second, "探索阶段 OCR 接口超时时间")
 	runCmd.Flags().IntVar(&runOptions.recoveryCooldownSteps, "recovery-cooldown-steps", 2, "恢复成功后的冷却步数，冷却期间抑制再次进入 recover")
-	runCmd.Flags().StringVar(&runOptions.recoveryLLMEndpoint, "recovery-llm-endpoint", "", "恢复模式 LLM HTTP 接口地址（可选）")
-	runCmd.Flags().StringVar(&runOptions.recoveryLLMAPIKey, "recovery-llm-api-key", "", "恢复模式 LLM 接口鉴权 key（可选，未传则读取 TREK_RECOVERY_LLM_API_KEY）")
-	runCmd.Flags().StringVar(&runOptions.recoveryLLMModel, "recovery-llm-model", "", "恢复模式 LLM 模型名（可选，透传给接口）")
-	runCmd.Flags().StringVar(&runOptions.recoveryOpenAIModel, "recovery-openai-model", "", "恢复模式 OpenAI 模型名（可选，配置后走 OpenAI Responses API）")
-	runCmd.Flags().StringVar(&runOptions.recoveryOpenAIAPIKey, "recovery-openai-api-key", "", "OpenAI API Key（可选，未传则读取 OPENAI_API_KEY）")
-	runCmd.Flags().StringVar(&runOptions.recoveryOpenAIBaseURL, "recovery-openai-base-url", "", "OpenAI Responses API 地址（可选，默认 https://api.openai.com/v1/responses）")
 	runCmd.Flags().DurationVar(&runOptions.recoveryLLMTimeout, "recovery-llm-timeout", 15*time.Second, "恢复模式 LLM 接口超时时间")
 	runCmd.Flags().IntVar(&runOptions.recoveryLLMMaxCalls, "recovery-llm-max-calls", 0, "恢复模式下 LLM 候选最大调用次数（0 表示不限制）")
 	runCmd.Flags().IntVar(&runOptions.recoveryLLMWindowSteps, "recovery-llm-window-steps", 0, "恢复模式下 LLM 调用统计窗口步数（0 表示全局统计）")
@@ -103,13 +93,8 @@ func runMonkey(logLevelStr string, opts struct {
 	deviceSerial                      string
 	configPath                        string
 	recoveryMemoryFile                string
+	exploreOCRTimeout                 time.Duration
 	recoveryCooldownSteps             int
-	recoveryLLMEndpoint               string
-	recoveryLLMAPIKey                 string
-	recoveryLLMModel                  string
-	recoveryOpenAIModel               string
-	recoveryOpenAIAPIKey              string
-	recoveryOpenAIBaseURL             string
 	recoveryLLMTimeout                time.Duration
 	recoveryLLMMaxCalls               int
 	recoveryLLMWindowSteps            int
@@ -197,16 +182,11 @@ func runMonkey(logLevelStr string, opts struct {
 	}
 
 	sess := session.NewSession(session.Config{
-		PackageName:              packageName,
-		Algorithm:                algorithmType,
-		RecoveryMemoryFile:       strings.TrimSpace(opts.recoveryMemoryFile),
-		RecoveryLLMEndpoint:      strings.TrimSpace(opts.recoveryLLMEndpoint),
-		RecoveryLLMAPIKey:        strings.TrimSpace(opts.recoveryLLMAPIKey),
-		RecoveryLLMModel:         strings.TrimSpace(opts.recoveryLLMModel),
-		RecoveryLLMOpenAIModel:   strings.TrimSpace(opts.recoveryOpenAIModel),
-		RecoveryLLMOpenAIAPIKey:  strings.TrimSpace(opts.recoveryOpenAIAPIKey),
-		RecoveryLLMOpenAIBaseURL: strings.TrimSpace(opts.recoveryOpenAIBaseURL),
-		RecoveryLLMTimeout:       opts.recoveryLLMTimeout,
+		PackageName:        packageName,
+		Algorithm:          algorithmType,
+		RecoveryMemoryFile: strings.TrimSpace(opts.recoveryMemoryFile),
+		ExploreOCRTimeout:  opts.exploreOCRTimeout,
+		RecoveryLLMTimeout: opts.recoveryLLMTimeout,
 	})
 	if opts.configPath != "" {
 		if err := sess.LoadConfigFile(opts.configPath); err != nil {

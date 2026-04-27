@@ -169,7 +169,6 @@ func adbExecutableCandidates() []string {
 	}
 
 	candidates = append(candidates,
-		os.Getenv("TREK_ADB_PATH"),
 		os.Getenv("ADB_PATH"),
 		filepath.Join(os.Getenv("TREK_ADB_HOME"), exeName),
 		filepath.Join(os.Getenv("ANDROID_HOME"), "platform-tools", exeName),

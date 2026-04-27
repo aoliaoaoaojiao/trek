@@ -7,6 +7,7 @@ const (
 	SourceMemory    = "memory"
 	SourceHeuristic = "heuristic"
 	SourceLLM       = "llm"
+	SourceOCR       = "ocr"
 )
 
 // Candidate 是第一阶段统一候选骨架，后续由融合层和算法层共同消费。

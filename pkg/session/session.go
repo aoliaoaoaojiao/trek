@@ -17,12 +17,15 @@ import (
 	"trek/logger"
 )
 
-// Config 闂佺顕х换妤呭醇椤忓懐鈻旈柍褜鍓欓埢搴ㄥ灳閸愯尙顦扮紓浣瑰礃濞夋洟鍩㈤崗鐓庮嚤婵ê纾Ο鍫ユ煕閹烘挾绠撴い顐ｅ姍瀹曠娀寮借濡﹢鏌℃担钘夌劷闁?
+// Config 决策会话配置
 type Config struct {
 	PackageName              string
 	Algorithm                decision.AlgorithmType
 	DeviceType               types.DeviceType
 	RecoveryMemoryFile       string
+	ExploreOCREndpoint       string
+	ExploreOCRAPIKey         string
+	ExploreOCRTimeout        time.Duration
 	RecoveryLLMEndpoint      string
 	RecoveryLLMAPIKey        string
 	RecoveryLLMModel         string
@@ -32,26 +35,26 @@ type Config struct {
 	RecoveryLLMTimeout       time.Duration
 }
 
-// ActionInput 闂佺顕х换妤呭醇椤忓懐鈻旈悗锝傛櫇椤忚鲸鎱ㄥ┑鍕姎闁哥姴鎳愮划鐢稿冀椤掑倻鐐曢梺绋跨箞閸庤崵妲愬┑瀣哗妞ゆ牗绋戦惁?XML 婵炴垶鎸哥€涒晠宕洪崨鏉戠倞闁诡垎鍐憰闂備緡鍋呭畝鍛婄妤ｅ啫违?
+// ActionInput 动作输入，包含 XML 描述的 GUI 树和可选截图
 type ActionInput struct {
 	XMLDescOfGuiTree string
 	Screenshot       []byte
 }
 
-// PageInfo 闁荤偞绋忛崝搴ㄥΦ濮橆厹浜滈柣銏犳啞濡椼劑鏌涘顒傂ょ悮銊╂煕濠婂啳瀚版い鏇ㄥ枟閹?XML 婵烇絽娲犻崜婵囧閸涙潙违?
+// PageInfo 页面信息，包含页面名和 XML
 type PageInfo struct {
 	PageName string
 	XML      string
 }
 
-// PageSnapshot 闂佺顕х换妤呭醇椤忓牊鍤囨慨姗嗗幗閹烽亶鏌熺紒妯虹瑐婵炲棎鍨藉畷锝夘敍濠垫劖缍勯梺姹囧妼鐎氫即濡存径鎰棃闁靛繒濮佃ぐ銉╂煟閹炬ぞ璁查崑?
+// PageSnapshot 页面快照，包含页面名、XML 和截图
 type PageSnapshot struct {
 	PageName   string
 	XML        string
 	Screenshot []byte
 }
 
-// StepResultInput 闂佺顕х换妤呭醇椤忓懐鈻旈柍褜鍓欓～銏ゅΨ閵夈儛妤€霉閿濆棛鐭嬪褏鏅幃鎵沪閼恒儱鈧敻鏌ｉ妸銉ヮ仼妞わ附鐓￠幆鍕熼柅娑氱畾闂佽鍙庨崹顒勫焵?
+// StepResultInput 步骤结果输入，用于向引擎报告步骤执行结果
 type StepResultInput struct {
 	Step       int
 	Action     *types.ActionCommand
@@ -64,13 +67,18 @@ type StepResultInput struct {
 	After      *PageSnapshot
 }
 
-// Session 闂佸搫瀚烽崹浼搭敋椤旇棄绶為柡宥庡€撻弮鍌楀亾鐟欏嫮鐓紒杈ㄥ閹风姴鈹戦崱妤€姹查梺鍛婄懕缂嶅洨妲愬┑鍫滄勃闊洦纰嶉弶鎼佹煕閹邦剚鍤囬柛搴㈡尦瀹曟濡搁妷褎鎷卞┑鈽嗗灙閳ь剙纾埀顒勵棑缁辨帡宕卞顑╂繈鏌?
+// Session 对外稳定会话入口
 type Session struct {
 	config         Config
 	memoryStore    *memory.Store
 	memoryProvider *memory.Provider
+	ocrProvider    candidateProvider
 	llmProvider    recoveryLLMCandidateProvider
 	traversalAlgo  traversal.TraversalAlgorithm
+}
+
+type candidateProvider interface {
+	BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
 }
 
 type recoveryLLMCandidateProvider interface {
@@ -81,7 +89,7 @@ type stateReader interface {
 	GetCurrentState() decisiontypes.IState
 }
 
-// NewSession 闂佸憡甯楃粙鎴犵磽閹捐妫樺Λ棰佽兌缁愭鎮归崶銊х畵闁艰崵鍠栧畷姘攽閸♀晜缍忛梺鍛婄墬閻楃姷鍒掗婊勫闁靛牆顦敮宕囩磽閸愭儳鏋旈柍?
+// NewSession 创建新会话
 func NewSession(config Config) *Session {
 	if config.Algorithm == 0 {
 		config.Algorithm = decision.AlgorithmReuse
@@ -92,6 +100,7 @@ func NewSession(config Config) *Session {
 
 	session := &Session{config: config}
 	session.initRecoveryMemoryProvider()
+	session.initExploreOCRProvider()
 	session.initRecoveryLLMProvider()
 	session.Reset()
 	return session
@@ -112,11 +121,43 @@ func (s *Session) initRecoveryMemoryProvider() {
 	logger.Infof("session recovery memory 已启用: path=%s", path)
 }
 
+func (s *Session) initExploreOCRProvider() {
+	endpoint := strings.TrimSpace(s.config.ExploreOCREndpoint)
+	if endpoint == "" {
+		endpoint = strings.TrimSpace(os.Getenv("PADDLEOCR_API_URL"))
+	}
+	if endpoint == "" {
+		return
+	}
+	apiKey := strings.TrimSpace(s.config.ExploreOCRAPIKey)
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(os.Getenv("PADDLEOCR_API_KEY"))
+	}
+	provider, err := candidateproviders.NewOCRHTTPProvider(candidateproviders.OCRHTTPProviderConfig{
+		Endpoint: endpoint,
+		APIKey:   apiKey,
+		Timeout:  s.config.ExploreOCRTimeout,
+	})
+	if err != nil {
+		logger.Warnf("session 初始化 explore ocr provider 失败: endpoint=%s err=%v", endpoint, err)
+		return
+	}
+	s.ocrProvider = provider
+	logger.Infof("session explore ocr provider 已启用: endpoint=%s", endpoint)
+}
+
 func (s *Session) initRecoveryLLMProvider() {
 	endpoint := strings.TrimSpace(s.config.RecoveryLLMEndpoint)
+	if endpoint == "" {
+		endpoint = strings.TrimSpace(os.Getenv("LLM_API_URL"))
+	}
 	apiKey := strings.TrimSpace(s.config.RecoveryLLMAPIKey)
 	if apiKey == "" {
-		apiKey = strings.TrimSpace(os.Getenv("TREK_RECOVERY_LLM_API_KEY"))
+		apiKey = strings.TrimSpace(os.Getenv("LLM_API_KEY"))
+	}
+	model := strings.TrimSpace(s.config.RecoveryLLMModel)
+	if model == "" {
+		model = strings.TrimSpace(os.Getenv("LLM_MODEL"))
 	}
 
 	// 显式 endpoint 优先，便于兼容任意网关。
@@ -124,7 +165,7 @@ func (s *Session) initRecoveryLLMProvider() {
 		provider, err := candidateproviders.NewLLMHTTPProvider(candidateproviders.LLMHTTPProviderConfig{
 			Endpoint: endpoint,
 			APIKey:   apiKey,
-			Model:    strings.TrimSpace(s.config.RecoveryLLMModel),
+			Model:    model,
 			Timeout:  s.config.RecoveryLLMTimeout,
 		})
 		if err != nil {
@@ -138,14 +179,21 @@ func (s *Session) initRecoveryLLMProvider() {
 
 	openAIModel := strings.TrimSpace(s.config.RecoveryLLMOpenAIModel)
 	if openAIModel == "" {
+		openAIModel = strings.TrimSpace(os.Getenv("OPENAI_MODEL"))
+	}
+	if openAIModel == "" {
 		return
 	}
 	openAIKey := strings.TrimSpace(s.config.RecoveryLLMOpenAIAPIKey)
 	if openAIKey == "" {
 		openAIKey = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 	}
+	openAIBaseURL := strings.TrimSpace(s.config.RecoveryLLMOpenAIBaseURL)
+	if openAIBaseURL == "" {
+		openAIBaseURL = strings.TrimSpace(os.Getenv("OPENAI_API_URL"))
+	}
 	provider, err := candidateproviders.NewOpenAIResponsesProvider(candidateproviders.OpenAIResponsesProviderConfig{
-		BaseURL: strings.TrimSpace(s.config.RecoveryLLMOpenAIBaseURL),
+		BaseURL: openAIBaseURL,
 		APIKey:  openAIKey,
 		Model:   openAIModel,
 		Timeout: s.config.RecoveryLLMTimeout,
@@ -158,14 +206,14 @@ func (s *Session) initRecoveryLLMProvider() {
 	logger.Infof("session openai recovery llm provider 已启用: model=%s", openAIModel)
 }
 
-// Reset 闂備焦褰冪粔鍫曟偪閸℃稑绀冮柛娑欐綑閸斻儲淇婇妞诲亾瀹曞洠鍋撻悜鐣屽祦闁割偅娲栧▍銏ゆ煛閸屾稒绶查柛銊ョ仛閹便劎鈧綆浜滈?agent闂?
+// Reset 重置引擎模型和脚本插件状态
 func (s *Session) Reset() {
 	engineruntime.ResetModel()
 	engineruntime.InitAgent(s.config.Algorithm, s.config.PackageName, s.config.DeviceType)
 	s.initTraversalAlgorithm()
 }
 
-// LoadConfigFile 闂佸憡姊绘慨鎯归崶銊︿氦闁归偊鍨奸弨浠嬫煛閸愩劎鍩ｉ柛妯稿€楃槐鏃堫敊閼恒儳鈧喖霉閻樹警鍟囩紒杈ㄧ懄缁嬪鎷犻幓鎺戞辈闂佸憡鐟辩紞鍥╂濮樿泛违?
+// LoadConfigFile 加载 JS 配置文件
 func (s *Session) LoadConfigFile(path string) error {
 	if engineruntime.GetModel() == nil {
 		s.Reset()
@@ -202,12 +250,12 @@ func (s *Session) initTraversalAlgorithm() {
 	}
 }
 
-// Deprecated: 闁荤姴娲╁〒瑙勭箾閸ヮ剚鍋?LoadConfigFile闂?
+// Deprecated: 使用 LoadConfigFile 代替
 func (s *Session) LoadPreferenceFile(path string) error {
 	return s.LoadConfigFile(path)
 }
 
-// NextActionJSON 闁哄鏅滈弻銊ッ?JSON 閻熸粏鍩囬崹鍦閿熺姵鍎嶉柛鏇ㄤ簽閻熸挸鈽夐幘顖氫壕濠殿喗绺块崕杈ㄦ叏閳哄倹濯存繝濠冨姉缁€鍕煕韫囨洖甯舵い鏃€鍔欓獮鎺楀Ψ閵夈儳绋夐梺鎸庣☉椤︻參鍩€?
+// NextActionJSON 返回 JSON 格式的下一步动作
 func (s *Session) NextActionJSON(pageName string, xmlDescOfGuiTree string) (string, error) {
 	operate, err := s.NextAction(pageName, xmlDescOfGuiTree)
 	if err != nil {
@@ -216,7 +264,7 @@ func (s *Session) NextActionJSON(pageName string, xmlDescOfGuiTree string) (stri
 	return operate.ToJSON(), nil
 }
 
-// NextActionJSONWithInput 闁哄鏅滈弻銊ッ?JSON 閻熸粏鍩囬崹鍦閿熺姵鍎嶉柛鏇ㄤ簽閻熸挸鈽夐幘顖氫壕濠殿喗绺块崕杈ㄦ叏閳哄倹濯存繝褍绨遍崑?
+// NextActionJSONWithInput 返回 JSON 格式的下一步动作（带输入）
 func (s *Session) NextActionJSONWithInput(pageName string, input ActionInput) (string, error) {
 	operate, err := s.NextActionWithInput(pageName, input)
 	if err != nil {
@@ -225,12 +273,12 @@ func (s *Session) NextActionJSONWithInput(pageName string, input ActionInput) (s
 	return operate.ToJSON(), nil
 }
 
-// NextAction 闁哄鏅滈弻銊ッ洪弽顐ょ＜闁规儳顕埀顒夊灦瀹曠娀寮介敂鍓ф啴婵炴垶鎸撮崑鎾存叏濠靛嫬鍔氬┑顔规櫆閹峰懎顭ㄩ幇顔绢槱婵炴垶鎸诲Σ鎺楁儗閹屽殫闁告洖澧庣粈鍡涙煏?
+// NextAction 返回下一步动作
 func (s *Session) NextAction(pageName string, xmlDescOfGuiTree string) (*types.ActionCommand, error) {
 	return s.NextActionWithInput(pageName, ActionInput{XMLDescOfGuiTree: xmlDescOfGuiTree})
 }
 
-// NextActionWithInput 闂佺硶鏅炲銊ц姳?XML/闂佽鎯屾禍婊兠瑰Ο缁樼秶闁规儳鍟垮鎶藉级閳哄倹鐓ユ繛鍙夌墬缁嬪鈧絺鏅濋杈ㄦ叏濠靛嫬鍔氬┑顔规櫆閹峰懎鈹冩惔鎾充壕?
+// NextActionWithInput 返回下一步动作（带输入）
 func (s *Session) NextActionWithInput(pageName string, input ActionInput) (*types.ActionCommand, error) {
 	if strings.TrimSpace(pageName) == "" {
 		return nil, fmt.Errorf("pageName is empty")
@@ -361,13 +409,29 @@ func (s *Session) BuildAlgorithmCandidates(ctx enginestate.TraversalContext) ([]
 	if s == nil {
 		return nil, nil
 	}
+	items := make([]candidate.Candidate, 0)
 	if s.traversalAlgo == nil {
 		s.initTraversalAlgorithm()
 	}
-	if s.traversalAlgo == nil {
+	if s.traversalAlgo != nil {
+		algoItems, err := s.traversalAlgo.ProposeCandidates(ctx)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, algoItems...)
+	}
+	if s.ocrProvider != nil && len(ctx.Screenshot) > 0 {
+		ocrItems, err := s.ocrProvider.BuildCandidates(ctx)
+		if err != nil {
+			logger.Warnf("session 构建 OCR 候选失败: page=%s err=%v", ctx.PageName, err)
+		} else {
+			items = append(items, ocrItems...)
+		}
+	}
+	if len(items) == 0 {
 		return nil, nil
 	}
-	return s.traversalAlgo.ProposeCandidates(ctx)
+	return items, nil
 }
 
 // SelectRecoveryAction 基于 traversal 算法从融合恢复候选中选择最终动作。
@@ -475,22 +539,22 @@ func (s *Session) SetObservationMode(mode string) error {
 	return engineruntime.SetObservationMode(mode)
 }
 
-// GetObservationMode 闁哄鏅滈弻銊ッ洪弽顑句汗闁规儳鍟块·鍛存煙閹殿喖鏋旈柣鎾偓婢勭喖鍨惧畷鍥╊攨闂?
+// GetObservationMode 获取当前感知模式
 func (s *Session) GetObservationMode() string {
 	return engineruntime.GetObservationMode()
 }
 
-// CheckPointInBlackRects 闂佸憡甯囬崐鏍蓟閸ヮ剙閿ら柟閭﹀幘閸ㄥジ鏌ｉ幇顖ｆ綈婵″弶鎮傚畷銉╂晝閳ь剙锕㈤鍜佹付闁瑰瓨绻冮崐鎶芥煕濡や焦绀€閻忓浚鍨跺畷娲偄瀹勭増鏆ラ梺?
+// CheckPointInBlackRects 检查点是否在黑名单区域内
 func (s *Session) CheckPointInBlackRects(pageName string, point types.Point) bool {
 	return engineruntime.CheckPointIsInBlackRects(pageName, float32(point.X), float32(point.Y))
 }
 
-// NativeVersion 闁哄鏅滈弻銊ッ洪弽顑句汗闁规儳鍟块·鍛偓娈垮枟濞叉﹢骞栭幖浣稿偍闁绘梻鍎ら弲鎼佹煟濡も偓閻楀﹤锕㈡导鏉懳?
+// NativeVersion 获取被测应用的原生版本号
 func (s *Session) NativeVersion() string {
 	return engineruntime.GetNativeVersion()
 }
 
-// TransformPageInfoWithInput 婵炶揪缍€濞夋洟寮?Goja 闂備焦婢樼粔鍫曟偪閸℃稒鍤囨慨姗嗗幗閹烽亶鏌￠埀顒冦亹閹哄棗浜鹃柣妯荤湽閳ь剙顦靛Λ鍐綖椤撴繄绠氶梺璇″弾閸ㄤ即鎳熼悢鍛婁氦闁哄倹瀵х粈鈧梺鍝勫€规竟鍡欏垝閵娾晛鍑犳繝濠冨姉缁€鍕煛閳ь剟顢涘☉妯兼Х闂佽鎯屾禍婊兠瑰Ο缁樼秶闁规儳鍟垮鎶芥煥濞戞﹩妲堕柍?
+// TransformPageInfoWithInput 通过 Goja 插件转换页面信息
 func (s *Session) TransformPageInfoWithInput(pageName string, input ActionInput) (PageInfo, error) {
 	if strings.TrimSpace(pageName) == "" {
 		return PageInfo{}, fmt.Errorf("pageName is empty")
@@ -508,7 +572,7 @@ func (s *Session) TransformPageInfoWithInput(pageName string, input ActionInput)
 	}, nil
 }
 
-// OnStepResult 闂備緡鍋呭銊╂偂?Goja 闂佸湱绮敮濠傗枎閵忥紕鈻旈柍褜鍓欓～銏ゅΨ閿曗偓閳锋棃鎮跺☉妯肩伇缂侇喓鍔戝绋库攦鎼存挸浜?
+// OnStepResult 通过 Goja 插件通知步骤结果
 func (s *Session) OnStepResult(input StepResultInput) error {
 	runtimeInput := engineruntime.StepResultInput{
 		Step:       input.Step,

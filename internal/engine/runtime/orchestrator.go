@@ -2,10 +2,10 @@ package runtime
 
 import (
 	"context"
-	"fmt"
 
 	"trek/internal/engine/decision"
 	"trek/internal/engine/decision/shared/types"
+	"trek/logger"
 	perceptionfusion "trek/internal/engine/perception/fusion"
 	perceptionvision "trek/internal/engine/perception/vision"
 	xmlperception "trek/internal/engine/perception/xml"
@@ -132,7 +132,8 @@ func newOrchestratorWithMode(mode perceptionfusion.Mode) *Orchestrator {
 		// 瀹归敊鍥為€€锛氬紓甯告ā寮忛粯璁ら檷绾у埌 XML-only锛岄伩鍏嶄腑鏂幇鏈夋祦绋嬨€?
 		fusionPerceptor, err = perceptionfusion.NewPerceptor(perceptionfusion.ModeXMLOnly, &xmlObservationPerceptor{}, perceptionvision.NewPerceptor())
 		if err != nil {
-			panic(fmt.Errorf("failed to init default perceptor: %w", err))
+			logger.Errorf("初始化默认感知器失败（含 XML-only 降级）: %v", err)
+			return nil
 		}
 	}
 

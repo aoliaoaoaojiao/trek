@@ -29,41 +29,42 @@ type MotionTouch struct {
 }
 
 // NewMotionTouch 初始化触摸工具，推送apk并建立shell循环连接
-func NewMotionTouch(device *adb.Device) *MotionTouch {
-	var err error
+func NewMotionTouch(device *adb.Device) (*MotionTouch, error) {
 	// 推送触摸工具到设备
-	err = device.Push(bytes.NewReader(touchBytes), touchToolPath, time.Now())
+	err := device.Push(bytes.NewReader(touchBytes), touchToolPath, time.Now())
 	if err != nil {
-		panic(fmt.Sprintf("push touch apk failed: %v", err))
+		return nil, fmt.Errorf("push touch apk failed: %w", err)
 	}
 	// 启动AndroidTouch并建立socket连接
 	conn, err := device.RunShellLoopCommandSock(fmt.Sprintf(
 		"CLASSPATH=%s app_process / com.aoliaoaojiao.AndroidTouch.Run v2.2",
 		touchToolPath))
 	if err != nil {
-		panic(fmt.Sprintf("start touch utils failed: %v", err))
+		return nil, fmt.Errorf("start touch utils failed: %w", err)
 	}
 
-	var initWg sync.WaitGroup
-
-	initWg.Add(1)
-	// 验证工具启动成功
+	// 通过 channel 传递初始化错误
+	initErrCh := make(chan error, 1)
 	go func() {
-		defer initWg.Done()
 		byteDatas := make([]byte, 1024)
-		n, err := conn.Read(byteDatas)
-		if err != nil {
-			fmt.Printf("touch utils read init data failed: %v\n", err)
+		n, readErr := conn.Read(byteDatas)
+		if readErr != nil {
+			initErrCh <- fmt.Errorf("touch utils read init data failed: %w", readErr)
 			return
 		}
 		if !strings.Contains(string(byteDatas[:n]), "设备") {
-			fmt.Printf("touch utils init failed, response: %s\n", string(byteDatas[:n]))
+			initErrCh <- fmt.Errorf("touch utils init failed, response: %s", string(byteDatas[:n]))
 			return
 		}
+		initErrCh <- nil
 	}()
-	initWg.Wait()
 
-	return &MotionTouch{shellLoopConn: conn}
+	if initErr := <-initErrCh; initErr != nil {
+		conn.Close()
+		return nil, initErr
+	}
+
+	return &MotionTouch{shellLoopConn: conn}, nil
 }
 
 // Close 关闭shell循环连接
@@ -274,41 +275,6 @@ func (m *MotionTouch) Pinch(centerPoint types.Point, startDistance float64, endD
 		FingerID: finger1ID,
 		WaitTime: stepWait,
 	})
-
-	//waitTouch := sync.WaitGroup{}
-	//waitTouch.Add(2)
-	//
-	//var err1, err2 error
-	//
-	//go func() {
-	//	defer waitTouch.Done()
-	//	// 6. 同步执行双指事件：交替发送，保证双指同步
-	//	for i := range touchEvent1 {
-	//		if err1 = m.TouchEvent(touchEvent1[i]); err1 != nil {
-	//			break
-	//		}
-	//	}
-	//}()
-	//
-	//go func() {
-	//	defer waitTouch.Done()
-	//	// 6. 同步执行双指事件：交替发送，保证双指同步
-	//	for i := range touchEvent2 {
-	//		if err2 = m.TouchEvent(touchEvent2[i]); err2 != nil {
-	//			break
-	//		}
-	//	}
-	//}()
-	//
-	//waitTouch.Wait()
-	//
-	//if err1 != nil {
-	//	return err1
-	//}
-	//
-	//if err2 != nil {
-	//	return err2
-	//}
 
 	// 6. 同步执行双指事件：交替发送，保证双指同步
 	for i := range touchEvent1 {

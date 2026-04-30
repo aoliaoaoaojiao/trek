@@ -1,6 +1,7 @@
 package reuse
 
 import (
+	"trek/internal/engine/decision/shared/tool"
 	"trek/internal/engine/decision/shared/types"
 	"trek/logger"
 )
@@ -25,14 +26,14 @@ func NewRichWidget(parent *RichWidget, element types.IElement) *RichWidget {
 	hashcode1 := rw.GetElementIdentifier()
 	hashcode3 := uintptr(0x1)
 	for _, action := range rw.GetActions() {
-		hashcode3 ^= (uintptr(127) * uintptr(HashInt(int(action))))
+		hashcode3 ^= (uintptr(127) * uintptr(tool.HashInt(int(action))))
 	}
 
 	rw.WidgetHashcode = (hashcode1 >> 2) ^ ((uintptr(127) * hashcode3) << 1)
 
 	elementText := rw.getValidTextFromWidgetAndChildren(element)
 	if elementText != "" {
-		textHash := HashString(elementText)
+		textHash := tool.HashString(elementText)
 		rw.WidgetHashcode ^= (0x79b9 + (textHash << 1))
 	}
 

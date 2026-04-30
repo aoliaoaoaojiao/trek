@@ -63,7 +63,7 @@ type AndroidDriver struct {
 	isUIATouch    bool
 
 	pocoPort        int
-	frowardPocoPort int
+	forwardPocoPort int
 	pocoEngine      poco.Engine
 }
 
@@ -92,7 +92,13 @@ func WithTouch(touchType TouchType) AndroidDriverOption {
 		case TouchTypeADB:
 			d.touch = touch.NewADBTouch(d.device)
 		case TouchTypeMotion:
-			d.touch = touch.NewMotionTouch(d.device)
+			mt, err := touch.NewMotionTouch(d.device)
+			if err != nil {
+				logger.Warnf("初始化 MotionTouch 失败，回退到 ADB Touch: %v", err)
+				d.touch = touch.NewADBTouch(d.device)
+			} else {
+				d.touch = mt
+			}
 		case TouchTypeUIA:
 			d.isUIATouch = true
 		}
@@ -141,7 +147,7 @@ func NewAndroidDriverWith(deviceSerial string, opts ...AndroidDriverOption) (*An
 		if err != nil {
 			return nil, err
 		}
-		logger.Infof("Poco page source initialization completed, localPort=%d remotePort=%d", androidDriver.frowardPocoPort, androidDriver.pocoPort)
+		logger.Infof("Poco page source initialization completed, localPort=%d remotePort=%d", androidDriver.forwardPocoPort, androidDriver.pocoPort)
 	}
 
 	if androidDriver.isUIATouch {
@@ -361,13 +367,13 @@ func (a *AndroidDriver) Close() error {
 		}
 		a.uiaPort = 0
 	}
-	if a.frowardPocoPort > 0 && a.device != nil {
-		if err := a.device.ForwardKill(a.frowardPocoPort); err != nil {
+	if a.forwardPocoPort > 0 && a.device != nil {
+		if err := a.device.ForwardKill(a.forwardPocoPort); err != nil {
 			logger.Warnf("remove POCO forward failed: %v", err)
 		} else {
-			logger.Infof("Poco port forwarding removed, localPort=%d", a.frowardPocoPort)
+			logger.Infof("Poco port forwarding removed, localPort=%d", a.forwardPocoPort)
 		}
-		a.frowardPocoPort = 0
+		a.forwardPocoPort = 0
 	}
 
 	a.pageSources = make(map[PageType]common.IPageSource)
@@ -427,7 +433,7 @@ func (a *AndroidDriver) NewUIAPageSource(remoteUrl string) (common.IPageSource, 
 	uiPageSource := page.NewUIAPageSource(client)
 
 	a.mu.Lock()
-	a.pageSources[PageTypePoco] = uiPageSource
+	a.pageSources[PageTypeUIA] = uiPageSource
 	a.mu.Unlock()
 
 	return uiPageSource, nil
@@ -514,18 +520,22 @@ func (a *AndroidDriver) CheckEnvironment(pageSourceType string) (*common.Environ
 }
 
 func (a *AndroidDriver) initPoco() error {
-	a.frowardPocoPort = common.GetRandomPort()
-	logger.Infof("Starting Poco port forwarding, localPort=%d remotePort=%d", a.frowardPocoPort, a.pocoPort)
-	err := a.device.ForwardTcp(a.frowardPocoPort, a.pocoPort)
+	port, err := common.GetRandomPort()
+	if err != nil {
+		return fmt.Errorf("获取 Poco 随机端口失败: %w", err)
+	}
+	a.forwardPocoPort = port
+	logger.Infof("Starting Poco port forwarding, localPort=%d remotePort=%d", a.forwardPocoPort, a.pocoPort)
+	err = a.device.ForwardTcp(a.forwardPocoPort, a.pocoPort)
 	if err != nil {
 		return err
 	}
-	pocoPage, err := poco.NewPocoPageSourceWith(a.pocoEngine, a.frowardPocoPort)
+	pocoPage, err := poco.NewPocoPageSourceWith(a.pocoEngine, a.forwardPocoPort)
 	if err != nil {
 		return err
 	}
 	a.pageSources[PageTypePoco] = pocoPage
-	logger.Infof("Poco page source registered, type=%s localPort=%d", PageTypePoco, a.frowardPocoPort)
+	logger.Infof("Poco page source registered, type=%s localPort=%d", PageTypePoco, a.forwardPocoPort)
 	return nil
 }
 
@@ -579,7 +589,10 @@ func (a *AndroidDriver) initUIA() error {
 		logger.Info("UIA APK installation and permission setup completed")
 	}
 
-	uiaPort := common.GetRandomPort()
+	uiaPort, err := common.GetRandomPort()
+	if err != nil {
+		return fmt.Errorf("获取 UIA 随机端口失败: %w", err)
+	}
 	logger.Infof("Preparing to start UIA server, localPort=%d remotePort=%d", uiaPort, a.uiaServerPort)
 
 	if err := a.startUIAServer(uiaPort); err != nil {

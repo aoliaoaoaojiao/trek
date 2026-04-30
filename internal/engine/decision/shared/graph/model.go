@@ -1,6 +1,8 @@
 package graph
 
 import (
+	"fmt"
+
 	"trek/internal/engine/decision/shared/types"
 )
 
@@ -37,19 +39,19 @@ func (m *Model) SetGraph(graph *Graph) {
 }
 
 // AddAgent adds an agent to the model.
-func (m *Model) AddAgent(deviceID string, algorithmType string, deviceType types.DeviceType) types.IAgent {
+func (m *Model) AddAgent(deviceID string, algorithmType string, deviceType types.DeviceType) (types.IAgent, error) {
 	var graphListener types.IAgent
 	agentCreator := agentCreators[algorithmType]
 	if agentCreator != nil {
 		created, err := agentCreator(m, deviceType)
 		if err != nil {
-			panic("failed to create an agent")
+			return nil, fmt.Errorf("创建决策代理失败(algorithm=%s): %w", algorithmType, err)
 		}
 		graphListener = created
 	}
 	m.deviceAgentMap[deviceID] = graphListener
 	m.graph.AddListener(graphListener)
-	return graphListener
+	return graphListener, nil
 }
 
 func (m *Model) GetAgent(deviceID string) interface{} {

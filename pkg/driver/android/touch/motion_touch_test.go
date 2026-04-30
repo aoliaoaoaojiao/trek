@@ -17,7 +17,10 @@ func init() {
 }
 
 func TestMotionTouch_Pinch(t *testing.T) {
-	motionTouch := touch.NewMotionTouch(device)
+	motionTouch, err := touch.NewMotionTouch(device)
+	if err != nil {
+		t.Fatalf("NewMotionTouch failed: %v", err)
+	}
 
 	centerPoint := types.Point{
 		X: 0.5,
@@ -44,7 +47,10 @@ func TestMotionTouch_Pinch(t *testing.T) {
 }
 
 func TestMotionTouch_Swipe(t *testing.T) {
-	motionTouch := touch.NewMotionTouch(device)
+	motionTouch, err := touch.NewMotionTouch(device)
+	if err != nil {
+		t.Fatalf("NewMotionTouch failed: %v", err)
+	}
 	statPoint1 := types.Point{
 		X: 0.1,
 		Y: 0.5,
@@ -71,7 +77,10 @@ func TestMotionTouch_Swipe(t *testing.T) {
 }
 
 func TestMotionTouch_Click(t *testing.T) {
-	motionTouch := touch.NewMotionTouch(device)
+	motionTouch, err := touch.NewMotionTouch(device)
+	if err != nil {
+		t.Fatalf("NewMotionTouch failed: %v", err)
+	}
 	motionTouch.Click(types.Point{
 		X: 0.147,
 		Y: 0.861,
@@ -79,7 +88,10 @@ func TestMotionTouch_Click(t *testing.T) {
 }
 
 func TestMotionTouch_longClick(t *testing.T) {
-	motionTouch := touch.NewMotionTouch(device)
+	motionTouch, err := touch.NewMotionTouch(device)
+	if err != nil {
+		t.Fatalf("NewMotionTouch failed: %v", err)
+	}
 	motionTouch.LongClick(types.Point{
 		X: 0.147,
 		Y: 0.861,

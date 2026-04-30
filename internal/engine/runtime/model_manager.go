@@ -1,6 +1,8 @@
 package runtime
 
 import (
+	"fmt"
+
 	"trek/internal/engine/config"
 	"trek/internal/engine/decision"
 	"trek/internal/engine/decision/shared/types"
@@ -8,10 +10,13 @@ import (
 
 const ENGINE_VERSION = "1.0.0"
 
-func InitAgent(agentType decision.AlgorithmType, packageName string, deviceType types.DeviceType) {
+func InitAgent(agentType decision.AlgorithmType, packageName string, deviceType types.DeviceType) error {
 	ensureModel(packageName)
-	engineModel.AddAgent(decision.DefaultDeviceID, agentType.String(), deviceType)
+	if _, err := engineModel.AddAgent(decision.DefaultDeviceID, agentType.String(), deviceType); err != nil {
+		return fmt.Errorf("初始化决策代理失败: %w", err)
+	}
 	engineModel.SetPackageName(packageName)
+	return nil
 }
 
 func GetModel() *decision.Model {

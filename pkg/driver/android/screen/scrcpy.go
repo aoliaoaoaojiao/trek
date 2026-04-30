@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"math/rand"
 	"net"
 	"strings"
 	"sync"
@@ -31,7 +30,6 @@ type Scrcpy struct {
 	videoSocket       net.Conn
 	exitCallBackFunc  context.CancelFunc
 	exitCtx           context.Context
-	scid              int
 	videoFrameHandler func([]byte, uint64, bool)
 }
 
@@ -48,20 +46,12 @@ func NewScrcpy(device *adb.Device) *Scrcpy {
 
 	ctx, exitFunc := context.WithCancel(context.Background())
 
-	randInt := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	randomMin := 2000
-	randomMax := 5000
-
-	randomNum := randomMin + randInt.Intn(randomMax-randomMin+1)
-
 	return &Scrcpy{
 		device:           device,
 		scrcpyLn:         ln,
 		localPort:        tcpAddr.Port,
 		exitCtx:          ctx,
 		exitCallBackFunc: exitFunc,
-		scid:             randomNum,
 	}
 }
 
@@ -83,10 +73,6 @@ func (s *Scrcpy) Start(maxsize int) error {
 		return err
 	}
 
-	go func() {
-		<-s.exitCtx.Done()
-	}()
-
 	s.startServer()
 
 	err = s.runBinary(maxsize)
@@ -96,10 +82,6 @@ func (s *Scrcpy) Start(maxsize int) error {
 
 func (s *Scrcpy) runBinary(maxSize int) error {
 	var output net.Conn
-
-	//output, err := s.device.RunShellLoopCommandSock(fmt.Sprintf("CLASSPATH=%s app_process / com.genymobile.scrcpy.Server v2.2  log_level=debug max_size=0 max_fps=60 control=false max_size=%d audio=false audio=false size_info=true",
-	//	deviceServerPath,
-	//	maxSize))
 
 	output, err := s.device.RunShellLoopCommandSock(
 		fmt.Sprintf("CLASSPATH=%s", deviceServerPath),
@@ -111,7 +93,6 @@ func (s *Scrcpy) runBinary(maxSize int) error {
 		"max_size=0",
 		"max_fps=60",
 		"control=false",
-		//fmt.Sprintf("scid=%d", s.scid),
 		fmt.Sprintf("max_size=%d", maxSize),
 		"audio=false",
 		"send_codec_meta=false",
@@ -172,7 +153,6 @@ func (s *Scrcpy) runBinary(maxSize int) error {
 				}
 				// 输出调试信息
 				if n > 0 {
-					//fmt.Println(string(byteDatas[:n]))
 					logger.Debug(string(byteDatas[:n]))
 				}
 			}
@@ -209,12 +189,6 @@ func (s *Scrcpy) videoParse() {
 		logger.Errorf("get scrcpy device info err: %v", err)
 		s.exitCallBackFunc()
 	}
-	//buffer = make([]byte, 12)
-	//_, err = s.videoSocket.Read(buffer)
-	//if err != nil {
-	//	logger.Errorf("get scrcpy device width and height info err: %v", err)
-	//	s.exitCallBackFunc()
-	//}
 
 	go func() {
 		s.writeH264()
@@ -224,15 +198,14 @@ func (s *Scrcpy) videoParse() {
 func (s *Scrcpy) writeH264() {
 	// 包头缓冲区（12字节）
 	headerBuf := make([]byte, 12)
-	// 数据缓冲区
-	dataBuf := make([]byte, 1024*1024*1024)
+	// 数据缓冲区（初始 4MB，按需扩容）
+	dataBuf := make([]byte, 4*1024*1024)
 
 	for {
 		select {
 		case <-s.exitCtx.Done():
 			return
 		default:
-			//logger.Debug("read scrcpy video packet")
 			// 读取包头（12字节）
 			n, err := io.ReadFull(s.videoSocket, headerBuf)
 			if err != nil {

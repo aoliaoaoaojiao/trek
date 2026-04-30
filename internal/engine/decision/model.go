@@ -65,9 +65,9 @@ func (m *Model) SetGraph(graph *Graph) {
 	m.core.SetGraph(graph)
 }
 
-func (m *Model) AddAgent(deviceID string, algorithmType string, deviceType types.DeviceType) types.IAgent {
+func (m *Model) AddAgent(deviceID string, algorithmType string, deviceType types.DeviceType) (types.IAgent, error) {
 	if m == nil || m.core == nil {
-		return nil
+		return nil, nil
 	}
 	return m.core.AddAgent(deviceID, algorithmType, deviceType)
 }

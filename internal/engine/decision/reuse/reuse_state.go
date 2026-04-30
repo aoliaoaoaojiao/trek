@@ -1,6 +1,7 @@
 package reuse
 
 import (
+	"trek/internal/engine/decision/shared/tool"
 	"trek/internal/engine/decision/shared/types"
 	"trek/logger"
 )
@@ -77,8 +78,8 @@ func (rs *ReuseState) buildBoundingBox(element types.IElement) {
 }
 
 func (rs *ReuseState) buildHashForState() {
-	pageHash := (HashString(rs.PageName) * 31) << 5
-	pageHash ^= (CombineHashWidgets(rs.Widgets, types.STATE_WITH_WIDGET_ORDER) << 1)
+	pageHash := (tool.HashString(rs.PageName) * 31) << 5
+	pageHash ^= (types.CombineHashWidgets(rs.Widgets, types.STATE_WITH_WIDGET_ORDER) << 1)
 	rs.Hashcode = pageHash
 }
 

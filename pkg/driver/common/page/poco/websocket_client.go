@@ -13,14 +13,14 @@ type WebSocketClient struct {
 	conn      *websocket.Conn
 	port      int
 	mu        sync.Mutex
-	result    string
 	connected bool
-	muResult  sync.RWMutex
+	msgCh     chan []byte
 }
 
 func NewWebSocketClient(port int) *WebSocketClient {
 	return &WebSocketClient{
-		port: port,
+		port:  port,
+		msgCh: make(chan []byte, 1),
 	}
 }
 
@@ -32,13 +32,19 @@ func (w *WebSocketClient) Connect() error {
 		return fmt.Errorf("连接 Poco WebSocket 失败: %v", err)
 	}
 
+	w.mu.Lock()
 	w.conn = conn
 	w.connected = true
+	w.mu.Unlock()
 
 	go w.readLoop()
 
+	// 等待 readLoop 启动确认
 	for i := 0; i < 20; i++ {
-		if w.connected {
+		w.mu.Lock()
+		c := w.connected
+		w.mu.Unlock()
+		if c {
 			return nil
 		}
 		time.Sleep(500 * time.Millisecond)
@@ -49,7 +55,9 @@ func (w *WebSocketClient) Connect() error {
 
 func (w *WebSocketClient) readLoop() {
 	defer func() {
+		w.mu.Lock()
 		w.connected = false
+		w.mu.Unlock()
 	}()
 
 	for {
@@ -58,44 +66,50 @@ func (w *WebSocketClient) readLoop() {
 			break
 		}
 
-		w.muResult.Lock()
-		w.result = string(message)
-		w.muResult.Unlock()
+		select {
+		case w.msgCh <- message:
+		default:
+			// 丢弃旧消息，保留最新
+			select {
+			case <-w.msgCh:
+			default:
+			}
+			w.msgCh <- message
+		}
 	}
 }
 
 func (w *WebSocketClient) SendAndReceive(data []byte) ([]byte, error) {
+	w.mu.Lock()
 	if !w.connected || w.conn == nil {
+		w.mu.Unlock()
 		return nil, fmt.Errorf("未连接")
 	}
+	conn := w.conn
+	w.mu.Unlock()
 
-	w.mu.Lock()
-	defer w.mu.Unlock()
+	// 清空残留消息
+	select {
+	case <-w.msgCh:
+	default:
+	}
 
-	err := w.conn.WriteMessage(websocket.TextMessage, data)
+	err := conn.WriteMessage(websocket.TextMessage, data)
 	if err != nil {
 		return nil, fmt.Errorf("发送数据失败: %v", err)
 	}
 
-	for i := 0; i < 20; i++ {
-		time.Sleep(500 * time.Millisecond)
-
-		w.muResult.RLock()
-		result := w.result
-		w.muResult.RUnlock()
-
-		if result != "" {
-			w.muResult.Lock()
-			w.result = ""
-			w.muResult.Unlock()
-			return []byte(result), nil
-		}
+	select {
+	case result := <-w.msgCh:
+		return result, nil
+	case <-time.After(10 * time.Second):
+		return nil, fmt.Errorf("等待响应超时")
 	}
-
-	return nil, fmt.Errorf("等待响应超时")
 }
 
 func (w *WebSocketClient) Disconnect() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.conn != nil {
 		w.conn.Close()
 		w.conn = nil
@@ -104,5 +118,7 @@ func (w *WebSocketClient) Disconnect() {
 }
 
 func (w *WebSocketClient) IsConnected() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return w.connected && w.conn != nil
 }

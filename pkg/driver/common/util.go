@@ -5,28 +5,38 @@ import (
 	"net"
 	"path/filepath"
 	"runtime"
+	"sync"
 )
 
-func GetRandomPort() int {
+func GetRandomPort() (int, error) {
 	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
-		panic(err)
+		return 0, fmt.Errorf("获取随机端口失败: %w", err)
 	}
 	defer listener.Close()
 
 	port := listener.Addr().(*net.TCPAddr).Port
-	return port
+	return port, nil
 }
 
-var pluginDirPath = ""
+var (
+	pluginDirPath = ""
+	pluginDirMu   sync.RWMutex
+)
 
 func SetPluginDirPath(dirPath string) {
+	pluginDirMu.Lock()
 	pluginDirPath = dirPath
+	pluginDirMu.Unlock()
 }
 
 func GetPluginDirPath() (string, error) {
-	if pluginDirPath != "" {
-		return pluginDirPath, nil
+	pluginDirMu.RLock()
+	dir := pluginDirPath
+	pluginDirMu.RUnlock()
+
+	if dir != "" {
+		return dir, nil
 	}
 	projectRoot, err := RepoRootFromCurrentFile()
 	if err != nil {

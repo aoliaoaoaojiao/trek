@@ -215,14 +215,20 @@ func (s *Session) initRecoveryLLMProvider() {
 // Reset 重置引擎模型和脚本插件状态
 func (s *Session) Reset() {
 	engineruntime.ResetModel()
-	engineruntime.InitAgent(s.config.Algorithm, s.config.PackageName, s.config.DeviceType)
+	if err := engineruntime.InitAgent(s.config.Algorithm, s.config.PackageName, s.config.DeviceType); err != nil {
+		logger.Errorf("重置时初始化决策代理失败: %v", err)
+	}
 	s.initTraversalAlgorithm()
 }
 
 // LoadConfigFile 加载 JS 配置文件
 func (s *Session) LoadConfigFile(path string) error {
 	if engineruntime.GetModel() == nil {
-		s.Reset()
+		engineruntime.ResetModel()
+		if err := engineruntime.InitAgent(s.config.Algorithm, s.config.PackageName, s.config.DeviceType); err != nil {
+			return fmt.Errorf("初始化决策代理失败: %w", err)
+		}
+		s.initTraversalAlgorithm()
 	} else if s.traversalAlgo == nil {
 		s.initTraversalAlgorithm()
 	}

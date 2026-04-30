@@ -19,6 +19,7 @@ func loadRecordsFromJSONL(path string) ([]RecoveryMemoryRecord, error) {
 
 	records := make([]RecoveryMemoryRecord, 0, 64)
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {

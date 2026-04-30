@@ -1,6 +1,7 @@
 package reuse
 
 import (
+	"trek/internal/engine/decision/shared/tool"
 	"trek/internal/engine/decision/shared/types"
 	"trek/logger"
 )
@@ -24,8 +25,8 @@ func NewPageNameAction(pageName string, widget types.IWidget, actionType types.A
 	}
 
 	// 璁＄畻鍝堝笇鐮?
-	pageNameHashCode := HashString(pageName)
-	actionTypeHashCode := HashInt(int(pageAction.GetActionType()))
+	pageNameHashCode := tool.HashString(pageName)
+	actionTypeHashCode := tool.HashInt(int(pageAction.GetActionType()))
 
 	var targetHash uintptr
 	if widget != nil {

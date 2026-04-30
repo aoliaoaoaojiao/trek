@@ -8,7 +8,7 @@ import (
 	"strings"
 	coretypes "trek/internal/engine/core/types"
 	"trek/internal/engine/decision/shared/tool"
-	types2 "trek/internal/engine/decision/shared/types"
+	types "trek/internal/engine/decision/shared/types"
 	"trek/logger"
 
 	"github.com/tidwall/gjson"
@@ -16,9 +16,9 @@ import (
 	"github.com/beevik/etree"
 )
 
-var _ types2.IElement = (*AndroidElement)(nil)
+var _ types.IElement = (*AndroidElement)(nil)
 
-func CreateAndroidElement(tag string) (types2.IElement, error) {
+func CreateAndroidElement(tag string) (types.IElement, error) {
 	doc := etree.NewDocument()
 	tagElem := doc.CreateElement(tag)
 
@@ -31,7 +31,7 @@ func CreateAndroidElement(tag string) (types2.IElement, error) {
 
 }
 
-func CreateAndroidElementFromXml(xmlContent string) (types2.IElement, error) {
+func CreateAndroidElementFromXml(xmlContent string) (types.IElement, error) {
 
 	doc := etree.NewDocument()
 
@@ -88,14 +88,14 @@ func createAndroidFromXmlDoc(doc *etree.Document) (*AndroidElement, error) {
 
 func NewAndroidElement() *AndroidElement {
 	return &AndroidElement{
-		children: make([]types2.IElement, 0),
+		children: make([]types.IElement, 0),
 		parent:   nil,
 	}
 }
 
 type AndroidElement struct {
-	children []types2.IElement
-	parent   types2.IElement
+	children []types.IElement
+	parent   types.IElement
 
 	path  string
 	xpath string
@@ -269,11 +269,11 @@ func (e *AndroidElement) SetText(text string) {
 	e.eNode.CreateAttr("text", text)
 }
 
-func (e *AndroidElement) GetBounds() *types2.Rect {
+func (e *AndroidElement) GetBounds() *types.Rect {
 	if e == nil || e.eNode == nil {
 		return nil
 	}
-	var bounds *types2.Rect
+	var bounds *types.Rect
 
 	if val := e.eNode.SelectAttrValue("bounds", "get bounds attribute failed"); val != "" {
 		bounds = parseBounds(val)
@@ -282,21 +282,21 @@ func (e *AndroidElement) GetBounds() *types2.Rect {
 	return bounds
 }
 
-func (e *AndroidElement) SetBounds(rect *types2.Rect) {
+func (e *AndroidElement) SetBounds(rect *types.Rect) {
 	if e == nil || e.eNode == nil {
 		return
 	}
 	e.eNode.CreateAttr("bounds", fmt.Sprintf("[%.0f,%.0f][%.0f,%.0f]", rect.Left, rect.Top, rect.Right, rect.Bottom))
 }
 
-func (e *AndroidElement) GetChildren() []types2.IElement {
+func (e *AndroidElement) GetChildren() []types.IElement {
 	if e == nil || e.eNode == nil {
 		return nil
 	}
 	return e.children
 }
 
-func (e *AndroidElement) SetChildren(childList []types2.IElement) {
+func (e *AndroidElement) SetChildren(childList []types.IElement) {
 	if e == nil || e.eNode == nil {
 		return
 	}
@@ -308,7 +308,7 @@ func (e *AndroidElement) SetChildren(childList []types2.IElement) {
 	e.children = childList
 }
 
-func (e *AndroidElement) GetParent() types2.IElement {
+func (e *AndroidElement) GetParent() types.IElement {
 	if e == nil || e.parent == nil {
 		return nil
 	}
@@ -316,16 +316,16 @@ func (e *AndroidElement) GetParent() types2.IElement {
 	return e.parent
 }
 
-func (e *AndroidElement) GetScrollType() types2.ScrollType {
+func (e *AndroidElement) GetScrollType() types.ScrollType {
 	if e == nil || e.eNode == nil {
-		return types2.NONE
+		return types.NONE
 	}
 	if val := e.eNode.SelectAttrValue("scrollType", ""); val != "" {
-		return types2.StringToScrollType(val)
+		return types.StringToScrollType(val)
 	}
 
 	if !e.GetScrollable() {
-		return types2.NONE
+		return types.NONE
 	}
 
 	switch e.GetClassname() {
@@ -335,18 +335,18 @@ func (e *AndroidElement) GetScrollType() types2.ScrollType {
 		"uia.support.v17.leanback.widget.VerticalGridView",
 		"uia.support.v7.widget.RecyclerView",
 		"androidx.recyclerview.widget.RecyclerView":
-		return types2.Vertical
+		return types.Vertical
 	case "uia.widget.HorizontalScrollView",
 		"uia.support.v17.leanback.widget.HorizontalGridView",
 		"uia.support.v4.view.ViewPager":
-		return types2.Horizontal
+		return types.Horizontal
 	}
 
 	if strings.Contains(e.GetClassname(), "ScrollView") {
-		return types2.ALL
+		return types.ALL
 	}
 
-	return types2.ALL
+	return types.ALL
 }
 
 func (e *AndroidElement) SetScrollType(ScrollType string) {
@@ -407,7 +407,7 @@ func (e *AndroidElement) String() string {
 	return ""
 }
 
-func (e *AndroidElement) fromXMLNode(node *etree.Element, parent types2.IElement) {
+func (e *AndroidElement) fromXMLNode(node *etree.Element, parent types.IElement) {
 
 	if node == nil {
 		return
@@ -424,16 +424,16 @@ func (e *AndroidElement) fromXMLNode(node *etree.Element, parent types2.IElement
 
 	e.SetEditable(e.GetClassname() == "uia.widget.EditText")
 
-	if types2.FORCE_EDITTEXT_CLICK_TRUE && e.GetEditable() {
+	if types.FORCE_EDITTEXT_CLICK_TRUE && e.GetEditable() {
 		e.SetLongClickable(true)
 		e.SetClickable(true)
 	}
 
-	if types2.PARENT_CLICK_CHANGE_CHILDREN && e.GetParent() != nil && e.GetParent().GetLongClickable() {
+	if types.PARENT_CLICK_CHANGE_CHILDREN && e.GetParent() != nil && e.GetParent().GetLongClickable() {
 		e.SetLongClickable(true)
 	}
 
-	if types2.PARENT_CLICK_CHANGE_CHILDREN && e.GetParent() != nil && e.GetParent().GetClickable() {
+	if types.PARENT_CLICK_CHANGE_CHILDREN && e.GetParent() != nil && e.GetParent().GetClickable() {
 		e.SetClickable(true)
 	}
 
@@ -472,10 +472,10 @@ func buildAbsoluteXPath(node *etree.Element) string {
 	return fmt.Sprintf("%s/%s[%d]", buildAbsoluteXPath(parent), node.Tag, index)
 }
 
-func parseBounds(boundsStr string) *types2.Rect {
+func parseBounds(boundsStr string) *types.Rect {
 	parts := strings.Split(boundsStr, "][")
 	if len(parts) != 2 {
-		return types2.NewRect(0, 0, 0, 0)
+		return types.NewRect(0, 0, 0, 0)
 	}
 
 	leftTop := strings.Trim(parts[0], "[]")
@@ -485,7 +485,7 @@ func parseBounds(boundsStr string) *types2.Rect {
 	rb := strings.Split(rightBottom, ",")
 
 	if len(lt) != 2 || len(rb) != 2 {
-		return types2.NewRect(0, 0, 0, 0)
+		return types.NewRect(0, 0, 0, 0)
 	}
 
 	left, _ := strconv.ParseFloat(lt[0], 64)
@@ -493,10 +493,10 @@ func parseBounds(boundsStr string) *types2.Rect {
 	right, _ := strconv.ParseFloat(rb[0], 64)
 	bottom, _ := strconv.ParseFloat(rb[1], 64)
 
-	return types2.NewRect(left, top, right, bottom)
+	return types.NewRect(left, top, right, bottom)
 }
 
-func (e *AndroidElement) Query(xpath string) []types2.IElement {
+func (e *AndroidElement) Query(xpath string) []types.IElement {
 	if e == nil || e.eNode == nil || xpath == "" {
 		return nil
 	}
@@ -511,13 +511,13 @@ func (e *AndroidElement) Query(xpath string) []types2.IElement {
 		targetMap[node] = true
 	}
 
-	var results []types2.IElement
+	var results []types.IElement
 	e.findWrappersRecursive(targetMap, &results)
 
 	return results
 }
 
-func (e *AndroidElement) findWrappersRecursive(targetMap map[*etree.Element]bool, results *[]types2.IElement) {
+func (e *AndroidElement) findWrappersRecursive(targetMap map[*etree.Element]bool, results *[]types.IElement) {
 	if e == nil {
 		return
 	}

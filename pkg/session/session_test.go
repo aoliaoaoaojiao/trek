@@ -10,7 +10,7 @@ import (
 	"time"
 	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision"
-	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/decision/shared/types"
 	"trek/internal/engine/memory"
 	enginestate "trek/internal/engine/state"
 	"trek/internal/engine/traversal"
@@ -25,8 +25,8 @@ func closeSessionMemoryStore(s *Session) {
 
 type mockTraversalAlgorithm struct {
 	proposeFn func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
-	selectFn  func(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types2.ActionCommand, error)
-	observeFn func(ctx enginestate.TraversalContext, action *types2.ActionCommand, outcome traversal.ActionOutcome) error
+	selectFn  func(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types.ActionCommand, error)
+	observeFn func(ctx enginestate.TraversalContext, action *types.ActionCommand, outcome traversal.ActionOutcome) error
 }
 
 type mockCandidateProvider struct {
@@ -49,14 +49,14 @@ func (m *mockTraversalAlgorithm) ProposeCandidates(ctx enginestate.TraversalCont
 	return nil, nil
 }
 
-func (m *mockTraversalAlgorithm) SelectAction(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types2.ActionCommand, error) {
+func (m *mockTraversalAlgorithm) SelectAction(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types.ActionCommand, error) {
 	if m != nil && m.selectFn != nil {
 		return m.selectFn(ctx, candidates)
 	}
 	return nil, nil
 }
 
-func (m *mockTraversalAlgorithm) ObserveOutcome(ctx enginestate.TraversalContext, action *types2.ActionCommand, outcome traversal.ActionOutcome) error {
+func (m *mockTraversalAlgorithm) ObserveOutcome(ctx enginestate.TraversalContext, action *types.ActionCommand, outcome traversal.ActionOutcome) error {
 	if m != nil && m.observeFn != nil {
 		return m.observeFn(ctx, action, outcome)
 	}
@@ -67,7 +67,7 @@ func TestSessionNextAction(t *testing.T) {
 	session := NewSession(Config{
 		PackageName: "com.demo",
 		Algorithm:   decision.AlgorithmReuse,
-		DeviceType:  types2.Phone,
+		DeviceType:  types.Phone,
 	})
 
 	action, err := session.NextAction("LoginActivity", `
@@ -101,7 +101,7 @@ func TestSessionCheckPointInBlackRects(t *testing.T) {
 		t.Fatalf("鍔犺浇閰嶇疆澶辫触: %v", err)
 	}
 
-	if !session.CheckPointInBlackRects("LoginActivity", types2.Point{X: 50, Y: 50}) {
+	if !session.CheckPointInBlackRects("LoginActivity", types.Point{X: 50, Y: 50}) {
 		t.Fatalf("鐐逛綅搴斿懡涓粦鍚嶅崟鍖哄煙")
 	}
 }
@@ -157,7 +157,7 @@ func TestSessionBeforeDecideUsesGojaPluginAction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("鑾峰彇鍔ㄤ綔澶辫触: %v", err)
 	}
-	if action.Act != types2.BACK {
+	if action.Act != types.BACK {
 		t.Fatalf("鎻掍欢搴旇鐩栦负 BACK锛屽疄锟? %s", action.Act.String())
 	}
 }
@@ -187,7 +187,7 @@ func TestSessionOnStepResultFeedsGojaPluginState(t *testing.T) {
 	after := PageSnapshot{PageName: "After", XML: `<hierarchy text="After"/>`, Screenshot: []byte{1, 2, 3}}
 	if err := session.OnStepResult(StepResultInput{
 		Step:    1,
-		Action:  &types2.ActionCommand{Act: types2.CLICK, Pos: *types2.NewRect(0, 0, 10, 10)},
+		Action:  &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0, 0, 10, 10)},
 		Success: false,
 		Crash:   true,
 		Before:  PageSnapshot{PageName: "Before", XML: `<hierarchy/>`},
@@ -200,7 +200,7 @@ func TestSessionOnStepResultFeedsGojaPluginState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("鑾峰彇鍔ㄤ綔澶辫触: %v", err)
 	}
-	if action.Act != types2.BACK {
+	if action.Act != types.BACK {
 		t.Fatalf("onStepResult 鐘舵€佸簲椹卞姩涓嬩竴锟?BACK锛屽疄锟? %s", action.Act.String())
 	}
 }
@@ -230,7 +230,7 @@ func TestSessionNextBlockRecoveryActionUsesPluginBlockRecoveryContext(t *testing
 	if err != nil {
 		t.Fatalf("获取阻塞恢复动作失败: %v", err)
 	}
-	if action == nil || action.Act != types2.BACK {
+	if action == nil || action.Act != types.BACK {
 		t.Fatalf("预期阻塞恢复返回 BACK，实际: %+v", action)
 	}
 }
@@ -282,7 +282,7 @@ func TestSessionBuildMemoryRecoveryCandidates(t *testing.T) {
 		TraceSignature:   "back",
 		Mode:             "recover",
 		Candidate: candidate.NewCandidate(
-			&types2.ActionCommand{Act: types2.BACK},
+			&types.ActionCommand{Act: types.BACK},
 			candidate.SourceAlgorithm,
 			"回退上一层",
 			map[string]string{"seed": "1"},
@@ -323,7 +323,7 @@ func TestSessionBuildMemoryRecoveryCandidates(t *testing.T) {
 	if items[0].Source != candidate.SourceMemory {
 		t.Fatalf("候选来源应为 memory，实际: %s", items[0].Source)
 	}
-	if items[0].Command == nil || items[0].Command.Act != types2.BACK {
+	if items[0].Command == nil || items[0].Command.Act != types.BACK {
 		t.Fatalf("候选动作应为 BACK，实际: %+v", items[0].Command)
 	}
 	if items[0].Metadata["memory_key"] == "" {
@@ -365,7 +365,7 @@ func TestSessionBuildHeuristicRecoveryCandidates(t *testing.T) {
 	if items[0].Source != candidate.SourceHeuristic {
 		t.Fatalf("候选来源应为 heuristic，实际: %s", items[0].Source)
 	}
-	if items[0].Command == nil || items[0].Command.Act != types2.BACK {
+	if items[0].Command == nil || items[0].Command.Act != types.BACK {
 		t.Fatalf("候选动作应为 BACK，实际: %+v", items[0].Command)
 	}
 }
@@ -406,17 +406,17 @@ func TestSessionSelectRecoveryActionPrefersAlgorithmCandidate(t *testing.T) {
 	session := NewSession(Config{
 		PackageName: "com.demo",
 		Algorithm:   decision.AlgorithmReuse,
-		DeviceType:  types2.Phone,
+		DeviceType:  types.Phone,
 	})
 	ctx := enginestate.TraversalContext{Mode: "Recover"}
 	items := []candidate.Candidate{
 		{
-			Command:    &types2.ActionCommand{Act: types2.BACK},
+			Command:    &types.ActionCommand{Act: types.BACK},
 			Source:     candidate.SourceAlgorithm,
 			Confidence: 0.3,
 		},
 		{
-			Command:    &types2.ActionCommand{Act: types2.CLICK, Pos: *types2.NewRect(0.1, 0.1, 0.2, 0.2)},
+			Command:    &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
 			Source:     candidate.SourceLLM,
 			Confidence: 0.9,
 		},
@@ -425,7 +425,7 @@ func TestSessionSelectRecoveryActionPrefersAlgorithmCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SelectRecoveryAction 失败: %v", err)
 	}
-	if cmd == nil || cmd.Act != types2.BACK {
+	if cmd == nil || cmd.Act != types.BACK {
 		t.Fatalf("预期优先选择 algorithm 候选 BACK，实际: %+v", cmd)
 	}
 }
@@ -434,12 +434,12 @@ func TestSessionBuildAlgorithmCandidatesDelegatesTraversalAlgorithm(t *testing.T
 	session := NewSession(Config{
 		PackageName: "com.demo",
 		Algorithm:   decision.AlgorithmReuse,
-		DeviceType:  types2.Phone,
+		DeviceType:  types.Phone,
 	})
 	called := false
 	expected := []candidate.Candidate{
 		{
-			Command:    &types2.ActionCommand{Act: types2.BACK},
+			Command:    &types.ActionCommand{Act: types.BACK},
 			Source:     candidate.SourceAlgorithm,
 			Confidence: 0.8,
 		},
@@ -461,7 +461,7 @@ func TestSessionBuildAlgorithmCandidatesDelegatesTraversalAlgorithm(t *testing.T
 	if !called {
 		t.Fatalf("预期调用 traversalAlgo.ProposeCandidates")
 	}
-	if len(items) != 1 || items[0].Command == nil || items[0].Command.Act != types2.BACK {
+	if len(items) != 1 || items[0].Command == nil || items[0].Command.Act != types.BACK {
 		t.Fatalf("算法候选返回不符合预期: %+v", items)
 	}
 }
@@ -470,13 +470,13 @@ func TestSessionBuildAlgorithmCandidatesMergesOCRCandidates(t *testing.T) {
 	session := NewSession(Config{
 		PackageName: "com.demo",
 		Algorithm:   decision.AlgorithmReuse,
-		DeviceType:  types2.Phone,
+		DeviceType:  types.Phone,
 	})
 	session.traversalAlgo = &mockTraversalAlgorithm{
 		proposeFn: func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
 			return []candidate.Candidate{
 				{
-					Command:    &types2.ActionCommand{Act: types2.BACK},
+					Command:    &types.ActionCommand{Act: types.BACK},
 					Source:     candidate.SourceAlgorithm,
 					Confidence: 0.8,
 				},
@@ -487,7 +487,7 @@ func TestSessionBuildAlgorithmCandidatesMergesOCRCandidates(t *testing.T) {
 		buildFn: func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
 			return []candidate.Candidate{
 				{
-					Command:    &types2.ActionCommand{Act: types2.CLICK, Pos: *types2.NewRect(0.1, 0.2, 0.3, 0.4)},
+					Command:    &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.2, 0.3, 0.4)},
 					Source:     candidate.SourceOCR,
 					Confidence: 0.7,
 				},
@@ -515,11 +515,11 @@ func TestSessionObserveTraversalOutcomeNoError(t *testing.T) {
 	session := NewSession(Config{
 		PackageName: "com.demo",
 		Algorithm:   decision.AlgorithmReuse,
-		DeviceType:  types2.Phone,
+		DeviceType:  types.Phone,
 	})
 	err := session.ObserveTraversalOutcome(
 		enginestate.TraversalContext{Mode: "Explore", PageName: "MainActivity"},
-		&types2.ActionCommand{Act: types2.CLICK, Pos: *types2.NewRect(0.1, 0.1, 0.2, 0.2)},
+		&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
 		traversal.OutcomeNewState,
 	)
 	if err != nil {
@@ -549,7 +549,7 @@ func TestSessionRecordRecoveryMemoryOutcome(t *testing.T) {
 			},
 		},
 		candidate.Candidate{
-			Command: &types2.ActionCommand{Act: types2.BACK},
+			Command: &types.ActionCommand{Act: types.BACK},
 			Source:  candidate.SourceHeuristic,
 		},
 		true,
@@ -599,7 +599,7 @@ func TestSessionRecordRecoveryMemoryOutcomeAggregatesCounts(t *testing.T) {
 		},
 	}
 	item := candidate.Candidate{
-		Command: &types2.ActionCommand{Act: types2.BACK},
+		Command: &types.ActionCommand{Act: types.BACK},
 		Source:  candidate.SourceMemory,
 	}
 
@@ -647,7 +647,7 @@ func TestSessionRecordCandidateEnhancementOutcome(t *testing.T) {
 		},
 	}
 	item := candidate.Candidate{
-		Command: &types2.ActionCommand{Act: types2.CLICK, Pos: *types2.NewRect(0.1, 0.1, 0.2, 0.2)},
+		Command: &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
 		Source:  candidate.SourceLLM,
 	}
 	if err := session.RecordCandidateEnhancementOutcome(ctx, item, true); err != nil {
@@ -692,7 +692,7 @@ func TestSessionBuildKnownFailedRecoveryActions(t *testing.T) {
 		},
 	}
 	item := candidate.Candidate{
-		Command: &types2.ActionCommand{Act: types2.BACK},
+		Command: &types.ActionCommand{Act: types.BACK},
 		Source:  candidate.SourceMemory,
 	}
 	if err := session.RecordRecoveryMemoryOutcome(ctx, item, false); err != nil {
@@ -727,7 +727,7 @@ func TestSessionBuildKnownSuccessfulRecoveryActions(t *testing.T) {
 		},
 	}
 	item := candidate.Candidate{
-		Command: &types2.ActionCommand{Act: types2.BACK},
+		Command: &types.ActionCommand{Act: types.BACK},
 		Source:  candidate.SourceMemory,
 	}
 	if err := session.RecordRecoveryMemoryOutcome(ctx, item, true); err != nil {
@@ -786,7 +786,7 @@ func TestSessionBuildLLMRecoveryCandidates(t *testing.T) {
 	if items[0].Source != candidate.SourceLLM {
 		t.Fatalf("候选来源应为 llm，实际: %s", items[0].Source)
 	}
-	if items[0].Command == nil || items[0].Command.Act != types2.BACK {
+	if items[0].Command == nil || items[0].Command.Act != types.BACK {
 		t.Fatalf("候选动作应为 BACK，实际: %+v", items[0].Command)
 	}
 	if items[0].Metadata["llm_reason"] == "" {
@@ -824,7 +824,7 @@ func TestSessionBuildLLMRecoveryCandidatesWithOpenAIResponsesProvider(t *testing
 	if err != nil {
 		t.Fatalf("openai provider 构建候选失败: %v", err)
 	}
-	if len(items) != 1 || items[0].Command == nil || items[0].Command.Act != types2.BACK {
+	if len(items) != 1 || items[0].Command == nil || items[0].Command.Act != types.BACK {
 		t.Fatalf("openai provider 返回候选不符合预期: %+v", items)
 	}
 }
@@ -854,7 +854,7 @@ func TestSessionInitRecoveryLLMProviderFromEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("环境变量 LLM provider 构建候选失败: %v", err)
 	}
-	if len(items) != 1 || items[0].Command == nil || items[0].Command.Act != types2.BACK {
+	if len(items) != 1 || items[0].Command == nil || items[0].Command.Act != types.BACK {
 		t.Fatalf("环境变量 LLM provider 返回候选不符合预期: %+v", items)
 	}
 }
@@ -882,7 +882,7 @@ func TestSessionInitOpenAIRecoveryProviderFromEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("环境变量 OpenAI provider 构建候选失败: %v", err)
 	}
-	if len(items) != 1 || items[0].Command == nil || items[0].Command.Act != types2.BACK {
+	if len(items) != 1 || items[0].Command == nil || items[0].Command.Act != types.BACK {
 		t.Fatalf("环境变量 OpenAI provider 返回候选不符合预期: %+v", items)
 	}
 }

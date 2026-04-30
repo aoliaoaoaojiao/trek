@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 	"trek/internal/engine/candidate"
-	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/decision/shared/types"
 	enginestate "trek/internal/engine/state"
 )
 
@@ -27,7 +27,7 @@ func TestProviderBuildCandidatesFromStore(t *testing.T) {
 		TraceSignature:   "CLICK>BACK",
 		Mode:             string(enginestate.ModeRecover),
 		Candidate: candidate.NewCandidate(
-			&types2.ActionCommand{Act: types2.BACK},
+			&types.ActionCommand{Act: types.BACK},
 			candidate.SourceMemory,
 			"返回上一层",
 			nil,
@@ -65,7 +65,7 @@ func TestProviderBuildCandidatesFromStore(t *testing.T) {
 	if items[0].Source != candidate.SourceMemory {
 		t.Fatalf("候选来源错误: %s", items[0].Source)
 	}
-	if items[0].Command == nil || items[0].Command.Act != types2.BACK {
+	if items[0].Command == nil || items[0].Command.Act != types.BACK {
 		t.Fatalf("候选命令错误: %+v", items[0].Command)
 	}
 	if items[0].Confidence <= 0 {
@@ -90,7 +90,7 @@ func TestProviderBoostsCandidateEnhancementInExplore(t *testing.T) {
 		BlockReason:      BlockReasonCandidateEnhancement,
 		TraceSignature:   "CLICK",
 		Mode:             string(enginestate.ModeExplore),
-		Candidate:        candidate.NewCandidate(&types2.ActionCommand{Act: types2.CLICK, Pos: *types2.NewRect(0.1, 0.1, 0.2, 0.2)}, candidate.SourceMemory, "增强点击", nil),
+		Candidate:        candidate.NewCandidate(&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}, candidate.SourceMemory, "增强点击", nil),
 		Outcome:          OutcomeEscaped,
 		SuccessCount:     1,
 		FailCount:        1,
@@ -104,7 +104,7 @@ func TestProviderBoostsCandidateEnhancementInExplore(t *testing.T) {
 		BlockReason:      "same_page_no_change",
 		TraceSignature:   "BACK",
 		Mode:             string(enginestate.ModeExplore),
-		Candidate:        candidate.NewCandidate(&types2.ActionCommand{Act: types2.BACK}, candidate.SourceMemory, "普通返回", nil),
+		Candidate:        candidate.NewCandidate(&types.ActionCommand{Act: types.BACK}, candidate.SourceMemory, "普通返回", nil),
 		Outcome:          OutcomeEscaped,
 		SuccessCount:     1,
 		FailCount:        1,
@@ -131,15 +131,15 @@ func TestProviderBoostsCandidateEnhancementInExplore(t *testing.T) {
 		t.Fatalf("候选数量错误: %d", len(items))
 	}
 
-	confByAction := map[types2.ActionType]float64{}
+	confByAction := map[types.ActionType]float64{}
 	for _, item := range items {
 		if item.Command == nil {
 			continue
 		}
 		confByAction[item.Command.Act] = item.Confidence
 	}
-	if confByAction[types2.CLICK] <= confByAction[types2.BACK] {
-		t.Fatalf("Explore 下增强样本应获得更高置信度: click=%.3f back=%.3f", confByAction[types2.CLICK], confByAction[types2.BACK])
+	if confByAction[types.CLICK] <= confByAction[types.BACK] {
+		t.Fatalf("Explore 下增强样本应获得更高置信度: click=%.3f back=%.3f", confByAction[types.CLICK], confByAction[types.BACK])
 	}
 }
 

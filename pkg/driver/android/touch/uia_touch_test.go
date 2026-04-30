@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/decision/shared/types"
 	"trek/pkg/driver/android/uia"
 
 	"github.com/stretchr/testify/assert"
@@ -37,7 +37,7 @@ func TestUIATouchClick_UsesW3CActions(t *testing.T) {
 	client := uia.NewUiaPageWithSession(server.URL, "session-1")
 	touchClient := NewUIATouch(client)
 
-	err := touchClient.Click(types2.Point{X: 100, Y: 200})
+	err := touchClient.Click(types.Point{X: 100, Y: 200})
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{http.MethodPost, http.MethodDelete}, methods)
@@ -66,7 +66,7 @@ func TestUIATouchSwipe_UsesActionsEndpoint(t *testing.T) {
 	client := uia.NewUiaPageWithSession(server.URL, "session-1")
 	touchClient := NewUIATouch(client)
 
-	err := touchClient.Swipe(types2.Point{X: 10, Y: 20}, types2.Point{X: 300, Y: 400}, 10, 1000)
+	err := touchClient.Swipe(types.Point{X: 10, Y: 20}, types.Point{X: 300, Y: 400}, 10, 1000)
 	require.NoError(t, err)
 
 	actions, ok := payload["actions"].([]interface{})
@@ -102,7 +102,7 @@ func TestUIATouchClick_IgnoresUnsupportedReleaseActions(t *testing.T) {
 	client := uia.NewUiaPageWithSession(server.URL, "session-1")
 	touchClient := NewUIATouch(client)
 
-	err := touchClient.Click(types2.Point{X: 100, Y: 200})
+	err := touchClient.Click(types.Point{X: 100, Y: 200})
 	require.NoError(t, err)
 	assert.Equal(t, []string{http.MethodPost, http.MethodDelete}, methods)
 }

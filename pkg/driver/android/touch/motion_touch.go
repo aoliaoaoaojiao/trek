@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/decision/shared/types"
 	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/common"
 )
@@ -75,7 +75,7 @@ func (m *MotionTouch) Close() error {
 }
 
 // Click 模拟单指点击：DOWN→UP
-func (m *MotionTouch) Click(point types2.Point) error {
+func (m *MotionTouch) Click(point types.Point) error {
 	// 绑定手指ID为0（单指默认）
 	clickEventDown := common.TouchEvent{
 		Point:    point,
@@ -91,7 +91,7 @@ func (m *MotionTouch) Click(point types2.Point) error {
 }
 
 // LongClick 模拟单指长按：DOWN→等待duration→UP
-func (m *MotionTouch) LongClick(point types2.Point, duration int64) error {
+func (m *MotionTouch) LongClick(point types.Point, duration int64) error {
 	longClickEventDown := common.TouchEvent{
 		Point:    point,
 		Type:     common.DOWN_TOUCH_EVENT,
@@ -108,7 +108,7 @@ func (m *MotionTouch) LongClick(point types2.Point, duration int64) error {
 
 // Swipe 模拟单指分步滑动：DOWN→多步MOVE→UP
 // startPoint: 滑动起点 | endPoint: 滑动终点 | step: 滑动步数 | duration: 总滑动时长(毫秒)
-func (m *MotionTouch) Swipe(startPoint types2.Point, endPoint types2.Point, step int64, duration int64) error {
+func (m *MotionTouch) Swipe(startPoint types.Point, endPoint types.Point, step int64, duration int64) error {
 	// 1. 参数合法性校验
 	if step <= 0 {
 		return fmt.Errorf("swipe step must be > 0, current: %d", step)
@@ -138,7 +138,7 @@ func (m *MotionTouch) Swipe(startPoint types2.Point, endPoint types2.Point, step
 	var touchEvents []common.TouchEvent
 	// 第一步：按下起点
 	touchEvents = append(touchEvents, common.TouchEvent{
-		Point:    types2.Point{X: startX, Y: startY},
+		Point:    types.Point{X: startX, Y: startY},
 		Type:     common.DOWN_TOUCH_EVENT,
 		FingerID: fingerID,
 	})
@@ -155,7 +155,7 @@ func (m *MotionTouch) Swipe(startPoint types2.Point, endPoint types2.Point, step
 		}
 		// 构造移动事件，最后一步无需等待（后续直接UP）
 		moveEvent := common.TouchEvent{
-			Point:    types2.Point{X: currentX, Y: currentY},
+			Point:    types.Point{X: currentX, Y: currentY},
 			Type:     common.MOVE_TOUCH_EVENT,
 			FingerID: fingerID,
 		}
@@ -177,7 +177,7 @@ func (m *MotionTouch) Swipe(startPoint types2.Point, endPoint types2.Point, step
 
 // Pinch 模拟双指捏合/缩放：双指DOWN→多步同步MOVE→双指UP
 // centerPoint: 缩放中心点 | startDistance: 双指起始距离(像素) | endDistance: 双指结束距离(像素) | duration: 总时长(毫秒)
-func (m *MotionTouch) Pinch(centerPoint types2.Point, startDistance float64, endDistance float64, duration int64) error {
+func (m *MotionTouch) Pinch(centerPoint types.Point, startDistance float64, endDistance float64, duration int64) error {
 	// 1. 参数合法性校验
 	if duration <= 0 {
 		return fmt.Errorf("pinch duration must be > 0, current: %d", duration)
@@ -217,12 +217,12 @@ func (m *MotionTouch) Pinch(centerPoint types2.Point, startDistance float64, end
 	var touchEvent2 []common.TouchEvent
 	// 第一步：双指同时按下起始位置（连续添加DOWN事件，实现同步按下）
 	touchEvent1 = append(touchEvent1, common.TouchEvent{
-		Point:    types2.Point{X: f0StartX, Y: f0StartY},
+		Point:    types.Point{X: f0StartX, Y: f0StartY},
 		Type:     common.DOWN_TOUCH_EVENT,
 		FingerID: finger0ID,
 	})
 	touchEvent2 = append(touchEvent2, common.TouchEvent{
-		Point:    types2.Point{X: f1StartX, Y: f1StartY},
+		Point:    types.Point{X: f1StartX, Y: f1StartY},
 		Type:     common.DOWN_TOUCH_EVENT,
 		FingerID: finger1ID,
 	})
@@ -244,13 +244,13 @@ func (m *MotionTouch) Pinch(centerPoint types2.Point, startDistance float64, end
 
 		// 构造双指同步移动事件（连续添加，底层连续发送实现同步）
 		touchEvent1 = append(touchEvent1, common.TouchEvent{
-			Point:    types2.Point{X: f0CurrentX, Y: f0CurrentY},
+			Point:    types.Point{X: f0CurrentX, Y: f0CurrentY},
 			Type:     common.MOVE_TOUCH_EVENT,
 			FingerID: finger0ID,
 		})
 
 		touchEvent2 = append(touchEvent2, common.TouchEvent{
-			Point:    types2.Point{X: f1CurrentX, Y: f1CurrentY},
+			Point:    types.Point{X: f1CurrentX, Y: f1CurrentY},
 			Type:     common.MOVE_TOUCH_EVENT,
 			FingerID: finger1ID,
 		})

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
-	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/decision/shared/types"
 
 	"trek/internal/engine/decision"
 )
@@ -56,11 +56,11 @@ func (f *fakePlanner) Select(ctx context.Context, obs *decision.Observation, can
 
 type fakeActuator struct {
 	called bool
-	op     *types2.ActionCommand
+	op     *types.ActionCommand
 	err    error
 }
 
-func (f *fakeActuator) Compile(ctx context.Context, obs *decision.Observation, plan *decision.ExecutionPlan) (*types2.ActionCommand, error) {
+func (f *fakeActuator) Compile(ctx context.Context, obs *decision.Observation, plan *decision.ExecutionPlan) (*types.ActionCommand, error) {
 	f.called = true
 	if f.err != nil {
 		return nil, f.err
@@ -70,8 +70,8 @@ func (f *fakeActuator) Compile(ctx context.Context, obs *decision.Observation, p
 
 func TestOrchestratorPipelineSuccess(t *testing.T) {
 	obs := &decision.Observation{PageName: "Main"}
-	op := types2.NewActionCommand()
-	op.Act = types2.BACK
+	op := types.NewActionCommand()
+	op.Act = types.BACK
 
 	orch := &Orchestrator{
 		perceptor: &fakePerceptor{obs: obs},
@@ -84,7 +84,7 @@ func TestOrchestratorPipelineSuccess(t *testing.T) {
 	if result == nil {
 		t.Fatalf("expected non nil result")
 	}
-	if result.Act != types2.BACK {
+	if result.Act != types.BACK {
 		t.Fatalf("unexpected action: %v", result.Act)
 	}
 }

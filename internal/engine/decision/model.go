@@ -3,17 +3,17 @@ package decision
 import (
 	"fmt"
 	sharedgraph "trek/internal/engine/decision/shared/graph"
-	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/decision/shared/types"
 	"trek/logger"
 )
 
 type Model struct {
 	core          *sharedgraph.Model
-	configManager types2.ConfigProvider
+	configManager types.ConfigProvider
 }
 
 type IAgentCreator = sharedgraph.IAgentCreator
-type IElementCreator func(guiContent string) (types2.IElement, error)
+type IElementCreator func(guiContent string) (types.IElement, error)
 type ActionCounter = sharedgraph.ActionCounter
 type Graph = sharedgraph.Graph
 type VisitCountReward = sharedgraph.VisitCountReward
@@ -30,13 +30,13 @@ func RegisterElementCreator(eleType string, creator IElementCreator) {
 	elementCreators[eleType] = creator
 }
 
-func NewModel(packageName string, cfg ...types2.ConfigProvider) *Model {
+func NewModel(packageName string, cfg ...types.ConfigProvider) *Model {
 	m := &Model{
 		core: sharedgraph.NewModel(packageName),
 	}
 	if len(cfg) > 0 && cfg[0] != nil {
 		m.configManager = cfg[0]
-		if scp, ok := cfg[0].(types2.StaticConfigProvider); ok {
+		if scp, ok := cfg[0].(types.StaticConfigProvider); ok {
 			m.core.SetStaticConfig(scp)
 		}
 	}
@@ -65,7 +65,7 @@ func (m *Model) SetGraph(graph *Graph) {
 	m.core.SetGraph(graph)
 }
 
-func (m *Model) AddAgent(deviceID string, algorithmType string, deviceType types2.DeviceType) types2.IAgent {
+func (m *Model) AddAgent(deviceID string, algorithmType string, deviceType types.DeviceType) types.IAgent {
 	if m == nil || m.core == nil {
 		return nil
 	}
@@ -79,14 +79,14 @@ func (m *Model) GetAgent(deviceID string) interface{} {
 	return m.core.GetAgent(deviceID)
 }
 
-func (m *Model) GetConfigManager() types2.ConfigProvider {
+func (m *Model) GetConfigManager() types.ConfigProvider {
 	if m == nil {
 		return nil
 	}
 	return m.configManager
 }
 
-func (m *Model) SetConfigManager(manager types2.ConfigProvider) {
+func (m *Model) SetConfigManager(manager types.ConfigProvider) {
 	if m == nil {
 		return
 	}
@@ -128,27 +128,27 @@ func (m *Model) StateSize() int {
 	return m.core.StateSize()
 }
 
-func (m *Model) GetOperateOpt(elem types2.IElement, pageName string, deviceID string) *types2.ActionCommand {
+func (m *Model) GetOperateOpt(elem types.IElement, pageName string, deviceID string) *types.ActionCommand {
 	customAction := m.resolvePageAndGetSpecifiedAction(pageName, elem)
 	if customAction != nil {
 		logger.Debugf("try get custom action from config manager")
 	}
 
 	if m == nil || m.core == nil {
-		return types2.ActionCommandNop
+		return types.ActionCommandNop
 	}
 
 	if m.core.AgentSize() == 0 {
 		logger.Warnf("no decision agent registered, return NOP")
-		return types2.ActionCommandNop
+		return types.ActionCommandNop
 	}
 
 	agent := m.resolveAgent(deviceID)
 	if agent == nil {
-		return types2.ActionCommandNop
+		return types.ActionCommandNop
 	}
 
-	var state types2.IState
+	var state types.IState
 	if elem != nil {
 		state = agent.CreateState(pageName, elem)
 		if state != nil {
@@ -165,33 +165,33 @@ func (m *Model) GetOperateOpt(elem types2.IElement, pageName string, deviceID st
 		agent.UpdateStrategy()
 		if action == nil {
 			logger.Errorf("get null action!!!!")
-			return types2.ActionCommandNop
+			return types.ActionCommandNop
 		}
-		if stateAction, ok := action.(*types2.StatefulAction); ok && stateAction.IsModelAct() && state != nil {
+		if stateAction, ok := action.(*types.StatefulAction); ok && stateAction.IsModelAct() && state != nil {
 			stateAction.Visit(m.core.GetGraph().GetTimestamp())
 			agent.MoveForward(state)
 		}
 	}
 
-	operate := types2.ActionCommandNop
+	operate := types.ActionCommandNop
 	if action == nil {
 		return operate
 	}
 
 	switch a := action.(type) {
-	case types2.CustomActionOperable:
+	case types.CustomActionOperable:
 		logger.Infof("selected custom action %s", a.GetActionType().String())
 		operate = a.ToActionCommand()
-	case *types2.StatefulAction:
+	case *types.StatefulAction:
 		logger.Debugf("selected action %s", a.String())
 		operate = a.ToOperate()
-	case *types2.Action:
+	case *types.Action:
 		// 处理 RESTART、NOP 等基础动作类型（无目标控件的 Agent 动作）
 		logger.Infof("selected base action %s", a.ActionType.String())
 		operate = a.ToOperate()
 	default:
 		logger.Errorf("unsupported action type: %T", action)
-		return types2.ActionCommandNop
+		return types.ActionCommandNop
 	}
 
 	if m.configManager != nil {
@@ -213,7 +213,7 @@ func (m *Model) GetOperate(elemType string, descContent string, pageName string,
 }
 
 // CreateElement 使用 decision 层注册表解析元素，避免 shared 承担装配职责。
-func CreateElement(elemType string, guiContent string) (types2.IElement, error) {
+func CreateElement(elemType string, guiContent string) (types.IElement, error) {
 	creator, ok := elementCreators[elemType]
 	if !ok || creator == nil {
 		return nil, fmt.Errorf("element creator not found: %s", elemType)
@@ -221,25 +221,25 @@ func CreateElement(elemType string, guiContent string) (types2.IElement, error) 
 	return creator(guiContent)
 }
 
-func (m *Model) resolveAgent(deviceID string) types2.IAgent {
+func (m *Model) resolveAgent(deviceID string) types.IAgent {
 	if m == nil || m.core == nil {
 		return nil
 	}
 	if deviceID == "" {
-		if agent, _ := m.core.GetAgent(DefaultDeviceID).(types2.IAgent); agent != nil {
+		if agent, _ := m.core.GetAgent(DefaultDeviceID).(types.IAgent); agent != nil {
 			return agent
 		}
 	}
-	if agent, _ := m.core.GetAgent(deviceID).(types2.IAgent); agent != nil {
+	if agent, _ := m.core.GetAgent(deviceID).(types.IAgent); agent != nil {
 		return agent
 	}
-	if agent, _ := m.core.GetAgent(DefaultDeviceID).(types2.IAgent); agent != nil {
+	if agent, _ := m.core.GetAgent(DefaultDeviceID).(types.IAgent); agent != nil {
 		return agent
 	}
 	return nil
 }
 
-func (m *Model) resolvePageAndGetSpecifiedAction(page string, elem types2.IElement) types2.IAction {
+func (m *Model) resolvePageAndGetSpecifiedAction(page string, elem types.IElement) types.IAction {
 	if m != nil && m.configManager != nil {
 		return m.configManager.ResolvePageAndGetSpecifiedAction(page, elem)
 	}

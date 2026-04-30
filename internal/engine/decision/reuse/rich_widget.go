@@ -1,21 +1,21 @@
 package reuse
 
 import (
-	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/decision/shared/types"
 	"trek/logger"
 )
 
 type RichWidget struct {
-	types2.Widget
+	types.Widget
 	WidgetHashcode uintptr
 }
 
-func NewRichWidget(parent *RichWidget, element types2.IElement) *RichWidget {
-	var parentWidget *types2.Widget
+func NewRichWidget(parent *RichWidget, element types.IElement) *RichWidget {
+	var parentWidget *types.Widget
 	if parent != nil {
 		parentWidget = &parent.Widget
 	}
-	baseWidget := types2.NewWidget(parentWidget, element)
+	baseWidget := types.NewWidget(parentWidget, element)
 
 	rw := &RichWidget{
 		Widget:         *baseWidget,
@@ -41,7 +41,7 @@ func NewRichWidget(parent *RichWidget, element types2.IElement) *RichWidget {
 	return rw
 }
 
-func (rw *RichWidget) getValidTextFromWidgetAndChildren(element types2.IElement) string {
+func (rw *RichWidget) getValidTextFromWidgetAndChildren(element types.IElement) string {
 	txt := element.GetText()
 	if txt == "" {
 		for _, child := range element.GetChildren() {

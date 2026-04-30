@@ -3,7 +3,7 @@ package runtime
 import (
 	"context"
 	"trek/internal/engine/decision"
-	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/decision/shared/types"
 	engineplugin "trek/internal/engine/plugin"
 )
 
@@ -15,21 +15,21 @@ func GetAction(activity string, xmlDescOfGuiTree string) string {
 	return operate.ToJSON()
 }
 
-func GetActionOpt(activity string, xmlDescOfGuiTree string) *types2.ActionCommand {
+func GetActionOpt(activity string, xmlDescOfGuiTree string) *types.ActionCommand {
 	return GetActionOptWithInput(activity, xmlDescOfGuiTree, nil)
 }
 
-func GetActionOptWithInput(activity string, xmlDescOfGuiTree string, screenshot []byte) *types2.ActionCommand {
+func GetActionOptWithInput(activity string, xmlDescOfGuiTree string, screenshot []byte) *types.ActionCommand {
 	return getActionOptWithOptions(activity, xmlDescOfGuiTree, screenshot, ActionRequestOptions{})
 }
 
-func GetBlockRecoveryActionOptWithInput(activity string, xmlDescOfGuiTree string, screenshot []byte) *types2.ActionCommand {
+func GetBlockRecoveryActionOptWithInput(activity string, xmlDescOfGuiTree string, screenshot []byte) *types.ActionCommand {
 	return getActionOptWithOptions(activity, xmlDescOfGuiTree, screenshot, ActionRequestOptions{
 		BlockRecovery: true,
 	})
 }
 
-func getActionOptWithOptions(activity string, xmlDescOfGuiTree string, screenshot []byte, options ActionRequestOptions) *types2.ActionCommand {
+func getActionOptWithOptions(activity string, xmlDescOfGuiTree string, screenshot []byte, options ActionRequestOptions) *types.ActionCommand {
 	if defaultOrchestrator == nil {
 		defaultOrchestrator = newDefaultOrchestrator()
 	}

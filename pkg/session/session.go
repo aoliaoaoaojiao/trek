@@ -9,7 +9,6 @@ import (
 	candidateproviders "trek/internal/engine/candidate/providers"
 	"trek/internal/engine/decision"
 	"trek/internal/engine/decision/shared/types"
-	decisiontypes "trek/internal/engine/decision/shared/types"
 	"trek/internal/engine/memory"
 	engineruntime "trek/internal/engine/runtime"
 	enginestate "trek/internal/engine/state"
@@ -86,7 +85,7 @@ type recoveryLLMCandidateProvider interface {
 }
 
 type stateReader interface {
-	GetCurrentState() decisiontypes.IState
+	GetCurrentState() types.IState
 }
 
 // NewSession 创建新会话
@@ -237,7 +236,7 @@ func (s *Session) initTraversalAlgorithm() {
 		return
 	}
 	rawAgent := model.GetAgent(decision.DefaultDeviceID)
-	agent, ok := rawAgent.(decisiontypes.IAgent)
+	agent, ok := rawAgent.(types.IAgent)
 	if !ok || agent == nil {
 		return
 	}
@@ -613,7 +612,7 @@ type sessionStateProvider struct {
 	reader stateReader
 }
 
-func (p *sessionStateProvider) CurrentState() decisiontypes.IState {
+func (p *sessionStateProvider) CurrentState() types.IState {
 	if p == nil || p.reader == nil {
 		return nil
 	}

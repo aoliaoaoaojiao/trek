@@ -2,7 +2,7 @@ package elements
 
 import (
 	"testing"
-	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/decision/shared/types"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -61,5 +61,5 @@ func TestAndroidElementScrollType(t *testing.T) {
 	xml := `<node class="uia.widget.ListView" scrollable="true" bounds="[0,0][10,10]"/>`
 	elem, err := CreateAndroidElementFromXml(xml)
 	assert.NoError(t, err)
-	assert.Equal(t, types2.Vertical, elem.(*AndroidElement).GetScrollType())
+	assert.Equal(t, types.Vertical, elem.(*AndroidElement).GetScrollType())
 }

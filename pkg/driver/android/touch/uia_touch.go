@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/decision/shared/types"
 	"trek/pkg/driver/android/uia"
 	"trek/pkg/driver/common"
 )
@@ -30,7 +30,7 @@ type UIATouch struct {
 }
 
 type pointerState struct {
-	point  types2.Point
+	point  types.Point
 	isDown bool
 }
 
@@ -45,7 +45,7 @@ type actionSource struct {
 	Actions    []map[string]interface{} `json:"actions"`
 }
 
-func (u *UIATouch) Click(point types2.Point) error {
+func (u *UIATouch) Click(point types.Point) error {
 	return u.performPointerSequence(pointerID(0), []map[string]interface{}{
 		pointerMoveAction(point, 0),
 		pointerDownAction(),
@@ -54,7 +54,7 @@ func (u *UIATouch) Click(point types2.Point) error {
 	}, true)
 }
 
-func (u *UIATouch) LongClick(point types2.Point, duration int64) error {
+func (u *UIATouch) LongClick(point types.Point, duration int64) error {
 	if duration < 0 {
 		return fmt.Errorf("long click duration must be >= 0, current: %d", duration)
 	}
@@ -68,7 +68,7 @@ func (u *UIATouch) LongClick(point types2.Point, duration int64) error {
 }
 
 // Swipe 使用 W3C Actions 执行滑动。
-func (u *UIATouch) Swipe(startPoint types2.Point, endPoint types2.Point, step int64, duration int64) error {
+func (u *UIATouch) Swipe(startPoint types.Point, endPoint types.Point, step int64, duration int64) error {
 	if duration <= 0 {
 		duration = defaultSwipeMS
 		if step > 0 {
@@ -85,7 +85,7 @@ func (u *UIATouch) Swipe(startPoint types2.Point, endPoint types2.Point, step in
 	}, true)
 }
 
-func (u *UIATouch) Pinch(centerPoint types2.Point, startDistance float64, endDistance float64, duration int64) error {
+func (u *UIATouch) Pinch(centerPoint types.Point, startDistance float64, endDistance float64, duration int64) error {
 	if u.UiaClient == nil {
 		return common.NoUIAClientErr
 	}
@@ -102,10 +102,10 @@ func (u *UIATouch) Pinch(centerPoint types2.Point, startDistance float64, endDis
 	startHalfDist := startDistance / 2
 	endHalfDist := endDistance / 2
 
-	finger0Start := types2.Point{X: centerPoint.X - startHalfDist, Y: centerPoint.Y}
-	finger0End := types2.Point{X: centerPoint.X - endHalfDist, Y: centerPoint.Y}
-	finger1Start := types2.Point{X: centerPoint.X + startHalfDist, Y: centerPoint.Y}
-	finger1End := types2.Point{X: centerPoint.X + endHalfDist, Y: centerPoint.Y}
+	finger0Start := types.Point{X: centerPoint.X - startHalfDist, Y: centerPoint.Y}
+	finger0End := types.Point{X: centerPoint.X - endHalfDist, Y: centerPoint.Y}
+	finger1Start := types.Point{X: centerPoint.X + startHalfDist, Y: centerPoint.Y}
+	finger1End := types.Point{X: centerPoint.X + endHalfDist, Y: centerPoint.Y}
 
 	return u.performActions([]actionSource{
 		newPointerSource(pointerID(0), []map[string]interface{}{
@@ -126,7 +126,7 @@ func (u *UIATouch) Pinch(centerPoint types2.Point, startDistance float64, endDis
 }
 
 // Drag 使用与 Swipe 相同的 W3C Actions 实现。
-func (u *UIATouch) Drag(startPoint types2.Point, endPoint types2.Point, duration int, elementId, destElId string) error {
+func (u *UIATouch) Drag(startPoint types.Point, endPoint types.Point, duration int, elementId, destElId string) error {
 	return u.Swipe(startPoint, endPoint, 0, int64(duration))
 }
 
@@ -254,7 +254,7 @@ func pointerID(fingerID int64) string {
 	return fmt.Sprintf("finger-%d", fingerID)
 }
 
-func pointerMoveAction(point types2.Point, duration int64) map[string]interface{} {
+func pointerMoveAction(point types.Point, duration int64) map[string]interface{} {
 	return map[string]interface{}{
 		"type":     "pointerMove",
 		"duration": duration,

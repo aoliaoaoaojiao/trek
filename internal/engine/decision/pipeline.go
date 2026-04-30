@@ -2,7 +2,7 @@ package decision
 
 import (
 	"context"
-	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/decision/shared/types"
 )
 
 // Perceptor 负责把原始输入转换为统一 Observation。
@@ -20,15 +20,15 @@ type Observation struct {
 	PageName   string
 	XMLDesc    string
 	Screenshot []byte
-	Element    types2.IElement
+	Element    types.IElement
 }
 
 type CandidateAction struct {
-	Operate *types2.ActionCommand
+	Operate *types.ActionCommand
 	Source  string
 }
 
 type ExecutionPlan struct {
-	Operate  *types2.ActionCommand
+	Operate  *types.ActionCommand
 	Strategy string
 }

@@ -2,7 +2,7 @@ package runtime
 
 import (
 	"trek/internal/engine/decision"
-	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/decision/shared/types"
 	perceptionfusion "trek/internal/engine/perception/fusion"
 	engineplugin "trek/internal/engine/plugin"
 )
@@ -38,7 +38,7 @@ type PageSnapshotInput struct {
 
 type StepResultInput struct {
 	Step       int
-	Action     *types2.ActionCommand
+	Action     *types.ActionCommand
 	Success    bool
 	Error      string
 	DurationMs int64

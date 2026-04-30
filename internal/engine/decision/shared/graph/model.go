@@ -1,18 +1,18 @@
 package graph
 
 import (
-	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/decision/shared/types"
 )
 
 type Model struct {
 	graph           *Graph
-	deviceAgentMap  map[string]types2.IAgent
+	deviceAgentMap  map[string]types.IAgent
 	packageName     string
 	netActionTaskID int
-	staticConfig    types2.StaticConfigProvider
+	staticConfig    types.StaticConfigProvider
 }
 
-type IAgentCreator func(model *Model, deviceType types2.DeviceType) (types2.IAgent, error)
+type IAgentCreator func(model *Model, deviceType types.DeviceType) (types.IAgent, error)
 
 var agentCreators = make(map[string]IAgentCreator)
 
@@ -23,7 +23,7 @@ func RegisterAgentCreator(algorithmType string, agentCreator IAgentCreator) {
 func NewModel(packageName string) *Model {
 	return &Model{
 		graph:          NewGraph(),
-		deviceAgentMap: make(map[string]types2.IAgent),
+		deviceAgentMap: make(map[string]types.IAgent),
 		packageName:    packageName,
 	}
 }
@@ -37,8 +37,8 @@ func (m *Model) SetGraph(graph *Graph) {
 }
 
 // AddAgent adds an agent to the model.
-func (m *Model) AddAgent(deviceID string, algorithmType string, deviceType types2.DeviceType) types2.IAgent {
-	var graphListener types2.IAgent
+func (m *Model) AddAgent(deviceID string, algorithmType string, deviceType types.DeviceType) types.IAgent {
+	var graphListener types.IAgent
 	agentCreator := agentCreators[algorithmType]
 	if agentCreator != nil {
 		created, err := agentCreator(m, deviceType)
@@ -80,11 +80,11 @@ func (m *Model) AgentSize() int {
 	return len(m.deviceAgentMap)
 }
 
-func (m *Model) SetStaticConfig(cfg types2.StaticConfigProvider) {
+func (m *Model) SetStaticConfig(cfg types.StaticConfigProvider) {
 	m.staticConfig = cfg
 }
 
-func (m *Model) GetStaticConfig() types2.StaticConfigProvider {
+func (m *Model) GetStaticConfig() types.StaticConfigProvider {
 	return m.staticConfig
 }
 

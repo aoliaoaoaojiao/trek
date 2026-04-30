@@ -2,7 +2,7 @@ package plugin
 
 import (
 	"fmt"
-	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/decision/shared/types"
 
 	"trek/internal/scripting"
 )
@@ -40,7 +40,7 @@ func (a *Adapter) TransformPage(ctx PluginContext) (PageSnapshot, error) {
 	return a.manager.TransformPage(ctx)
 }
 
-func (a *Adapter) BeforeDecide(ctx PluginContext) (*types2.ActionCommand, bool, error) {
+func (a *Adapter) BeforeDecide(ctx PluginContext) (*types.ActionCommand, bool, error) {
 	if a == nil || a.manager == nil {
 		return nil, false, nil
 	}
@@ -52,7 +52,7 @@ func (a *Adapter) BeforeDecide(ctx PluginContext) (*types2.ActionCommand, bool, 
 	return cmd, true, err
 }
 
-func (a *Adapter) AfterDecide(ctx PluginContext, cmd *types2.ActionCommand) (*types2.ActionCommand, bool, error) {
+func (a *Adapter) AfterDecide(ctx PluginContext, cmd *types.ActionCommand) (*types.ActionCommand, bool, error) {
 	if a == nil || a.manager == nil || cmd == nil {
 		return cmd, false, nil
 	}
@@ -89,14 +89,14 @@ func (a *Adapter) OnDestroy(ctx LifecycleContext) error {
 	return a.manager.OnDestroy(ctx)
 }
 
-func ToActionCommand(action scripting.Action) (*types2.ActionCommand, error) {
-	cmd := types2.NewActionCommand()
+func ToActionCommand(action scripting.Action) (*types.ActionCommand, error) {
+	cmd := types.NewActionCommand()
 	actionType, ok := toEngineActionType(action.Type)
 	if !ok {
 		return nil, fmt.Errorf("涓嶆敮鎸佺殑鑴氭湰鍔ㄤ綔: %s", action.Type)
 	}
 	cmd.Act = actionType
-	cmd.Pos = types2.Rect{
+	cmd.Pos = types.Rect{
 		Left:   action.Bounds[0],
 		Top:    action.Bounds[1],
 		Right:  action.Bounds[2],
@@ -111,7 +111,7 @@ func ToActionCommand(action scripting.Action) (*types2.ActionCommand, error) {
 	return cmd, nil
 }
 
-func FromActionCommand(cmd *types2.ActionCommand) scripting.Action {
+func FromActionCommand(cmd *types.ActionCommand) scripting.Action {
 	if cmd == nil {
 		return scripting.Action{Type: scripting.ActionNOP}
 	}
@@ -127,64 +127,64 @@ func FromActionCommand(cmd *types2.ActionCommand) scripting.Action {
 	}
 }
 
-func toEngineActionType(actionType scripting.ActionType) (types2.ActionType, bool) {
+func toEngineActionType(actionType scripting.ActionType) (types.ActionType, bool) {
 	switch actionType {
 	case scripting.ActionNOP:
-		return types2.NOP, true
+		return types.NOP, true
 	case scripting.ActionBack:
-		return types2.BACK, true
+		return types.BACK, true
 	case scripting.ActionClick:
-		return types2.CLICK, true
+		return types.CLICK, true
 	case scripting.ActionLongClick:
-		return types2.LONG_CLICK, true
+		return types.LONG_CLICK, true
 	case scripting.ActionScrollTopDown:
-		return types2.SCROLL_TOP_DOWN, true
+		return types.SCROLL_TOP_DOWN, true
 	case scripting.ActionScrollBottomUp:
-		return types2.SCROLL_BOTTOM_UP, true
+		return types.SCROLL_BOTTOM_UP, true
 	case scripting.ActionScrollLeftRight:
-		return types2.SCROLL_LEFT_RIGHT, true
+		return types.SCROLL_LEFT_RIGHT, true
 	case scripting.ActionScrollRightLeft:
-		return types2.SCROLL_RIGHT_LEFT, true
+		return types.SCROLL_RIGHT_LEFT, true
 	case scripting.ActionScrollBottomUpN:
-		return types2.SCROLL_BOTTOM_UP_N, true
+		return types.SCROLL_BOTTOM_UP_N, true
 	case scripting.ActionStart:
-		return types2.START, true
+		return types.START, true
 	case scripting.ActionRestart:
-		return types2.RESTART, true
+		return types.RESTART, true
 	case scripting.ActionCleanRestart:
-		return types2.CLEAN_RESTART, true
+		return types.CLEAN_RESTART, true
 	case scripting.ActionActivate:
-		return types2.ACTIVATE, true
+		return types.ACTIVATE, true
 	default:
-		return types2.NOP, false
+		return types.NOP, false
 	}
 }
 
-func fromEngineActionType(actionType types2.ActionType) scripting.ActionType {
+func fromEngineActionType(actionType types.ActionType) scripting.ActionType {
 	switch actionType {
-	case types2.BACK:
+	case types.BACK:
 		return scripting.ActionBack
-	case types2.CLICK:
+	case types.CLICK:
 		return scripting.ActionClick
-	case types2.LONG_CLICK:
+	case types.LONG_CLICK:
 		return scripting.ActionLongClick
-	case types2.SCROLL_TOP_DOWN:
+	case types.SCROLL_TOP_DOWN:
 		return scripting.ActionScrollTopDown
-	case types2.SCROLL_BOTTOM_UP:
+	case types.SCROLL_BOTTOM_UP:
 		return scripting.ActionScrollBottomUp
-	case types2.SCROLL_LEFT_RIGHT:
+	case types.SCROLL_LEFT_RIGHT:
 		return scripting.ActionScrollLeftRight
-	case types2.SCROLL_RIGHT_LEFT:
+	case types.SCROLL_RIGHT_LEFT:
 		return scripting.ActionScrollRightLeft
-	case types2.SCROLL_BOTTOM_UP_N:
+	case types.SCROLL_BOTTOM_UP_N:
 		return scripting.ActionScrollBottomUpN
-	case types2.START:
+	case types.START:
 		return scripting.ActionStart
-	case types2.RESTART:
+	case types.RESTART:
 		return scripting.ActionRestart
-	case types2.CLEAN_RESTART:
+	case types.CLEAN_RESTART:
 		return scripting.ActionCleanRestart
-	case types2.ACTIVATE:
+	case types.ACTIVATE:
 		return scripting.ActionActivate
 	default:
 		return scripting.ActionNOP

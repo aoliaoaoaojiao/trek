@@ -2,7 +2,7 @@ package graph
 
 import (
 	"time"
-	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/decision/shared/types"
 	"trek/logger"
 )
 
@@ -14,14 +14,14 @@ type ActionCounter struct {
 
 func NewActionCounter() *ActionCounter {
 	return &ActionCounter{
-		actCount: make([]int64, types2.ActTypeSize),
+		actCount: make([]int64, types.ActTypeSize),
 		total:    0,
 	}
 }
 
-func (a *ActionCounter) CountAction(action *types2.StatefulAction) {
+func (a *ActionCounter) CountAction(action *types.StatefulAction) {
 	actionType := action.GetActionType()
-	if actionType < types2.ActTypeSize {
+	if actionType < types.ActTypeSize {
 		a.actCount[actionType]++
 	}
 	a.total++
@@ -31,8 +31,8 @@ func (a *ActionCounter) GetTotal() int64 {
 	return a.total
 }
 
-func (a *ActionCounter) GetCount(actionType types2.ActionType) int64 {
-	if actionType < types2.ActTypeSize {
+func (a *ActionCounter) GetCount(actionType types.ActionType) int64 {
+	if actionType < types.ActTypeSize {
 		return a.actCount[actionType]
 	}
 	return 0
@@ -46,17 +46,17 @@ type VisitCountReward struct {
 
 // Graph is a strategy-agnostic state graph core.
 type Graph struct {
-	types2.Node
-	states    types2.StateSet
-	listeners []types2.IGraphListener
+	types.Node
+	states    types.StateSet
+	listeners []types.IGraphListener
 	timeStamp time.Time
 }
 
 func NewGraph() *Graph {
 	return &Graph{
-		Node:      *types2.NewNode(),
-		states:    make(types2.StateSet),
-		listeners: make([]types2.IGraphListener, 0),
+		Node:      *types.NewNode(),
+		states:    make(types.StateSet),
+		listeners: make([]types.IGraphListener, 0),
 		timeStamp: time.Now(),
 	}
 }
@@ -69,11 +69,11 @@ func (g *Graph) GetTimestamp() time.Time {
 	return g.timeStamp
 }
 
-func (g *Graph) AddListener(listener types2.IGraphListener) {
+func (g *Graph) AddListener(listener types.IGraphListener) {
 	g.listeners = append(g.listeners, listener)
 }
 
-func (g *Graph) AddState(state types2.IState) types2.IState {
+func (g *Graph) AddState(state types.IState) types.IState {
 	stateHash := state.Hash()
 	existingState, found := g.states[stateHash]
 
@@ -94,7 +94,7 @@ func (g *Graph) AddState(state types2.IState) types2.IState {
 	return state
 }
 
-func (g *Graph) GetStates() types2.StateSet {
+func (g *Graph) GetStates() types.StateSet {
 	return g.states
 }
 
@@ -102,7 +102,7 @@ func (g *Graph) UpdateTimeStamp() {
 	g.timeStamp = time.Now()
 }
 
-func (g *Graph) NotifyNewStateEvents(node types2.IState) {
+func (g *Graph) NotifyNewStateEvents(node types.IState) {
 	for _, listener := range g.listeners {
 		listener.OnAddNode(node)
 	}

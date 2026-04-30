@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 	"trek/internal/engine/candidate"
-	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/decision/shared/types"
 	enginestate "trek/internal/engine/state"
 )
 
@@ -28,7 +28,7 @@ func TestStoreAppendAndReloadFromJSONL(t *testing.T) {
 		TraceSignature:   "CLICK>BACK",
 		Mode:             string(enginestate.ModeRecover),
 		Candidate: candidate.NewCandidate(
-			&types2.ActionCommand{Act: types2.BACK},
+			&types.ActionCommand{Act: types.BACK},
 			candidate.SourceMemory,
 			"返回上一层",
 			map[string]string{"memory_key": "page-a"},
@@ -59,7 +59,7 @@ func TestStoreAppendAndReloadFromJSONL(t *testing.T) {
 	if items[0].PageSignature != "page-a" {
 		t.Fatalf("重载记录 page signature 错误: %s", items[0].PageSignature)
 	}
-	if items[0].Candidate.Command == nil || items[0].Candidate.Command.Act != types2.BACK {
+	if items[0].Candidate.Command == nil || items[0].Candidate.Command.Act != types.BACK {
 		t.Fatalf("重载记录 candidate 命令错误: %+v", items[0].Candidate.Command)
 	}
 }
@@ -82,7 +82,7 @@ func TestStoreFindPrefersExactMatch(t *testing.T) {
 		TraceSignature:   "CLICK>BACK",
 		Mode:             string(enginestate.ModeRecover),
 		Candidate: candidate.NewCandidate(
-			&types2.ActionCommand{Act: types2.BACK},
+			&types.ActionCommand{Act: types.BACK},
 			candidate.SourceMemory,
 			"exact",
 			nil,
@@ -100,7 +100,7 @@ func TestStoreFindPrefersExactMatch(t *testing.T) {
 		TraceSignature:   "",
 		Mode:             string(enginestate.ModeRecover),
 		Candidate: candidate.NewCandidate(
-			&types2.ActionCommand{Act: types2.CLICK},
+			&types.ActionCommand{Act: types.CLICK},
 			candidate.SourceMemory,
 			"fallback",
 			nil,
@@ -156,7 +156,7 @@ func TestStoreAppendOutcomeAggregatesByMemoryKeyAndAction(t *testing.T) {
 		TraceSignature:   "BACK",
 		Mode:             string(enginestate.ModeRecover),
 		Candidate: candidate.NewCandidate(
-			&types2.ActionCommand{Act: types2.BACK},
+			&types.ActionCommand{Act: types.BACK},
 			candidate.SourceMemory,
 			"返回上一层",
 			nil,

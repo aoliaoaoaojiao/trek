@@ -1,17 +1,17 @@
 package reuse
 
 import (
-	types2 "trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/decision/shared/types"
 	"trek/logger"
 )
 
 type ReuseState struct {
 	pageName string
-	types2.State
+	types.State
 }
 
 func NewReuseState(pageName string) *ReuseState {
-	baseState := types2.NewStateWithPage(pageName)
+	baseState := types.NewStateWithPage(pageName)
 	rs := &ReuseState{
 		pageName: pageName,
 		State:    *baseState,
@@ -20,21 +20,21 @@ func NewReuseState(pageName string) *ReuseState {
 	return rs
 }
 
-func Create(pageName string, element types2.IElement) *ReuseState {
+func Create(pageName string, element types.IElement) *ReuseState {
 	state := NewReuseState(pageName)
 	logger.Debugf("Creating ReuseState for page: %s", pageName)
 	state.buildState(element)
 	return state
 }
 
-func (rs *ReuseState) buildState(element types2.IElement) {
+func (rs *ReuseState) buildState(element types.IElement) {
 	rs.buildStateFromElement(nil, element)
 	rs.mergeWidgetsInState()
 	rs.buildHashForState()
 	rs.buildActionForState()
 }
 
-func (rs *ReuseState) buildStateFromElement(parentWidget *RichWidget, element types2.IElement) {
+func (rs *ReuseState) buildStateFromElement(parentWidget *RichWidget, element types.IElement) {
 	rs.buildBoundingBox(element)
 
 	widget := NewRichWidget(parentWidget, element)
@@ -46,15 +46,15 @@ func (rs *ReuseState) buildStateFromElement(parentWidget *RichWidget, element ty
 	}
 }
 
-func (rs *ReuseState) buildFromElement(parentWidget *RichWidget, elem types2.IElement) {
+func (rs *ReuseState) buildFromElement(parentWidget *RichWidget, elem types.IElement) {
 	rs.buildBoundingBox(elem)
 
-	var parentWidgetPtr *types2.Widget
+	var parentWidgetPtr *types.Widget
 	if parentWidget != nil {
 		parentWidgetPtr = &parentWidget.Widget
 	}
 
-	widget := types2.NewWidget(parentWidgetPtr, elem)
+	widget := types.NewWidget(parentWidgetPtr, elem)
 	rs.Widgets = append(rs.Widgets, widget)
 	logger.Debugf("Added Widget to state, total widgets now: %d, widget=%s", len(rs.Widgets), widget.String())
 
@@ -63,13 +63,13 @@ func (rs *ReuseState) buildFromElement(parentWidget *RichWidget, elem types2.IEl
 	}
 }
 
-func (rs *ReuseState) buildBoundingBox(element types2.IElement) {
+func (rs *ReuseState) buildBoundingBox(element types.IElement) {
 	if element.GetParent() == nil && !element.GetBounds().IsEmpty() {
-		if types2.SameRootBounds.IsEmpty() && element != nil {
-			types2.SameRootBounds = element.GetBounds()
+		if types.SameRootBounds.IsEmpty() && element != nil {
+			types.SameRootBounds = element.GetBounds()
 		}
-		if types2.SameRootBounds.Equal(element.GetBounds()) {
-			rs.RootBounds = types2.SameRootBounds
+		if types.SameRootBounds.Equal(element.GetBounds()) {
+			rs.RootBounds = types.SameRootBounds
 		} else {
 			rs.RootBounds = element.GetBounds()
 		}
@@ -78,7 +78,7 @@ func (rs *ReuseState) buildBoundingBox(element types2.IElement) {
 
 func (rs *ReuseState) buildHashForState() {
 	pageHash := (HashString(rs.PageName) * 31) << 5
-	pageHash ^= (CombineHashWidgets(rs.Widgets, types2.STATE_WITH_WIDGET_ORDER) << 1)
+	pageHash ^= (CombineHashWidgets(rs.Widgets, types.STATE_WITH_WIDGET_ORDER) << 1)
 	rs.Hashcode = pageHash
 }
 
@@ -96,13 +96,13 @@ func (rs *ReuseState) buildActionForState() {
 		}
 	}
 
-	backAction := NewPageNameAction(rs.PageName, nil, types2.BACK)
+	backAction := NewPageNameAction(rs.PageName, nil, types.BACK)
 	rs.Actions = append(rs.Actions, &backAction.StatefulAction)
 	logger.Debugf("Added back action to state, total actions now: %d", len(rs.Actions))
 }
 
 func (rs *ReuseState) mergeWidgetsInState() {
-	mergedWidgets := make(types2.WidgetSet)
+	mergedWidgets := make(types.WidgetSet)
 	mergedCount := rs.MergeWidgetAndStoreMergedOnes(mergedWidgets)
 	logger.Debugf("MergeWidgetAndStoreMergedOnes merged %d widgets", mergedCount)
 }

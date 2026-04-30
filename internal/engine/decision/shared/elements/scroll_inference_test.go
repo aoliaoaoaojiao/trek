@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	coretypes "trek/internal/engine/core/types"
-	types2 "trek/internal/engine/decision/shared/types"
+	types "trek/internal/engine/decision/shared/types"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -106,10 +106,10 @@ func TestInferScrollableElements(t *testing.T) {
 			scrollType := elem.GetScrollType()
 
 			if tt.wantNone {
-				assert.Equal(t, types2.NONE, scrollType, "应该保持 NONE")
+				assert.Equal(t, types.NONE, scrollType, "应该保持 NONE")
 			}
 			if tt.wantInferred {
-				assert.NotEqual(t, types2.NONE, scrollType, "应该被推断为可滚动")
+				assert.NotEqual(t, types.NONE, scrollType, "应该被推断为可滚动")
 			}
 		})
 	}

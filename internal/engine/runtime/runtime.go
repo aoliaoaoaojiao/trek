@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"trek/internal/engine/config"
 	"trek/internal/engine/decision"
 	_ "trek/internal/engine/decision/reuse"
 	types2 "trek/internal/engine/decision/shared/types"
@@ -309,11 +310,11 @@ func LoadConfigFile(resourceMappingFilepath string) error {
 	if err := LoadPluginsFromConfig(resourceMappingFilepath); err != nil {
 		return err
 	}
-	configManager := engineModel.GetConfigManager()
-	if configManager == nil {
+	cfg := config.GetInstance()
+	if cfg == nil {
 		return nil
 	}
-	return configManager.LoadResourceMapping(resourceMappingFilepath)
+	return cfg.LoadResourceMapping(resourceMappingFilepath)
 }
 
 func LoadPluginsFromConfig(configPath string) error {
@@ -398,14 +399,11 @@ func LoadResMapping(resMappingFilepath string) {
 }
 
 func CheckPointIsInBlackRects(activity string, pointX float32, pointY float32) bool {
-	if engineModel == nil {
+	cfg := config.GetInstance()
+	if cfg == nil {
 		return false
 	}
-	configManager := engineModel.GetConfigManager()
-	if configManager == nil {
-		return false
-	}
-	return configManager.CheckPointIsInBlackRects(activity, int(pointX), int(pointY))
+	return cfg.CheckPointIsInBlackRects(activity, int(pointX), int(pointY))
 }
 
 func GetNativeVersion() string {
@@ -440,7 +438,7 @@ func GetObservationMode() string {
 
 func ensureModel(packageName string) *decision.Model {
 	if engineModel == nil {
-		engineModel = decision.NewModel(packageName)
+		engineModel = decision.NewModel(packageName, config.GetInstance())
 	}
 	return engineModel
 }

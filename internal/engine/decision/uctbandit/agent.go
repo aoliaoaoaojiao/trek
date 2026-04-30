@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
-	engineconfig "trek/internal/engine/config"
 	"trek/internal/engine/decision/shared/types"
 	"trek/logger"
 
@@ -66,6 +65,7 @@ type Agent struct {
 	config       AgentConfig
 	rewardConfig RewardConfig
 
+	staticConfig  types.StaticConfigProvider
 	algorithmType string
 }
 
@@ -73,13 +73,18 @@ type Agent struct {
 var _ types.IAgent = (*Agent)(nil)
 
 // NewAgent 创建新的 UCT+Bandit Agent。
-func NewAgent(model *sharedgraph.Model, deviceType types.DeviceType) *Agent {
+func NewAgent(model *sharedgraph.Model, deviceType types.DeviceType, staticCfg ...types.StaticConfigProvider) *Agent {
 	rewardConfig := DefaultRewardConfig()
 	plannerConfig := DefaultPlannerConfig()
 	banditConfig := DefaultBanditConfig()
 	agentConfig := DefaultAgentConfig()
 
 	stats := NewStatsStore()
+
+	var sc types.StaticConfigProvider
+	if len(staticCfg) > 0 && staticCfg[0] != nil {
+		sc = staticCfg[0]
+	}
 
 	return &Agent{
 		model:                model,
@@ -90,6 +95,7 @@ func NewAgent(model *sharedgraph.Model, deviceType types.DeviceType) *Agent {
 		stats:                stats,
 		config:               agentConfig,
 		rewardConfig:         rewardConfig,
+		staticConfig:         sc,
 		algorithmType:        "uctbandit",
 		recentStates:         make([]string, 0, 10),
 		recentSelections:     make([]string, 0, 10),
@@ -596,12 +602,10 @@ func (a *Agent) increaseEdgeTransitionCount(prevStateID, nextStateID string) int
 }
 
 func (a *Agent) applyStaticConfigOverrides() {
-	manager := engineconfig.GetInstance()
-	if manager == nil {
+	if a.staticConfig == nil {
 		return
 	}
-	staticCfg := manager.GetStaticConfig()
-	uctCfg := staticCfg.UCTBandit
+	uctCfg := a.staticConfig.GetUCTBanditConfig()
 
 	if uctCfg.HasTwoStateLoopPenalty {
 		a.rewardConfig.TwoStateLoopPenalty = uctCfg.TwoStateLoopPenalty

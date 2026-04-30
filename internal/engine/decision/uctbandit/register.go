@@ -7,7 +7,7 @@ import (
 )
 
 var createUctBanditAgent = func(m *sharedgraph.Model, deviceType types.DeviceType) (types.IAgent, error) {
-	agent := NewAgent(m, deviceType)
+	agent := NewAgent(m, deviceType, m.GetStaticConfig())
 	return agent, nil
 }
 

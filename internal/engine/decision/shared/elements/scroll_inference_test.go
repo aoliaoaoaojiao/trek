@@ -3,6 +3,7 @@ package elements
 import (
 	"testing"
 
+	coretypes "trek/internal/engine/core/types"
 	types2 "trek/internal/engine/decision/shared/types"
 
 	"github.com/stretchr/testify/assert"
@@ -94,9 +95,9 @@ func TestInferScrollableElements(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			origThreshold := ScrollInferThreshold
-			defer func() { ScrollInferThreshold = origThreshold }()
-			ScrollInferThreshold = tt.threshold
+			origThreshold := coretypes.ScrollInferThreshold
+			defer func() { coretypes.ScrollInferThreshold = origThreshold }()
+			coretypes.ScrollInferThreshold = tt.threshold
 
 			elem, err := CreateAndroidElementFromXml(tt.xml)
 			assert.NoError(t, err)
@@ -115,5 +116,5 @@ func TestInferScrollableElements(t *testing.T) {
 }
 
 func TestScrollInferThresholdDefault(t *testing.T) {
-	assert.Equal(t, 5, ScrollInferThreshold)
+	assert.Equal(t, 5, coretypes.ScrollInferThreshold)
 }

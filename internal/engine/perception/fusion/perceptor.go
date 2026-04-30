@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"trek/internal/engine/decision"
-	"trek/internal/engine/perception"
 )
 
 // Mode 表示感知融合模式。
@@ -19,11 +18,11 @@ const (
 
 type Perceptor struct {
 	mode   Mode
-	xml    perception.Perceptor
-	vision perception.Perceptor
+	xml    decision.Perceptor
+	vision decision.Perceptor
 }
 
-func NewPerceptor(mode Mode, xmlPerceptor perception.Perceptor, visionPerceptor perception.Perceptor) (*Perceptor, error) {
+func NewPerceptor(mode Mode, xmlPerceptor decision.Perceptor, visionPerceptor decision.Perceptor) (*Perceptor, error) {
 	if xmlPerceptor == nil {
 		return nil, fmt.Errorf("xml perceptor is required")
 	}

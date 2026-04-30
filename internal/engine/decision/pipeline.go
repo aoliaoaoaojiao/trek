@@ -1,8 +1,14 @@
 package decision
 
 import (
+	"context"
 	types2 "trek/internal/engine/decision/shared/types"
 )
+
+// Perceptor 负责把原始输入转换为统一 Observation。
+type Perceptor interface {
+	Observe(ctx context.Context, input PerceptionInput) (*Observation, error)
+}
 
 type PerceptionInput struct {
 	PageName   string

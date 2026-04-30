@@ -6,14 +6,17 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"trek/internal/engine/decision/shared/elements"
-	types2 "trek/internal/engine/decision/shared/types"
+	coretypes "trek/internal/engine/core/types"
 	"trek/internal/scripting"
 	"trek/logger"
 )
 
+// 编译期接口检查
+var _ coretypes.ConfigProvider = (*Manager)(nil)
+var _ coretypes.StaticConfigProvider = (*Manager)(nil)
+
 type CustomAction struct {
-	types2.StatefulAction
+	coretypes.StatefulAction
 	Xpath              string
 	ResourceID         string
 	ContentDescription string
@@ -37,7 +40,7 @@ type CustomEvent struct {
 }
 
 type Manager struct {
-	currentActions          []types2.IAction
+	currentActions          []coretypes.IAction
 	customEvents            []*CustomEvent
 	randomInputText         bool
 	doInputFuzzing          bool
@@ -55,7 +58,7 @@ var instance *Manager
 func init() {
 	rand.Seed(time.Now().UnixNano())
 	instance = &Manager{
-		currentActions:          make([]types2.IAction, 0),
+		currentActions:          make([]coretypes.IAction, 0),
 		customEvents:            make([]*CustomEvent, 0),
 		randomInputText:         false,
 		doInputFuzzing:          true,
@@ -73,7 +76,7 @@ func GetInstance() *Manager {
 	return instance
 }
 
-func (m *Manager) ResolvePageAndGetSpecifiedAction(pageName string, rootXML types2.IElement) types2.IAction {
+func (m *Manager) ResolvePageAndGetSpecifiedAction(pageName string, rootXML coretypes.IElement) coretypes.IAction {
 	if rootXML != nil {
 		m.resolvePage(rootXML)
 	}
@@ -82,7 +85,7 @@ func (m *Manager) ResolvePageAndGetSpecifiedAction(pageName string, rootXML type
 		for _, customEvent := range m.customEvents {
 			eventRate := rand.Float64()
 			if eventRate < customEvent.Prob && customEvent.Times > 0 && customEvent.PageName == pageName {
-				m.currentActions = make([]types2.IAction, len(customEvent.Actions))
+				m.currentActions = make([]coretypes.IAction, len(customEvent.Actions))
 				for i, action := range customEvent.Actions {
 					m.currentActions[i] = action
 				}
@@ -107,11 +110,11 @@ func (m *Manager) ResolvePageAndGetSpecifiedAction(pageName string, rootXML type
 	return nil
 }
 
-func (m *Manager) resolvePage(rootXML types2.IElement) {
+func (m *Manager) resolvePage(rootXML coretypes.IElement) {
 	m.cachePageTexts(rootXML)
 }
 
-func (m *Manager) cachePageTexts(rootXML types2.IElement) {
+func (m *Manager) cachePageTexts(rootXML coretypes.IElement) {
 	if rootXML == nil {
 		return
 	}
@@ -124,7 +127,7 @@ func (m *Manager) cachePageTexts(rootXML types2.IElement) {
 	}
 }
 
-func (m *Manager) patchActionBounds(action *CustomAction, rootXML types2.IElement) bool {
+func (m *Manager) patchActionBounds(action *CustomAction, rootXML coretypes.IElement) bool {
 	_ = action
 	_ = rootXML
 	return true
@@ -134,12 +137,12 @@ func (m *Manager) SkipAllActionsFromModel() bool {
 	return m.skipAllActionsFromModel
 }
 
-func (m *Manager) PatchOperate(operate *types2.ActionCommand) {
+func (m *Manager) PatchOperate(operate *coretypes.ActionCommand) {
 	if !m.doInputFuzzing {
 		return
 	}
 
-	if operate.Editable && operate.Text == "" && (operate.Act == types2.CLICK || operate.Act == types2.LONG_CLICK) {
+	if operate.Editable && operate.Text == "" && (operate.Act == coretypes.CLICK || operate.Act == coretypes.LONG_CLICK) {
 		if m.randomInputText && len(m.inputTexts) > 0 {
 			randIdx := rand.Intn(len(m.inputTexts))
 			operate.Text = m.inputTexts[randIdx]
@@ -160,7 +163,7 @@ func (m *Manager) LoadResourceMapping(resourceMappingPath string) error {
 	m.resMapping = make(map[string]string)
 	m.blackRects = make(map[string][][4]int)
 	m.customEvents = make([]*CustomEvent, 0)
-	m.currentActions = make([]types2.IAction, 0)
+	m.currentActions = make([]coretypes.IAction, 0)
 	m.skipAllActionsFromModel = false
 	m.staticConfig = scripting.StaticConfig{}
 
@@ -180,7 +183,7 @@ func (m *Manager) LoadResourceMapping(resourceMappingPath string) error {
 	m.blackRects = staticConfig.BlackRects
 	m.skipAllActionsFromModel = staticConfig.SkipAll
 	if staticConfig.ScrollInferThreshold > 0 {
-		elements.ScrollInferThreshold = staticConfig.ScrollInferThreshold
+		coretypes.ScrollInferThreshold = staticConfig.ScrollInferThreshold
 	}
 	if staticConfig.Log.FileLevel != "" {
 		if err := logger.SetFileLevel(staticConfig.Log.FileLevel); err != nil {
@@ -197,7 +200,28 @@ func (m *Manager) GetStaticConfig() scripting.StaticConfig {
 	return m.staticConfig
 }
 
-func (m *CustomAction) ToActionCommand() *types2.ActionCommand {
+func (m *Manager) GetUCTBanditConfig() coretypes.UCTBanditStaticConfig {
+	if m == nil {
+		return coretypes.UCTBanditStaticConfig{}
+	}
+	uctCfg := m.staticConfig.UCTBandit
+	return coretypes.UCTBanditStaticConfig{
+		TwoStateLoopPenalty:      uctCfg.TwoStateLoopPenalty,
+		EdgeRepeatPenalty:        uctCfg.EdgeRepeatPenalty,
+		EdgeRepeatThreshold:      uctCfg.EdgeRepeatThreshold,
+		ActionCooldownPenalty:    uctCfg.ActionCooldownPenalty,
+		RecentActionWindow:       uctCfg.RecentActionWindow,
+		LoopEscapeExploreBoost:   uctCfg.LoopEscapeExploreBoost,
+		HasTwoStateLoopPenalty:   uctCfg.HasTwoStateLoopPenalty,
+		HasEdgeRepeatPenalty:     uctCfg.HasEdgeRepeatPenalty,
+		HasEdgeRepeatThreshold:   uctCfg.HasEdgeRepeatThreshold,
+		HasActionCooldownPenalty: uctCfg.HasActionCooldownPenalty,
+		HasRecentActionWindow:    uctCfg.HasRecentActionWindow,
+		HasLoopEscapeExploreBoost: uctCfg.HasLoopEscapeExploreBoost,
+	}
+}
+
+func (m *CustomAction) ToActionCommand() *coretypes.ActionCommand {
 	operate := m.StatefulAction.ToOperate()
 	operate.Text = m.Text
 	operate.Clear = m.ClearText
@@ -206,7 +230,7 @@ func (m *CustomAction) ToActionCommand() *types2.ActionCommand {
 	operate.WaitTime = m.WaitTime
 	operate.Throttle = float32(m.Throttle)
 	if len(m.Bounds) == 4 {
-		operate.Pos = types2.Rect{
+		operate.Pos = coretypes.Rect{
 			Left:   m.Bounds[0],
 			Top:    m.Bounds[1],
 			Right:  m.Bounds[2],

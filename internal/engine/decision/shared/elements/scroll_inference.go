@@ -5,11 +5,6 @@ import (
 	"trek/logger"
 )
 
-// ScrollInferThreshold 推断可滚动元素的最小可点击后代数量阈值。
-// 设为 0 禁用推断。默认值 5 表示：当一个非叶子、非滚动元素拥有 ≥5 个可点击后代时，
-// 推断它为可滚动容器。
-var ScrollInferThreshold = 5
-
 // InferScrollableElements 为未被标记 scrollable 但包含足够多可点击后代的元素推断滚动能力。
 // 使用后序遍历，优先标记最深层（最接近叶子）的合格容器，避免标记过于宽泛的祖先容器。
 // 这解决了 Poco/Unity 游戏中 UI 节点不声明 ScrollRect 组件导致缺少 SCROLL 动作的问题。

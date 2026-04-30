@@ -6,15 +6,14 @@ import (
 
 	"trek/internal/engine/decision"
 	"trek/internal/engine/decision/shared/types"
-	"trek/internal/engine/perception"
 	perceptionfusion "trek/internal/engine/perception/fusion"
 	perceptionvision "trek/internal/engine/perception/vision"
 	xmlperception "trek/internal/engine/perception/xml"
 )
 
-// Orchestrator 璐熻矗缂栨帓鎰熺煡銆佺瓥鐣ャ€佽鍒掑拰鎵ц娴佺▼銆?
+// Orchestrator 璐熻矗缂栨帓鎰熺煡銆佺瓥鐣ャ€佽鍒掑拰€佽鍒掑拰鎵ц娴佺▼銆?
 type Orchestrator struct {
-	perceptor perception.Perceptor
+	perceptor decision.Perceptor
 	policy    decision.Policy
 	planner   decision.Planner
 	actuator  Actuator

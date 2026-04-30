@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	coretypes "trek/internal/engine/core/types"
 	"trek/internal/engine/decision/shared/tool"
 	types2 "trek/internal/engine/decision/shared/types"
 	"trek/logger"
@@ -62,7 +63,7 @@ func CreateAndroidElementFromXml(xmlContent string) (types2.IElement, error) {
 
 	// 推断可滚动元素：在可点击性修正完成后，
 	// 为包含足够多可点击后代但未被标记为可滚动的容器推断滚动能力。
-	InferScrollableElements(elem, ScrollInferThreshold)
+	InferScrollableElements(elem, coretypes.ScrollInferThreshold)
 
 	return elem, nil
 }

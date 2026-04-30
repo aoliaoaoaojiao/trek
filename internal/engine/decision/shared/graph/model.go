@@ -9,6 +9,7 @@ type Model struct {
 	deviceAgentMap  map[string]types2.IAgent
 	packageName     string
 	netActionTaskID int
+	staticConfig    types2.StaticConfigProvider
 }
 
 type IAgentCreator func(model *Model, deviceType types2.DeviceType) (types2.IAgent, error)
@@ -77,6 +78,14 @@ func (m *Model) StateSize() int {
 
 func (m *Model) AgentSize() int {
 	return len(m.deviceAgentMap)
+}
+
+func (m *Model) SetStaticConfig(cfg types2.StaticConfigProvider) {
+	m.staticConfig = cfg
+}
+
+func (m *Model) GetStaticConfig() types2.StaticConfigProvider {
+	return m.staticConfig
 }
 
 const DefaultDeviceID = "0000001"

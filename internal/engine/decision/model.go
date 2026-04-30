@@ -2,7 +2,6 @@ package decision
 
 import (
 	"fmt"
-	"trek/internal/engine/config"
 	sharedgraph "trek/internal/engine/decision/shared/graph"
 	types2 "trek/internal/engine/decision/shared/types"
 	"trek/logger"
@@ -10,7 +9,7 @@ import (
 
 type Model struct {
 	core          *sharedgraph.Model
-	configManager *config.Manager
+	configManager types2.ConfigProvider
 }
 
 type IAgentCreator = sharedgraph.IAgentCreator
@@ -31,11 +30,17 @@ func RegisterElementCreator(eleType string, creator IElementCreator) {
 	elementCreators[eleType] = creator
 }
 
-func NewModel(packageName string) *Model {
-	return &Model{
-		core:          sharedgraph.NewModel(packageName),
-		configManager: config.GetInstance(),
+func NewModel(packageName string, cfg ...types2.ConfigProvider) *Model {
+	m := &Model{
+		core: sharedgraph.NewModel(packageName),
 	}
+	if len(cfg) > 0 && cfg[0] != nil {
+		m.configManager = cfg[0]
+		if scp, ok := cfg[0].(types2.StaticConfigProvider); ok {
+			m.core.SetStaticConfig(scp)
+		}
+	}
+	return m
 }
 
 func NewActionCounter() *ActionCounter {
@@ -74,14 +79,14 @@ func (m *Model) GetAgent(deviceID string) interface{} {
 	return m.core.GetAgent(deviceID)
 }
 
-func (m *Model) GetConfigManager() *config.Manager {
+func (m *Model) GetConfigManager() types2.ConfigProvider {
 	if m == nil {
 		return nil
 	}
 	return m.configManager
 }
 
-func (m *Model) SetConfigManager(manager *config.Manager) {
+func (m *Model) SetConfigManager(manager types2.ConfigProvider) {
 	if m == nil {
 		return
 	}
@@ -174,8 +179,8 @@ func (m *Model) GetOperateOpt(elem types2.IElement, pageName string, deviceID st
 	}
 
 	switch a := action.(type) {
-	case *config.CustomAction:
-		logger.Infof("selected custom action %s", a.ActionType.String())
+	case types2.CustomActionOperable:
+		logger.Infof("selected custom action %s", a.GetActionType().String())
 		operate = a.ToActionCommand()
 	case *types2.StatefulAction:
 		logger.Debugf("selected action %s", a.String())

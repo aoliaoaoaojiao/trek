@@ -9,6 +9,11 @@ import (
 )
 
 // blockDetector 检测遍历过程中的卡死模式：滚动无变化、同页面无移动、两状态乒乓、高访问低收益。
+//
+// 签名分为两层：
+//   - 骨架签名（pageFingerprintName）：仅基于 XML 结构，忽略动态文本/内容。
+//     同一界面动态加载数据后骨架不变，用于判断"是否在同一个界面"。
+//   - 内容签名（pageSignature）：基于页面名+XML 全文哈希，用于判断内容是否有实质变化。
 type blockDetector struct {
 	noChangeThreshold         int
 	twoStateLoopThreshold     int
@@ -17,8 +22,8 @@ type blockDetector struct {
 	consecutiveNoChangeScroll int
 	consecutiveSamePageNoMove int
 	consecutiveTwoStateLoops  int
-	recentAfterSignatures     []string
-	recentObservedSignatures  []string
+	recentAfterSigs           []string // 骨架签名，用于两状态乒乓检测（A→B→A→B）
+	recentObservedSigs        []string // 骨架签名，用于高访问低收益检测
 	pageVisitCount            map[string]int
 	lastReason                string
 }
@@ -37,13 +42,13 @@ func newBlockDetector(noChangeThreshold int, twoStateLoopThreshold int, highVisi
 		lowRewardWindow = defaultLowRewardWindow
 	}
 	return &blockDetector{
-		noChangeThreshold:        noChangeThreshold,
-		twoStateLoopThreshold:    twoStateLoopThreshold,
-		highVisitThreshold:       highVisitThreshold,
-		lowRewardWindow:          lowRewardWindow,
-		recentAfterSignatures:    make([]string, 0, 8),
-		recentObservedSignatures: make([]string, 0, 16),
-		pageVisitCount:           make(map[string]int),
+		noChangeThreshold:  noChangeThreshold,
+		twoStateLoopThreshold: twoStateLoopThreshold,
+		highVisitThreshold: highVisitThreshold,
+		lowRewardWindow:    lowRewardWindow,
+		recentAfterSigs:    make([]string, 0, 8),
+		recentObservedSigs: make([]string, 0, 16),
+		pageVisitCount:     make(map[string]int),
 	}
 }
 
@@ -58,14 +63,19 @@ func (d *blockDetector) Observe(cmd *types.ActionCommand, before session.PageSna
 	triggerTwoStateLoop := false
 	triggerHighVisitLowGain := false
 
-	beforeSig := pageSignature(before.PageName, before.XML)
-	afterSig := pageSignature(after.PageName, after.XML)
-	if !isBlockDetectorIgnoredAction(cmd.Act) && afterSig != "" {
-		d.pageVisitCount[afterSig]++
-		d.pushObservedSignature(afterSig)
+	// 骨架签名：仅基于 XML 结构，同一界面动态加载数据后不变
+	beforeSkeleton := pageFingerprintName(before.XML)
+	afterSkeleton := pageFingerprintName(after.XML)
+	// 内容签名：基于页面名+XML 全文，用于检测内容是否有实质变化
+	afterContent := pageSignature(after.PageName, after.XML)
+
+	if !isBlockDetectorIgnoredAction(cmd.Act) && afterSkeleton != "" {
+		d.pageVisitCount[afterSkeleton]++
+		d.pushObservedSignature(afterSkeleton)
 	}
 
-	if cmd.IsScrollAction() && beforeSig != "" && beforeSig == afterSig {
+	// 滚动无变化：骨架相同即为同一界面（内容可变，如动态加载）
+	if cmd.IsScrollAction() && beforeSkeleton != "" && beforeSkeleton == afterSkeleton {
 		d.consecutiveNoChangeScroll++
 	} else {
 		d.consecutiveNoChangeScroll = 0
@@ -75,8 +85,14 @@ func (d *blockDetector) Observe(cmd *types.ActionCommand, before session.PageSna
 		d.lastReason = blockReasonScrollNoChange
 	}
 
-	if !isBlockDetectorIgnoredAction(cmd.Act) && !cmd.IsScrollAction() && beforeSig != "" && beforeSig == afterSig {
-		d.consecutiveSamePageNoMove++
+	// 同页面无移动：骨架和内容都相同才算"什么都没发生"
+	if !isBlockDetectorIgnoredAction(cmd.Act) && !cmd.IsScrollAction() && beforeSkeleton != "" && beforeSkeleton == afterSkeleton {
+		beforeContent := pageSignature(before.PageName, before.XML)
+		if beforeContent == afterContent {
+			d.consecutiveSamePageNoMove++
+		} else {
+			d.consecutiveSamePageNoMove = 0
+		}
 	} else {
 		d.consecutiveSamePageNoMove = 0
 	}
@@ -85,8 +101,9 @@ func (d *blockDetector) Observe(cmd *types.ActionCommand, before session.PageSna
 		d.lastReason = blockReasonSamePageNoChange
 	}
 
-	if !isBlockDetectorIgnoredAction(cmd.Act) && beforeSig != "" && afterSig != "" && beforeSig != afterSig {
-		d.pushAfterSignature(afterSig)
+	// 两状态乒乓：用骨架签名检测 A→B→A→B 模式
+	if !isBlockDetectorIgnoredAction(cmd.Act) && beforeSkeleton != "" && afterSkeleton != "" && beforeSkeleton != afterSkeleton {
+		d.pushAfterSignature(afterSkeleton)
 		if d.isTailABAB() {
 			d.consecutiveTwoStateLoops++
 		} else {
@@ -100,7 +117,7 @@ func (d *blockDetector) Observe(cmd *types.ActionCommand, before session.PageSna
 		d.lastReason = blockReasonTwoStatePingPong
 	}
 
-	if d.isHighVisitLowReward(afterSig) {
+	if d.isHighVisitLowReward(afterSkeleton) {
 		triggerHighVisitLowGain = true
 		d.lastReason = blockReasonHighVisitLowGain
 	}
@@ -125,8 +142,8 @@ func (d *blockDetector) Reset() {
 	d.consecutiveNoChangeScroll = 0
 	d.consecutiveSamePageNoMove = 0
 	d.consecutiveTwoStateLoops = 0
-	d.recentAfterSignatures = d.recentAfterSignatures[:0]
-	d.recentObservedSignatures = d.recentObservedSignatures[:0]
+	d.recentAfterSigs = d.recentAfterSigs[:0]
+	d.recentObservedSigs = d.recentObservedSigs[:0]
 	clear(d.pageVisitCount)
 	d.lastReason = ""
 }
@@ -142,9 +159,9 @@ func (d *blockDetector) pushAfterSignature(sig string) {
 	if d == nil || strings.TrimSpace(sig) == "" {
 		return
 	}
-	d.recentAfterSignatures = append(d.recentAfterSignatures, sig)
-	if len(d.recentAfterSignatures) > 8 {
-		d.recentAfterSignatures = d.recentAfterSignatures[len(d.recentAfterSignatures)-8:]
+	d.recentAfterSigs = append(d.recentAfterSigs, sig)
+	if len(d.recentAfterSigs) > 8 {
+		d.recentAfterSigs = d.recentAfterSigs[len(d.recentAfterSigs)-8:]
 	}
 }
 
@@ -152,36 +169,36 @@ func (d *blockDetector) pushObservedSignature(sig string) {
 	if d == nil || strings.TrimSpace(sig) == "" {
 		return
 	}
-	d.recentObservedSignatures = append(d.recentObservedSignatures, sig)
-	if len(d.recentObservedSignatures) > 16 {
-		d.recentObservedSignatures = d.recentObservedSignatures[len(d.recentObservedSignatures)-16:]
+	d.recentObservedSigs = append(d.recentObservedSigs, sig)
+	if len(d.recentObservedSigs) > 16 {
+		d.recentObservedSigs = d.recentObservedSigs[len(d.recentObservedSigs)-16:]
 	}
 }
 
 func (d *blockDetector) isTailABAB() bool {
-	if d == nil || len(d.recentAfterSignatures) < 4 {
+	if d == nil || len(d.recentAfterSigs) < 4 {
 		return false
 	}
-	n := len(d.recentAfterSignatures)
-	a := d.recentAfterSignatures[n-4]
-	b := d.recentAfterSignatures[n-3]
-	c := d.recentAfterSignatures[n-2]
-	e := d.recentAfterSignatures[n-1]
+	n := len(d.recentAfterSigs)
+	a := d.recentAfterSigs[n-4]
+	b := d.recentAfterSigs[n-3]
+	c := d.recentAfterSigs[n-2]
+	e := d.recentAfterSigs[n-1]
 	return a == c && b == e && a != b
 }
 
-func (d *blockDetector) isHighVisitLowReward(afterSig string) bool {
-	if d == nil || strings.TrimSpace(afterSig) == "" {
+func (d *blockDetector) isHighVisitLowReward(afterSkeleton string) bool {
+	if d == nil || strings.TrimSpace(afterSkeleton) == "" {
 		return false
 	}
-	if d.pageVisitCount[afterSig] < d.highVisitThreshold {
+	if d.pageVisitCount[afterSkeleton] < d.highVisitThreshold {
 		return false
 	}
-	if d.lowRewardWindow <= 0 || len(d.recentObservedSignatures) < d.lowRewardWindow {
+	if d.lowRewardWindow <= 0 || len(d.recentObservedSigs) < d.lowRewardWindow {
 		return false
 	}
-	start := len(d.recentObservedSignatures) - d.lowRewardWindow
-	tail := d.recentObservedSignatures[start:]
+	start := len(d.recentObservedSigs) - d.lowRewardWindow
+	tail := d.recentObservedSigs[start:]
 	unique := make(map[string]struct{}, len(tail))
 	for _, sig := range tail {
 		if sig == "" {

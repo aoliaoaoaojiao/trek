@@ -109,6 +109,9 @@ func NewSession(config Config) *Session {
 func (s *Session) initRecoveryMemoryProvider() {
 	path := strings.TrimSpace(s.config.RecoveryMemoryFile)
 	if path == "" {
+		path = strings.TrimSpace(os.Getenv("RECOVERY_MEMORY_FILE"))
+	}
+	if path == "" {
 		return
 	}
 	store, err := memory.NewStore(path)

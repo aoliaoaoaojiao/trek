@@ -3,10 +3,12 @@ package runtime
 import (
 	"context"
 	"errors"
+	"path/filepath"
+	"strings"
 	"trek/internal/engine/decision"
 	_ "trek/internal/engine/decision/reuse"
-	_ "trek/internal/engine/decision/uctbandit"
 	types2 "trek/internal/engine/decision/shared/types"
+	_ "trek/internal/engine/decision/uctbandit"
 	perceptionfusion "trek/internal/engine/perception/fusion"
 	engineplugin "trek/internal/engine/plugin"
 	"trek/internal/scripting"
@@ -39,7 +41,95 @@ type StepResultInput struct {
 var engineModel *decision.Model
 var observationMode = perceptionfusion.ModeXMLOnly
 var defaultOrchestrator = newDefaultOrchestrator()
-var scriptPlugin *engineplugin.Adapter
+var scriptPlugin scriptPluginRunner
+
+type scriptPluginRunner interface {
+	TransformPage(ctx engineplugin.PluginContext) (engineplugin.PageSnapshot, error)
+	BeforeDecide(ctx engineplugin.PluginContext) (*types2.ActionCommand, bool, error)
+	AfterDecide(ctx engineplugin.PluginContext, cmd *types2.ActionCommand) (*types2.ActionCommand, bool, error)
+	OnStepResult(ctx engineplugin.StepResultContext) error
+}
+
+type pluginChain struct {
+	items []*engineplugin.Adapter
+}
+
+func newPluginChain(items []*engineplugin.Adapter) *pluginChain {
+	normalized := make([]*engineplugin.Adapter, 0, len(items))
+	for _, item := range items {
+		if item != nil {
+			normalized = append(normalized, item)
+		}
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return &pluginChain{items: normalized}
+}
+
+func (c *pluginChain) TransformPage(ctx engineplugin.PluginContext) (engineplugin.PageSnapshot, error) {
+	if c == nil || len(c.items) == 0 {
+		return ctx.Page, nil
+	}
+	page := ctx.Page
+	for _, item := range c.items {
+		nextCtx := ctx
+		nextCtx.Page = page
+		nextPage, err := item.TransformPage(nextCtx)
+		if err != nil {
+			return page, err
+		}
+		page = nextPage
+	}
+	return page, nil
+}
+
+func (c *pluginChain) BeforeDecide(ctx engineplugin.PluginContext) (*types2.ActionCommand, bool, error) {
+	if c == nil || len(c.items) == 0 {
+		return nil, false, nil
+	}
+	for _, item := range c.items {
+		cmd, handled, err := item.BeforeDecide(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		if handled {
+			return cmd, true, nil
+		}
+	}
+	return nil, false, nil
+}
+
+func (c *pluginChain) AfterDecide(ctx engineplugin.PluginContext, cmd *types2.ActionCommand) (*types2.ActionCommand, bool, error) {
+	if c == nil || len(c.items) == 0 {
+		return cmd, false, nil
+	}
+	current := cmd
+	handledAny := false
+	for _, item := range c.items {
+		next, handled, err := item.AfterDecide(ctx, current)
+		if err != nil {
+			return current, handledAny, err
+		}
+		if handled {
+			handledAny = true
+			current = next
+		}
+	}
+	return current, handledAny, nil
+}
+
+func (c *pluginChain) OnStepResult(ctx engineplugin.StepResultContext) error {
+	if c == nil || len(c.items) == 0 {
+		return nil
+	}
+	for _, item := range c.items {
+		if err := item.OnStepResult(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 func GetAction(activity string, xmlDescOfGuiTree string) string {
 	operate := GetActionOpt(activity, xmlDescOfGuiTree)
@@ -172,11 +262,45 @@ func LoadConfigFile(resourceMappingFilepath string) error {
 	if err := LoadScriptPlugin(resourceMappingFilepath); err != nil {
 		return err
 	}
+	if err := LoadPluginsFromConfig(resourceMappingFilepath); err != nil {
+		return err
+	}
 	configManager := engineModel.GetConfigManager()
 	if configManager == nil {
 		return nil
 	}
 	return configManager.LoadResourceMapping(resourceMappingFilepath)
+}
+
+func LoadPluginsFromConfig(configPath string) error {
+	cfg, err := scripting.LoadStaticConfigFile(configPath)
+	if err != nil {
+		return err
+	}
+	if len(cfg.Plugins) == 0 {
+		return nil
+	}
+	baseDir := filepath.Dir(configPath)
+	adapters := make([]*engineplugin.Adapter, 0, len(cfg.Plugins))
+	for _, item := range cfg.Plugins {
+		path := strings.TrimSpace(item)
+		if path == "" {
+			continue
+		}
+		if !filepath.IsAbs(path) {
+			path = filepath.Clean(filepath.Join(baseDir, path))
+		}
+		plugin, loadErr := engineplugin.LoadFile(path)
+		if loadErr != nil {
+			if errors.Is(loadErr, scripting.ErrPluginNotFound) {
+				continue
+			}
+			return loadErr
+		}
+		adapters = append(adapters, plugin)
+	}
+	scriptPlugin = newPluginChain(adapters)
+	return nil
 }
 
 func OnStepResult(input StepResultInput) error {

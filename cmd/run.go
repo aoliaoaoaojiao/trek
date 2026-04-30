@@ -22,31 +22,23 @@ import (
 
 // runOptions 存储 run 子命令的标志值。
 var runOptions = struct {
-	packageName                       string
-	deviceSerial                      string
-	configPath                        string
-	recoveryMemoryFile                string
-	exploreOCRTimeout                 time.Duration
-	recoveryCooldownSteps             int
-	recoveryLLMTimeout                time.Duration
-	recoveryLLMMaxCalls               int
-	recoveryLLMWindowSteps            int
-	recoveryTwoStateLoopThreshold     int
-	recoveryHighVisitThreshold        int
-	recoveryLowRewardWindow           int
-	candidateAmbiguityTopGapThreshold float64
-	highValuePageVisitLimit           int
-	candidateRiskDropThreshold        float64
-	candidateMinFusionScore           float64
-	algorithm                         string
-	maxSteps                          int
-	maxDuration                       time.Duration
-	stepInterval                      time.Duration
-	captureScreenshot                 bool
-	keepStepRecords                   bool
-	probePageName                     bool
-	autoCurrentApp                    bool
+	packageName       string
+	deviceSerial      string
+	configPath        string
+	algorithm         string
+	maxSteps          int
+	maxDuration       time.Duration
+	stepInterval      time.Duration
+	captureScreenshot bool
+	keepStepRecords   bool
+	probePageName     bool
+	autoCurrentApp    bool
 }{}
+
+var (
+	captureScreenshotCLISet bool
+	keepStepRecordsCLISet   bool
+)
 
 // runCmd 定义 run 子命令。
 var runCmd = &cobra.Command{
@@ -54,6 +46,8 @@ var runCmd = &cobra.Command{
 	Short: "执行 monkey 测试",
 	Long:  `在连接的 Android 设备上执行 Smart Monkey UI 自动化遍历测试。`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		captureScreenshotCLISet = cmd.Flags().Lookup("capture-screenshot").Changed
+		keepStepRecordsCLISet = cmd.Flags().Lookup("keep-step-records").Changed
 		return runMonkey(logLevel, runOptions)
 	},
 }
@@ -64,19 +58,6 @@ func init() {
 	runCmd.Flags().StringVar(&runOptions.packageName, "package", "", "被测应用包名（必填，或使用 --auto-current-app 自动获取）")
 	runCmd.Flags().StringVar(&runOptions.deviceSerial, "serial", "", "设备序列号（可选，默认自动选择）")
 	runCmd.Flags().StringVar(&runOptions.configPath, "config", "", "配置文件路径（可选，仅支持 .js，支持绝对/相对路径）")
-	runCmd.Flags().StringVar(&runOptions.recoveryMemoryFile, "recovery-memory-file", "", "恢复经验库 jsonl 文件路径（可选）")
-	runCmd.Flags().DurationVar(&runOptions.exploreOCRTimeout, "explore-ocr-timeout", 10*time.Second, "探索阶段 OCR 接口超时时间")
-	runCmd.Flags().IntVar(&runOptions.recoveryCooldownSteps, "recovery-cooldown-steps", 2, "恢复成功后的冷却步数，冷却期间抑制再次进入 recover")
-	runCmd.Flags().DurationVar(&runOptions.recoveryLLMTimeout, "recovery-llm-timeout", 15*time.Second, "恢复模式 LLM 接口超时时间")
-	runCmd.Flags().IntVar(&runOptions.recoveryLLMMaxCalls, "recovery-llm-max-calls", 0, "恢复模式下 LLM 候选最大调用次数（0 表示不限制）")
-	runCmd.Flags().IntVar(&runOptions.recoveryLLMWindowSteps, "recovery-llm-window-steps", 0, "恢复模式下 LLM 调用统计窗口步数（0 表示全局统计）")
-	runCmd.Flags().IntVar(&runOptions.recoveryTwoStateLoopThreshold, "recovery-two-state-loop-threshold", 2, "触发 two_state_ping_pong 的最小往返次数")
-	runCmd.Flags().IntVar(&runOptions.recoveryHighVisitThreshold, "recovery-high-visit-threshold", 8, "触发 high_visit_low_reward 的页面访问阈值")
-	runCmd.Flags().IntVar(&runOptions.recoveryLowRewardWindow, "recovery-low-reward-window", 6, "low_reward 判定窗口步数")
-	runCmd.Flags().Float64Var(&runOptions.candidateAmbiguityTopGapThreshold, "candidate-ambiguity-top-gap-threshold", 0.15, "候选前两名归一化权重差阈值，小于等于该值视为区分度低")
-	runCmd.Flags().IntVar(&runOptions.highValuePageVisitLimit, "high-value-page-visit-limit", 2, "Explore 模式下视为高价值页面的最大访问次数")
-	runCmd.Flags().Float64Var(&runOptions.candidateRiskDropThreshold, "candidate-risk-drop-threshold", 2.1, "候选融合时高风险直接剔除阈值（RiskScore >= 阈值）")
-	runCmd.Flags().Float64Var(&runOptions.candidateMinFusionScore, "candidate-min-fusion-score", -0.3, "候选融合最小得分阈值")
 	runCmd.Flags().StringVar(&runOptions.algorithm, "algorithm", "reuse", "决策算法（可选: reuse, uctbandit）")
 	runCmd.Flags().IntVar(&runOptions.maxSteps, "max-steps", 300, "最大执行步数")
 	runCmd.Flags().DurationVar(&runOptions.maxDuration, "max-duration", 10*time.Minute, "最大运行时长")
@@ -89,30 +70,17 @@ func init() {
 
 // runMonkey 执行 monkey 测试的核心逻辑。
 func runMonkey(logLevelStr string, opts struct {
-	packageName                       string
-	deviceSerial                      string
-	configPath                        string
-	recoveryMemoryFile                string
-	exploreOCRTimeout                 time.Duration
-	recoveryCooldownSteps             int
-	recoveryLLMTimeout                time.Duration
-	recoveryLLMMaxCalls               int
-	recoveryLLMWindowSteps            int
-	recoveryTwoStateLoopThreshold     int
-	recoveryHighVisitThreshold        int
-	recoveryLowRewardWindow           int
-	candidateAmbiguityTopGapThreshold float64
-	highValuePageVisitLimit           int
-	candidateRiskDropThreshold        float64
-	candidateMinFusionScore           float64
-	algorithm                         string
-	maxSteps                          int
-	maxDuration                       time.Duration
-	stepInterval                      time.Duration
-	captureScreenshot                 bool
-	keepStepRecords                   bool
-	probePageName                     bool
-	autoCurrentApp                    bool
+	packageName       string
+	deviceSerial      string
+	configPath        string
+	algorithm         string
+	maxSteps          int
+	maxDuration       time.Duration
+	stepInterval      time.Duration
+	captureScreenshot bool
+	keepStepRecords   bool
+	probePageName     bool
+	autoCurrentApp    bool
 }) error {
 	if err := logger.SetLevel(logLevelStr); err != nil {
 		return fmt.Errorf("设置日志级别失败: %w", err)
@@ -131,6 +99,60 @@ func runMonkey(logLevelStr string, opts struct {
 	if staticCfg.Algorithm != "" && opts.algorithm == "reuse" {
 		// 仅在 CLI 未显式指定（仍为默认值）时，使用配置文件中的值
 		opts.algorithm = staticCfg.Algorithm
+	}
+	if staticCfg.HasCaptureScreenshot && !captureScreenshotCLISet {
+		opts.captureScreenshot = staticCfg.CaptureScreenshot
+	}
+	if staticCfg.HasKeepStepRecords && !keepStepRecordsCLISet {
+		opts.keepStepRecords = staticCfg.KeepStepRecords
+	}
+	exploreOCRTimeout := 10 * time.Second
+	recoveryCooldownSteps := 2
+	recoveryLLMTimeout := 15 * time.Second
+	recoveryLLMMaxCalls := 0
+	recoveryLLMWindowSteps := 0
+	recoveryTwoStateLoopThreshold := 2
+	recoveryHighVisitThreshold := 8
+	recoveryLowRewardWindow := 6
+	candidateAmbiguityTopGapThreshold := 0.15
+	highValuePageVisitLimit := 2
+	candidateRiskDropThreshold := 2.1
+	candidateMinFusionScore := -0.3
+	if staticCfg.HasExploreOCRTimeout {
+		exploreOCRTimeout = time.Duration(staticCfg.ExploreOCRTimeoutMs) * time.Millisecond
+	}
+	if staticCfg.HasRecoveryCooldownSteps {
+		recoveryCooldownSteps = staticCfg.RecoveryCooldownSteps
+	}
+	if staticCfg.HasRecoveryLLMTimeout {
+		recoveryLLMTimeout = time.Duration(staticCfg.RecoveryLLMTimeoutMs) * time.Millisecond
+	}
+	if staticCfg.HasRecoveryLLMMaxCalls {
+		recoveryLLMMaxCalls = staticCfg.RecoveryLLMMaxCalls
+	}
+	if staticCfg.HasRecoveryLLMWindowSteps {
+		recoveryLLMWindowSteps = staticCfg.RecoveryLLMWindowSteps
+	}
+	if staticCfg.HasRecoveryTwoStateLoopThreshold {
+		recoveryTwoStateLoopThreshold = staticCfg.RecoveryTwoStateLoopThreshold
+	}
+	if staticCfg.HasRecoveryHighVisitThreshold {
+		recoveryHighVisitThreshold = staticCfg.RecoveryHighVisitThreshold
+	}
+	if staticCfg.HasRecoveryLowRewardWindow {
+		recoveryLowRewardWindow = staticCfg.RecoveryLowRewardWindow
+	}
+	if staticCfg.HasCandidateAmbiguityTopGapThreshold {
+		candidateAmbiguityTopGapThreshold = staticCfg.CandidateAmbiguityTopGapThreshold
+	}
+	if staticCfg.HasHighValuePageVisitLimit {
+		highValuePageVisitLimit = staticCfg.HighValuePageVisitLimit
+	}
+	if staticCfg.HasCandidateRiskDropThreshold {
+		candidateRiskDropThreshold = staticCfg.CandidateRiskDropThreshold
+	}
+	if staticCfg.HasCandidateMinFusionScore {
+		candidateMinFusionScore = staticCfg.CandidateMinFusionScore
 	}
 
 	pageSourceType, err := resolvePageSourceType(staticCfg)
@@ -184,9 +206,8 @@ func runMonkey(logLevelStr string, opts struct {
 	sess := session.NewSession(session.Config{
 		PackageName:        packageName,
 		Algorithm:          algorithmType,
-		RecoveryMemoryFile: strings.TrimSpace(opts.recoveryMemoryFile),
-		ExploreOCRTimeout:  opts.exploreOCRTimeout,
-		RecoveryLLMTimeout: opts.recoveryLLMTimeout,
+		ExploreOCRTimeout:  exploreOCRTimeout,
+		RecoveryLLMTimeout: recoveryLLMTimeout,
 	})
 	if opts.configPath != "" {
 		if err := sess.LoadConfigFile(opts.configPath); err != nil {
@@ -208,16 +229,16 @@ func runMonkey(logLevelStr string, opts struct {
 		StopOnCrash:                       true,
 		StopOnANR:                         true,
 		EffectiveTouchArea:                buildEffectiveTouchAreaConfig(staticCfg, packageName, deviceSerial),
-		RecoveryCooldownSteps:             opts.recoveryCooldownSteps,
-		RecoveryLLMBudgetMaxCalls:         opts.recoveryLLMMaxCalls,
-		RecoveryLLMBudgetWindowStep:       opts.recoveryLLMWindowSteps,
-		TwoStateLoopThreshold:             opts.recoveryTwoStateLoopThreshold,
-		HighVisitThreshold:                opts.recoveryHighVisitThreshold,
-		LowRewardWindow:                   opts.recoveryLowRewardWindow,
-		CandidateAmbiguityTopGapThreshold: opts.candidateAmbiguityTopGapThreshold,
-		HighValuePageVisitLimit:           opts.highValuePageVisitLimit,
-		CandidateRiskDropThreshold:        opts.candidateRiskDropThreshold,
-		CandidateMinFusionScore:           opts.candidateMinFusionScore,
+		RecoveryCooldownSteps:             recoveryCooldownSteps,
+		RecoveryLLMBudgetMaxCalls:         recoveryLLMMaxCalls,
+		RecoveryLLMBudgetWindowStep:       recoveryLLMWindowSteps,
+		TwoStateLoopThreshold:             recoveryTwoStateLoopThreshold,
+		HighVisitThreshold:                recoveryHighVisitThreshold,
+		LowRewardWindow:                   recoveryLowRewardWindow,
+		CandidateAmbiguityTopGapThreshold: candidateAmbiguityTopGapThreshold,
+		HighValuePageVisitLimit:           highValuePageVisitLimit,
+		CandidateRiskDropThreshold:        candidateRiskDropThreshold,
+		CandidateMinFusionScore:           candidateMinFusionScore,
 	}
 
 	if opts.probePageName {

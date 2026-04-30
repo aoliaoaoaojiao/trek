@@ -183,6 +183,7 @@ type PageNameStrategy =
   | "xml_fingerprint"
   | "structure_fingerprint"
   | "activity_only"
+type AlgorithmType = "random" | "reuse" | "server" | "uct_bandit"
 type PocoEngine =
   | "COCOS_2DX_JS"
   | "COCOS_2DX_C++"
@@ -192,16 +193,65 @@ type PocoEngine =
   | "UE4"
   | "COCOS_2DX_LUA"
 
+interface UCTBanditConfig {
+  /** 两状态循环惩罚系数 */
+  two_state_loop_penalty?: number
+  /** 边重复惩罚系数 */
+  edge_repeat_penalty?: number
+  /** 边重复惩罚触发阈值 */
+  edge_repeat_threshold?: number
+  /** 动作冷却惩罚系数 */
+  action_cooldown_penalty?: number
+  /** 近期动作窗口大小 */
+  recent_action_window?: number
+  /** 循环逃逸探索加成系数 */
+  loop_escape_explore_boost?: number
+}
+
 interface TrekStaticConfig {
   res_mapping?: Record<string, string>
   black_rects?: Record<string, Bounds[]>
   skip_all_actions_from_model?: boolean
+  /** 遍历算法：random / reuse / server / uct_bandit */
+  algorithm?: AlgorithmType
+  /** 外部插件脚本路径列表 */
+  plugins?: string[]
   /** 指定 monkey 运行使用的页面源类型 */
   page_source?: PageSourceType
   /** 指定 monkey 运行使用的触控模式 */
   touch_mode?: TouchMode
   /** 指定页面名生成策略（不填时按页面源自动选择） */
   page_name_strategy?: PageNameStrategy
+  /** 是否采集截图给决策层 */
+  capture_screenshot?: boolean
+  /** 是否保留每步记录 */
+  keep_step_records?: boolean
+  /** OCR 探索超时（毫秒） */
+  explore_ocr_timeout_ms?: number
+  /** 恢复 LLM 超时（毫秒） */
+  recovery_llm_timeout_ms?: number
+  /** 恢复冷却步数 */
+  recovery_cooldown_steps?: number
+  /** 恢复 LLM 最大调用次数 */
+  recovery_llm_max_calls?: number
+  /** 恢复 LLM 调用窗口步数 */
+  recovery_llm_window_steps?: number
+  /** 两状态循环检测阈值 */
+  recovery_two_state_loop_threshold?: number
+  /** 高访问页面阈值 */
+  recovery_high_visit_threshold?: number
+  /** 低奖励窗口大小 */
+  recovery_low_reward_window?: number
+  /** 候选歧义顶部间距阈值 */
+  candidate_ambiguity_top_gap_threshold?: number
+  /** 高价值页面访问上限 */
+  high_value_page_visit_limit?: number
+  /** 候选风险下降阈值 */
+  candidate_risk_drop_threshold?: number
+  /** 候选最小融合分数 */
+  candidate_min_fusion_score?: number
+  /** 滚动推断阈值 */
+  scroll_infer_threshold?: number
   /** UIA 端口相关配置 */
   uia?: {
     /** 设备端 UIA server 端口（默认 6790） */
@@ -231,6 +281,8 @@ interface TrekStaticConfig {
       bottom: number
     }
   }
+  /** UCT Bandit 算法参数 */
+  uct_bandit?: UCTBanditConfig
 }
 
 interface TrekActionAPI {

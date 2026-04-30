@@ -195,6 +195,109 @@ func TestLoadStaticConfigReadsPageNameStrategy(t *testing.T) {
 	}
 }
 
+func TestLoadStaticConfigReadsPlugins(t *testing.T) {
+	cfg, err := LoadStaticConfig(`const config = {
+  plugins: ["./plugins/a.plugin.js", "./plugins/b.plugin.js", ""]
+}`)
+	if err != nil {
+		t.Fatalf("加载静态配置失败: %v", err)
+	}
+	if len(cfg.Plugins) != 2 {
+		t.Fatalf("plugins 数量不符合预期: %+v", cfg.Plugins)
+	}
+	if cfg.Plugins[0] != "./plugins/a.plugin.js" || cfg.Plugins[1] != "./plugins/b.plugin.js" {
+		t.Fatalf("plugins 内容不符合预期: %+v", cfg.Plugins)
+	}
+}
+
+func TestLoadStaticConfigReadsCaptureScreenshotAndKeepStepRecords(t *testing.T) {
+	cfg, err := LoadStaticConfig(`const config = {
+  capture_screenshot: true,
+  keep_step_records: false
+}`)
+	if err != nil {
+		t.Fatalf("加载静态配置失败: %v", err)
+	}
+	if !cfg.HasCaptureScreenshot || !cfg.CaptureScreenshot {
+		t.Fatalf("capture_screenshot 不符合预期: %+v", cfg)
+	}
+	if !cfg.HasKeepStepRecords || cfg.KeepStepRecords {
+		t.Fatalf("keep_step_records 不符合预期: %+v", cfg)
+	}
+}
+
+func TestLoadStaticConfigReadsCamelCaseCaptureScreenshotAndKeepStepRecords(t *testing.T) {
+	cfg, err := LoadStaticConfig(`const config = {
+  captureScreenshot: false,
+  keepStepRecords: true
+}`)
+	if err != nil {
+		t.Fatalf("加载静态配置失败: %v", err)
+	}
+	if !cfg.HasCaptureScreenshot || cfg.CaptureScreenshot {
+		t.Fatalf("captureScreenshot 不符合预期: %+v", cfg)
+	}
+	if !cfg.HasKeepStepRecords || !cfg.KeepStepRecords {
+		t.Fatalf("keepStepRecords 不符合预期: %+v", cfg)
+	}
+}
+
+func TestLoadStaticConfigReadsRecoveryAndCandidateTuningSettings(t *testing.T) {
+	cfg, err := LoadStaticConfig(`const config = {
+  explore_ocr_timeout_ms: 12000,
+  recovery_llm_timeout_ms: 23000,
+  recovery_cooldown_steps: 3,
+  recovery_llm_max_calls: 5,
+  recovery_llm_window_steps: 40,
+  recovery_two_state_loop_threshold: 4,
+  recovery_high_visit_threshold: 9,
+  recovery_low_reward_window: 7,
+  candidate_ambiguity_top_gap_threshold: 0.12,
+  high_value_page_visit_limit: 3,
+  candidate_risk_drop_threshold: 1.9,
+  candidate_min_fusion_score: -0.2
+}`)
+	if err != nil {
+		t.Fatalf("加载静态配置失败: %v", err)
+	}
+	if !cfg.HasExploreOCRTimeout || cfg.ExploreOCRTimeoutMs != 12000 {
+		t.Fatalf("explore_ocr_timeout_ms 不符合预期: %+v", cfg)
+	}
+	if !cfg.HasRecoveryLLMTimeout || cfg.RecoveryLLMTimeoutMs != 23000 {
+		t.Fatalf("recovery_llm_timeout_ms 不符合预期: %+v", cfg)
+	}
+	if !cfg.HasRecoveryCooldownSteps || cfg.RecoveryCooldownSteps != 3 {
+		t.Fatalf("recovery_cooldown_steps 不符合预期: %+v", cfg)
+	}
+	if !cfg.HasRecoveryLLMMaxCalls || cfg.RecoveryLLMMaxCalls != 5 {
+		t.Fatalf("recovery_llm_max_calls 不符合预期: %+v", cfg)
+	}
+	if !cfg.HasRecoveryLLMWindowSteps || cfg.RecoveryLLMWindowSteps != 40 {
+		t.Fatalf("recovery_llm_window_steps 不符合预期: %+v", cfg)
+	}
+	if !cfg.HasRecoveryTwoStateLoopThreshold || cfg.RecoveryTwoStateLoopThreshold != 4 {
+		t.Fatalf("recovery_two_state_loop_threshold 不符合预期: %+v", cfg)
+	}
+	if !cfg.HasRecoveryHighVisitThreshold || cfg.RecoveryHighVisitThreshold != 9 {
+		t.Fatalf("recovery_high_visit_threshold 不符合预期: %+v", cfg)
+	}
+	if !cfg.HasRecoveryLowRewardWindow || cfg.RecoveryLowRewardWindow != 7 {
+		t.Fatalf("recovery_low_reward_window 不符合预期: %+v", cfg)
+	}
+	if !cfg.HasCandidateAmbiguityTopGapThreshold || cfg.CandidateAmbiguityTopGapThreshold != 0.12 {
+		t.Fatalf("candidate_ambiguity_top_gap_threshold 不符合预期: %+v", cfg)
+	}
+	if !cfg.HasHighValuePageVisitLimit || cfg.HighValuePageVisitLimit != 3 {
+		t.Fatalf("high_value_page_visit_limit 不符合预期: %+v", cfg)
+	}
+	if !cfg.HasCandidateRiskDropThreshold || cfg.CandidateRiskDropThreshold != 1.9 {
+		t.Fatalf("candidate_risk_drop_threshold 不符合预期: %+v", cfg)
+	}
+	if !cfg.HasCandidateMinFusionScore || cfg.CandidateMinFusionScore != -0.2 {
+		t.Fatalf("candidate_min_fusion_score 不符合预期: %+v", cfg)
+	}
+}
+
 func TestLoadStaticConfigReadsUIAAndPocoSettings(t *testing.T) {
 	cfg, err := LoadStaticConfig(`const config = {
   uia: {

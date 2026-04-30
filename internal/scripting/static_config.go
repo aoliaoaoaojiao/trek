@@ -11,19 +11,48 @@ import (
 )
 
 type StaticConfig struct {
-	ResMapping           map[string]string
-	BlackRects           map[string][][4]int
-	SkipAll              bool
-	PageSource           string
-	TouchMode            string
-	PageNameStrategy     string
-	Algorithm            string
-	ScrollInferThreshold int
-	UIA                  StaticUIAConfig
-	Poco                 StaticPocoConfig
-	Log                  StaticLogConfig
-	EffectiveTouchArea   *StaticEffectiveTouchArea
-	UCTBandit            StaticUCTBanditConfig
+	ResMapping                           map[string]string
+	BlackRects                           map[string][][4]int
+	SkipAll                              bool
+	PageSource                           string
+	TouchMode                            string
+	PageNameStrategy                     string
+	Algorithm                            string
+	Plugins                              []string
+	CaptureScreenshot                    bool
+	HasCaptureScreenshot                 bool
+	KeepStepRecords                      bool
+	HasKeepStepRecords                   bool
+	ExploreOCRTimeoutMs                  int
+	HasExploreOCRTimeout                 bool
+	RecoveryLLMTimeoutMs                 int
+	HasRecoveryLLMTimeout                bool
+	RecoveryCooldownSteps                int
+	HasRecoveryCooldownSteps             bool
+	RecoveryLLMMaxCalls                  int
+	HasRecoveryLLMMaxCalls               bool
+	RecoveryLLMWindowSteps               int
+	HasRecoveryLLMWindowSteps            bool
+	RecoveryTwoStateLoopThreshold        int
+	HasRecoveryTwoStateLoopThreshold     bool
+	RecoveryHighVisitThreshold           int
+	HasRecoveryHighVisitThreshold        bool
+	RecoveryLowRewardWindow              int
+	HasRecoveryLowRewardWindow           bool
+	CandidateAmbiguityTopGapThreshold    float64
+	HasCandidateAmbiguityTopGapThreshold bool
+	HighValuePageVisitLimit              int
+	HasHighValuePageVisitLimit           bool
+	CandidateRiskDropThreshold           float64
+	HasCandidateRiskDropThreshold        bool
+	CandidateMinFusionScore              float64
+	HasCandidateMinFusionScore           bool
+	ScrollInferThreshold                 int
+	UIA                                  StaticUIAConfig
+	Poco                                 StaticPocoConfig
+	Log                                  StaticLogConfig
+	EffectiveTouchArea                   *StaticEffectiveTouchArea
+	UCTBandit                            StaticUCTBanditConfig
 }
 
 type StaticLogConfig struct {
@@ -152,6 +181,226 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 	}
 	if algorithmValue := obj.Get("algorithm"); !isEmptyJSValue(algorithmValue) {
 		cfg.Algorithm = strings.TrimSpace(algorithmValue.String())
+	}
+	if pluginsValue := obj.Get("plugins"); !isEmptyJSValue(pluginsValue) {
+		pluginsObj := pluginsValue.ToObject(vm)
+		plugins := make([]string, 0, len(pluginsObj.Keys()))
+		for _, key := range pluginsObj.Keys() {
+			text := strings.TrimSpace(pluginsObj.Get(key).String())
+			if text == "" {
+				continue
+			}
+			plugins = append(plugins, text)
+		}
+		cfg.Plugins = plugins
+	}
+	if captureValue := obj.Get("capture_screenshot"); !isEmptyJSValue(captureValue) {
+		cfg.CaptureScreenshot = captureValue.ToBoolean()
+		cfg.HasCaptureScreenshot = true
+	}
+	if captureValue := obj.Get("captureScreenshot"); !cfg.HasCaptureScreenshot && !isEmptyJSValue(captureValue) {
+		cfg.CaptureScreenshot = captureValue.ToBoolean()
+		cfg.HasCaptureScreenshot = true
+	}
+	if keepValue := obj.Get("keep_step_records"); !isEmptyJSValue(keepValue) {
+		cfg.KeepStepRecords = keepValue.ToBoolean()
+		cfg.HasKeepStepRecords = true
+	}
+	if keepValue := obj.Get("keepStepRecords"); !cfg.HasKeepStepRecords && !isEmptyJSValue(keepValue) {
+		cfg.KeepStepRecords = keepValue.ToBoolean()
+		cfg.HasKeepStepRecords = true
+	}
+	if value := obj.Get("explore_ocr_timeout_ms"); !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("explore_ocr_timeout_ms 非法: %w", err)
+		}
+		cfg.ExploreOCRTimeoutMs = parsed
+		cfg.HasExploreOCRTimeout = true
+	}
+	if value := obj.Get("exploreOcrTimeoutMs"); !cfg.HasExploreOCRTimeout && !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("exploreOcrTimeoutMs 非法: %w", err)
+		}
+		cfg.ExploreOCRTimeoutMs = parsed
+		cfg.HasExploreOCRTimeout = true
+	}
+	if value := obj.Get("recovery_llm_timeout_ms"); !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("recovery_llm_timeout_ms 非法: %w", err)
+		}
+		cfg.RecoveryLLMTimeoutMs = parsed
+		cfg.HasRecoveryLLMTimeout = true
+	}
+	if value := obj.Get("recoveryLlmTimeoutMs"); !cfg.HasRecoveryLLMTimeout && !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("recoveryLlmTimeoutMs 非法: %w", err)
+		}
+		cfg.RecoveryLLMTimeoutMs = parsed
+		cfg.HasRecoveryLLMTimeout = true
+	}
+	if value := obj.Get("recovery_cooldown_steps"); !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("recovery_cooldown_steps 非法: %w", err)
+		}
+		cfg.RecoveryCooldownSteps = parsed
+		cfg.HasRecoveryCooldownSteps = true
+	}
+	if value := obj.Get("recoveryCooldownSteps"); !cfg.HasRecoveryCooldownSteps && !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("recoveryCooldownSteps 非法: %w", err)
+		}
+		cfg.RecoveryCooldownSteps = parsed
+		cfg.HasRecoveryCooldownSteps = true
+	}
+	if value := obj.Get("recovery_llm_max_calls"); !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("recovery_llm_max_calls 非法: %w", err)
+		}
+		cfg.RecoveryLLMMaxCalls = parsed
+		cfg.HasRecoveryLLMMaxCalls = true
+	}
+	if value := obj.Get("recoveryLlmMaxCalls"); !cfg.HasRecoveryLLMMaxCalls && !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("recoveryLlmMaxCalls 非法: %w", err)
+		}
+		cfg.RecoveryLLMMaxCalls = parsed
+		cfg.HasRecoveryLLMMaxCalls = true
+	}
+	if value := obj.Get("recovery_llm_window_steps"); !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("recovery_llm_window_steps 非法: %w", err)
+		}
+		cfg.RecoveryLLMWindowSteps = parsed
+		cfg.HasRecoveryLLMWindowSteps = true
+	}
+	if value := obj.Get("recoveryLlmWindowSteps"); !cfg.HasRecoveryLLMWindowSteps && !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("recoveryLlmWindowSteps 非法: %w", err)
+		}
+		cfg.RecoveryLLMWindowSteps = parsed
+		cfg.HasRecoveryLLMWindowSteps = true
+	}
+	if value := obj.Get("recovery_two_state_loop_threshold"); !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("recovery_two_state_loop_threshold 非法: %w", err)
+		}
+		cfg.RecoveryTwoStateLoopThreshold = parsed
+		cfg.HasRecoveryTwoStateLoopThreshold = true
+	}
+	if value := obj.Get("recoveryTwoStateLoopThreshold"); !cfg.HasRecoveryTwoStateLoopThreshold && !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("recoveryTwoStateLoopThreshold 非法: %w", err)
+		}
+		cfg.RecoveryTwoStateLoopThreshold = parsed
+		cfg.HasRecoveryTwoStateLoopThreshold = true
+	}
+	if value := obj.Get("recovery_high_visit_threshold"); !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("recovery_high_visit_threshold 非法: %w", err)
+		}
+		cfg.RecoveryHighVisitThreshold = parsed
+		cfg.HasRecoveryHighVisitThreshold = true
+	}
+	if value := obj.Get("recoveryHighVisitThreshold"); !cfg.HasRecoveryHighVisitThreshold && !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("recoveryHighVisitThreshold 非法: %w", err)
+		}
+		cfg.RecoveryHighVisitThreshold = parsed
+		cfg.HasRecoveryHighVisitThreshold = true
+	}
+	if value := obj.Get("recovery_low_reward_window"); !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("recovery_low_reward_window 非法: %w", err)
+		}
+		cfg.RecoveryLowRewardWindow = parsed
+		cfg.HasRecoveryLowRewardWindow = true
+	}
+	if value := obj.Get("recoveryLowRewardWindow"); !cfg.HasRecoveryLowRewardWindow && !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("recoveryLowRewardWindow 非法: %w", err)
+		}
+		cfg.RecoveryLowRewardWindow = parsed
+		cfg.HasRecoveryLowRewardWindow = true
+	}
+	if value := obj.Get("candidate_ambiguity_top_gap_threshold"); !isEmptyJSValue(value) {
+		parsed, err := floatFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("candidate_ambiguity_top_gap_threshold 非法: %w", err)
+		}
+		cfg.CandidateAmbiguityTopGapThreshold = parsed
+		cfg.HasCandidateAmbiguityTopGapThreshold = true
+	}
+	if value := obj.Get("candidateAmbiguityTopGapThreshold"); !cfg.HasCandidateAmbiguityTopGapThreshold && !isEmptyJSValue(value) {
+		parsed, err := floatFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("candidateAmbiguityTopGapThreshold 非法: %w", err)
+		}
+		cfg.CandidateAmbiguityTopGapThreshold = parsed
+		cfg.HasCandidateAmbiguityTopGapThreshold = true
+	}
+	if value := obj.Get("high_value_page_visit_limit"); !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("high_value_page_visit_limit 非法: %w", err)
+		}
+		cfg.HighValuePageVisitLimit = parsed
+		cfg.HasHighValuePageVisitLimit = true
+	}
+	if value := obj.Get("highValuePageVisitLimit"); !cfg.HasHighValuePageVisitLimit && !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("highValuePageVisitLimit 非法: %w", err)
+		}
+		cfg.HighValuePageVisitLimit = parsed
+		cfg.HasHighValuePageVisitLimit = true
+	}
+	if value := obj.Get("candidate_risk_drop_threshold"); !isEmptyJSValue(value) {
+		parsed, err := floatFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("candidate_risk_drop_threshold 非法: %w", err)
+		}
+		cfg.CandidateRiskDropThreshold = parsed
+		cfg.HasCandidateRiskDropThreshold = true
+	}
+	if value := obj.Get("candidateRiskDropThreshold"); !cfg.HasCandidateRiskDropThreshold && !isEmptyJSValue(value) {
+		parsed, err := floatFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("candidateRiskDropThreshold 非法: %w", err)
+		}
+		cfg.CandidateRiskDropThreshold = parsed
+		cfg.HasCandidateRiskDropThreshold = true
+	}
+	if value := obj.Get("candidate_min_fusion_score"); !isEmptyJSValue(value) {
+		parsed, err := floatFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("candidate_min_fusion_score 非法: %w", err)
+		}
+		cfg.CandidateMinFusionScore = parsed
+		cfg.HasCandidateMinFusionScore = true
+	}
+	if value := obj.Get("candidateMinFusionScore"); !cfg.HasCandidateMinFusionScore && !isEmptyJSValue(value) {
+		parsed, err := floatFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("candidateMinFusionScore 非法: %w", err)
+		}
+		cfg.CandidateMinFusionScore = parsed
+		cfg.HasCandidateMinFusionScore = true
 	}
 	if scrollInferValue := obj.Get("scroll_infer_threshold"); !isEmptyJSValue(scrollInferValue) {
 		threshold, err := intFromJSValue(scrollInferValue)

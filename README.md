@@ -60,6 +60,9 @@ Trek 启动时会自动加载项目根目录下的：
 PADDLEOCR_API_URL=your_paddleocr_api_url
 PADDLEOCR_API_KEY=your_aistudio_token
 
+# 恢复经验库（可选）
+RECOVERY_MEMORY_FILE=.\data\recovery.sqlite
+
 # 恢复链路 LLM（HTTP Provider）
 LLM_API_URL=https://your-llm-gateway/v1/chat/completions
 LLM_API_KEY=your_recovery_llm_key
@@ -90,6 +93,61 @@ trek run --auto-current-app --capture-screenshot
 
 ```bash
 trek run --package com.example.app --config .\config.generated.js --capture-screenshot
+```
+
+JS 配置可以为项目提供默认运行开关，例如：
+
+```js
+const config = {
+  capture_screenshot: true,
+  keep_step_records: false,
+}
+```
+
+这两个参数的优先级为：`CLI > JS 配置 > 默认值`。
+
+同样支持在 JS 中配置恢复与候选调参（示例）：
+
+```js
+const config = {
+  recovery_cooldown_steps: 2,
+  recovery_llm_max_calls: 3,
+  recovery_llm_window_steps: 30,
+  recovery_two_state_loop_threshold: 2,
+  recovery_high_visit_threshold: 8,
+  recovery_low_reward_window: 6,
+  candidate_ambiguity_top_gap_threshold: 0.15,
+  high_value_page_visit_limit: 2,
+  candidate_risk_drop_threshold: 2.1,
+  candidate_min_fusion_score: -0.3,
+}
+```
+
+推荐将“配置声明”和“行为插件”拆分，降低单文件复杂度：
+
+```js
+// config.js
+const config = {
+  page_source: "uia",
+  plugins: [
+    "./plugins/recovery.plugin.js",
+    "./plugins/anti_loop.plugin.js",
+  ],
+}
+```
+
+`plugins` 会按数组顺序加载并执行。
+
+仓库内可直接参考：
+
+- `examples/config-split/config.js`
+- `examples/config-split/plugins/normalize-page.plugin.js`
+- `examples/config-split/plugins/recovery-guard.plugin.js`
+
+运行示例：
+
+```bash
+trek run --package com.example.app --config .\examples\config-split\config.js
 ```
 
 ## 常用命令
@@ -141,21 +199,6 @@ trek run --package com.example.app --capture-screenshot
 
 就会自动启用 OCR 候选增强。
 
-### CLI 参数
-
-也可以通过命令行显式传入：
-
-```bash
-trek run --package com.example.app --capture-screenshot
-```
-
-如果你已经在 `.env` 或 `.env.local` 中配置了：
-
-- `PADDLEOCR_API_URL`
-- `PADDLEOCR_API_KEY`
-
-就不需要再额外传 OCR 参数。
-
 ## LLM 配置
 
 恢复链路支持两种方式：
@@ -165,6 +208,7 @@ trek run --package com.example.app --capture-screenshot
 
 常用环境变量：
 
+- `RECOVERY_MEMORY_FILE`
 - `LLM_API_URL`
 - `LLM_API_KEY`
 - `LLM_MODEL`
@@ -174,6 +218,7 @@ trek run --package com.example.app --capture-screenshot
 
 使用建议：
 
+- 恢复经验库可通过 `RECOVERY_MEMORY_FILE` 指定本地持久化路径
 - 通用 HTTP Provider：至少配置 `LLM_API_URL`、`LLM_MODEL` 和 `LLM_API_KEY`
 - OpenAI Responses Provider：至少配置 `OPENAI_MODEL` 和 `OPENAI_API_KEY`
 - 如果使用 OpenAI 兼容网关或代理，可额外配置 `OPENAI_API_URL`

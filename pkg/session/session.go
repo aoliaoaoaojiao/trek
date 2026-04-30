@@ -8,6 +8,7 @@ import (
 	"trek/internal/engine/candidate"
 	candidateproviders "trek/internal/engine/candidate/providers"
 	"trek/internal/engine/decision"
+	"trek/internal/engine/decision/monkey"
 	"trek/internal/engine/decision/shared/types"
 	"trek/internal/engine/memory"
 	engineruntime "trek/internal/engine/runtime"
@@ -257,6 +258,8 @@ func (s *Session) initTraversalAlgorithm() {
 		s.traversalAlgo = traversal.NewReuseAdapter(agent, provider)
 	case decision.AlgorithmUctBandit:
 		s.traversalAlgo = traversal.NewUCTBanditAdapter(agent, provider)
+	case decision.AlgorithmRandom:
+		s.traversalAlgo = monkey.NewMonkeyAdapter(agent, provider)
 	default:
 		s.traversalAlgo = nil
 	}

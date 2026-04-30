@@ -181,7 +181,7 @@ interface LifecycleContext {
  *   │  2. transformPage  — 引擎抓取页面源后调用，可改页面名和 XML。   │
  *   │                      注意：会被调用两次（页面名解析+决策阶段）。  │
  *   │  3. beforeDecide   — 决策前调用，返回 Action 可短路算法决策。    │
- *   │  4. [算法决策]      — Reuse / UctBandit 等选择执行计划。        │
+ *   │  4. [算法决策]      — Monkey / Reuse / UctBandit 选择执行计划。  │
  *   │  5. afterDecide    — 决策后调用，可改写/替换动作。               │
  *   │  6. [执行动作]      — 引擎执行最终动作。                        │
  *   │  7. onStepResult   — 执行完毕后调用，含结果/截图/健康信号。      │
@@ -243,7 +243,7 @@ type PageNameStrategy =
   | "xml_fingerprint"
   | "structure_fingerprint"
   | "activity_only"
-type AlgorithmType = "random" | "reuse" | "server" | "uct_bandit"
+type AlgorithmType = "random" | "monkey" | "reuse" | "uct_bandit"
 type PocoEngine =
   | "COCOS_2DX_JS"
   | "COCOS_2DX_C++"
@@ -296,7 +296,7 @@ interface TrekStaticConfig {
   res_mapping?: Record<string, string>
   black_rects?: Record<string, Bounds[]>
   skip_all_actions_from_model?: boolean
-  /** 遍历算法：random / reuse / server / uct_bandit。默认 "reuse" */
+  /** 遍历算法：random / monkey / reuse / uct_bandit。默认 "reuse" */
   algorithm?: AlgorithmType
   /** 外部插件脚本路径列表 */
   plugins?: string[]

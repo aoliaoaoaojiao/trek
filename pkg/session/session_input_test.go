@@ -15,7 +15,10 @@ func initSessionTestLogger(t *testing.T) {
 }
 
 func TestSessionSetObservationModeRoundTrip(t *testing.T) {
-	session := NewSession(Config{PackageName: "com.demo"})
+	session, err := NewSession(Config{PackageName: "com.demo"})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 
 	if err := session.SetObservationMode("hybrid"); err != nil {
 		t.Fatalf("set hybrid mode failed: %v", err)
@@ -30,9 +33,12 @@ func TestSessionSetObservationModeRoundTrip(t *testing.T) {
 }
 
 func TestSessionNextActionWithInputValidateEmptyPayload(t *testing.T) {
-	session := NewSession(Config{PackageName: "com.demo"})
+	session, err := NewSession(Config{PackageName: "com.demo"})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 
-	_, err := session.NextActionWithInput("MainActivity", ActionInput{})
+	_, err = session.NextActionWithInput("MainActivity", ActionInput{})
 	if err == nil {
 		t.Fatalf("expected error for empty action input")
 	}
@@ -41,11 +47,14 @@ func TestSessionNextActionWithInputValidateEmptyPayload(t *testing.T) {
 func TestSessionNextActionWithInputXMLCompatible(t *testing.T) {
 	initSessionTestLogger(t)
 
-	session := NewSession(Config{
+	session, err := NewSession(Config{
 		PackageName: "com.demo",
 		Algorithm:   decision.AlgorithmReuse,
 		DeviceType:  types.Phone,
 	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 	if err := session.SetObservationMode("xml-only"); err != nil {
 		t.Fatalf("set xml-only failed: %v", err)
 	}

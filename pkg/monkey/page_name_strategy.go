@@ -1,6 +1,7 @@
 package monkey
 
 import (
+	"context"
 	"strings"
 )
 
@@ -17,18 +18,18 @@ const (
 	PageNameStrategyStructureFingerprint = "structure_fingerprint"
 )
 
-func resolveBasePageNameByStrategy(r *Runner, xml string) string {
+func resolveBasePageNameByStrategy(ctx context.Context, r *Runner, xml string) string {
 	strategy := normalizePageNameStrategy(r.cfg.PageNameStrategy, r.cfg.PageSourceType)
 	switch strategy {
 	case PageNameStrategyXMLOnly, PageNameStrategyXMLFingerprint, PageNameStrategyStructureFingerprint:
 		return ResolvePageNameByStrategy(xml, r.cfg.PageNameResolver, strategy, r.cfg.PageSourceType, "")
 	case PageNameStrategyActivityOnly:
-		if activity, ok := resolveCurrentActivityName(r.driver); ok {
+		if activity, ok := resolveCurrentActivityName(ctx, r.driver); ok {
 			return ResolvePageNameByStrategy(xml, r.cfg.PageNameResolver, strategy, r.cfg.PageSourceType, activity)
 		}
 		return ResolvePageNameByStrategy(xml, r.cfg.PageNameResolver, strategy, r.cfg.PageSourceType, "")
 	case PageNameStrategyUIAActivityFirst:
-		if activity, ok := resolveCurrentActivityName(r.driver); ok {
+		if activity, ok := resolveCurrentActivityName(ctx, r.driver); ok {
 			return ResolvePageNameByStrategy(xml, r.cfg.PageNameResolver, strategy, r.cfg.PageSourceType, activity)
 		}
 		return ResolvePageNameByStrategy(xml, r.cfg.PageNameResolver, strategy, r.cfg.PageSourceType, "")
@@ -87,12 +88,12 @@ func normalizePageNameStrategy(strategy string, pageSourceType string) string {
 	}
 }
 
-func resolveCurrentActivityName(driver any) (string, bool) {
+func resolveCurrentActivityName(ctx context.Context, driver any) (string, bool) {
 	provider, ok := driver.(currentActivityProvider)
 	if !ok || provider == nil {
 		return "", false
 	}
-	activity, err := provider.GetCurrentActivity()
+	activity, err := provider.GetCurrentActivity(ctx)
 	if err != nil {
 		return "", false
 	}

@@ -2,6 +2,7 @@ package android
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -188,22 +189,22 @@ func (a *AndroidDriver) Back() error {
 	if a.device == nil {
 		return fmt.Errorf("device is nil")
 	}
-	_, err := a.device.RunShellCommand("input", "keyevent", "4")
+	_, err := a.device.RunShellCommand(context.Background(), "input", "keyevent", "4")
 	return err
 }
 
-func (a *AndroidDriver) GetCurrentPackage() (string, error) {
+func (a *AndroidDriver) GetCurrentPackage(ctx context.Context) (string, error) {
 	if a.device == nil {
 		return "", fmt.Errorf("device is nil")
 	}
-	return a.device.GetCurrentPackage()
+	return a.device.GetCurrentPackage(ctx)
 }
 
-func (a *AndroidDriver) GetCurrentActivity() (string, error) {
+func (a *AndroidDriver) GetCurrentActivity(ctx context.Context) (string, error) {
 	if a.device == nil {
 		return "", fmt.Errorf("device is nil")
 	}
-	return a.device.GetCurrentActivity()
+	return a.device.GetCurrentActivity(ctx)
 }
 
 // StartApp 启动指定包名应用。
@@ -214,7 +215,7 @@ func (a *AndroidDriver) StartApp(packageName string) error {
 	if a.device == nil {
 		return fmt.Errorf("device is nil")
 	}
-	_, err := a.device.RunShellCommand("monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1")
+	_, err := a.device.RunShellCommand(context.Background(), "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1")
 	return err
 }
 
@@ -226,11 +227,11 @@ func (a *AndroidDriver) RestartApp(packageName string, clean bool) error {
 	if a.device == nil {
 		return fmt.Errorf("device is nil")
 	}
-	if _, err := a.device.RunShellCommand("am", "force-stop", packageName); err != nil {
+	if _, err := a.device.RunShellCommand(context.Background(), "am", "force-stop", packageName); err != nil {
 		return err
 	}
 	if clean {
-		if _, err := a.device.RunShellCommand("pm", "clear", packageName); err != nil {
+		if _, err := a.device.RunShellCommand(context.Background(), "pm", "clear", packageName); err != nil {
 			return err
 		}
 	}
@@ -255,7 +256,7 @@ func (a *AndroidDriver) ClearLogcat() error {
 	if a.device == nil {
 		return fmt.Errorf("device is nil")
 	}
-	_, err := a.device.RunShellCommand("logcat", "-c")
+	_, err := a.device.RunShellCommand(context.Background(), "logcat", "-c")
 	return err
 }
 
@@ -269,7 +270,7 @@ func (a *AndroidDriver) CheckCrash(packageName string) (bool, error) {
 
 	pkgLower := strings.ToLower(strings.TrimSpace(packageName))
 
-	logcatOut, err := a.device.RunShellCommand("logcat", "-d", "-b", "main", "-t", "50", "AndroidRuntime:E", "*:S")
+	logcatOut, err := a.device.RunShellCommand(context.Background(), "logcat", "-d", "-b", "main", "-t", "50", "AndroidRuntime:E", "*:S")
 	if err != nil {
 		return false, err
 	}
@@ -292,7 +293,7 @@ func (a *AndroidDriver) CheckANR(packageName string) (bool, error) {
 	pkgLower := strings.ToLower(strings.TrimSpace(packageName))
 
 	// 只基于当前系统进程状态判断 ANR，避免被 dropbox 历史记录误判。
-	dumpsysOut, err := a.device.RunShellCommand("dumpsys", "activity", "processes")
+	dumpsysOut, err := a.device.RunShellCommand(context.Background(), "dumpsys", "activity", "processes")
 	if err != nil {
 		return false, err
 	}
@@ -303,7 +304,7 @@ func (a *AndroidDriver) CheckANR(packageName string) (bool, error) {
 		return strings.Contains(dumpLower, "notresponding=true"), nil
 	}
 
-	// 精确匹配“目标进程块内”的 notResponding=true，避免“包名出现 + 其他进程 ANR”误判。
+	// 精确匹配"目标进程块内"的 notResponding=true，避免"包名出现 + 其他进程 ANR"误判。
 	// 说明：
 	// 1. 先锚定包含目标包名的 ProcessRecord 行
 	// 2. 在其后有限行范围（最多 120 行）内查找 notResponding=true
@@ -354,7 +355,7 @@ func (a *AndroidDriver) Close() error {
 		logger.Info("UIA instrumentation connection closed")
 	}
 	if a.uiaPort > 0 && a.device != nil {
-		if err := a.device.ForwardKill(a.uiaPort); err != nil {
+		if err := a.device.ForwardKill(context.Background(), a.uiaPort); err != nil {
 			logger.Warnf("remove UIA forward failed: %v", err)
 		} else {
 			logger.Infof("UIA port forwarding removed, localPort=%d", a.uiaPort)
@@ -362,7 +363,7 @@ func (a *AndroidDriver) Close() error {
 		a.uiaPort = 0
 	}
 	if a.forwardPocoPort > 0 && a.device != nil {
-		if err := a.device.ForwardKill(a.forwardPocoPort); err != nil {
+		if err := a.device.ForwardKill(context.Background(), a.forwardPocoPort); err != nil {
 			logger.Warnf("remove POCO forward failed: %v", err)
 		} else {
 			logger.Infof("Poco port forwarding removed, localPort=%d", a.forwardPocoPort)
@@ -375,9 +376,9 @@ func (a *AndroidDriver) Close() error {
 	return nil
 }
 
-func (a *AndroidDriver) Screenshot() ([]byte, error) {
+func (a *AndroidDriver) Screenshot(ctx context.Context) ([]byte, error) {
 	logger.Debugf("Taking screenshot, serial=%s", a.Name())
-	return a.screenCapture.Screenshot()
+	return a.screenCapture.Screenshot(ctx)
 }
 
 func (a *AndroidDriver) SaveScreenshot(path string) error {
@@ -483,7 +484,7 @@ func (a *AndroidDriver) CheckEnvironment(pageSourceType string) (*common.Environ
 		result.Detail = "device serial is empty"
 		return result, fmt.Errorf("device serial is empty")
 	}
-	if _, err := a.device.RunShellCommand("echo", "ok"); err != nil {
+	if _, err := a.device.RunShellCommand(context.Background(), "echo", "ok"); err != nil {
 		result.Detail = "adb shell 不可用"
 		return result, fmt.Errorf("adb shell 不可用: %w", err)
 	}
@@ -520,7 +521,7 @@ func (a *AndroidDriver) initPoco() error {
 	}
 	a.forwardPocoPort = port
 	logger.Infof("Starting Poco port forwarding, localPort=%d remotePort=%d", a.forwardPocoPort, a.pocoPort)
-	err = a.device.ForwardTcp(a.forwardPocoPort, a.pocoPort)
+	err = a.device.ForwardTcp(context.Background(), a.forwardPocoPort, a.pocoPort)
 	if err != nil {
 		return err
 	}
@@ -534,7 +535,7 @@ func (a *AndroidDriver) initPoco() error {
 }
 
 func (a *AndroidDriver) checkUiaApkVersion() (bool, error) {
-	output, err := a.device.RunShellCommand("dumpsys package", uiaServerPackage)
+	output, err := a.device.RunShellCommand(context.Background(), "dumpsys package", uiaServerPackage)
 	if err != nil {
 		return false, err
 	}
@@ -576,7 +577,7 @@ func (a *AndroidDriver) initUIA() error {
 		}
 
 		for _, command := range commands {
-			if _, err := a.device.RunShellCommand(command); err != nil {
+			if _, err := a.device.RunShellCommand(context.Background(), command); err != nil {
 				return fmt.Errorf("execute command failed: %s: %w", command, err)
 			}
 		}
@@ -606,14 +607,14 @@ func (a *AndroidDriver) initUIA() error {
 
 func (a *AndroidDriver) startUIAServer(uiaPort int) error {
 	logger.Infof("Starting UIA instrumentation, localPort=%d remotePort=%d", uiaPort, a.uiaServerPort)
-	if err := a.device.ForwardTcp(uiaPort, a.uiaServerPort); err != nil {
+	if err := a.device.ForwardTcp(context.Background(), uiaPort, a.uiaServerPort); err != nil {
 		return fmt.Errorf("forward uia port failed: %w", err)
 	}
 	logger.Infof("UIA port forwarding established, localPort=%d", uiaPort)
 
-	conn, err := a.device.RunShellLoopCommandSock(uiaInstrumentationCmd)
+	conn, err := a.device.RunShellLoopCommandSock(context.Background(), uiaInstrumentationCmd)
 	if err != nil {
-		_ = a.device.ForwardKill(uiaPort)
+		_ = a.device.ForwardKill(context.Background(), uiaPort)
 		return fmt.Errorf("start uia instrumentation failed: %w", err)
 	}
 	logger.Info("UIA instrumentation command started, waiting for readiness")
@@ -666,7 +667,7 @@ func (a *AndroidDriver) startUIAServer(uiaPort int) error {
 			if err := waitForUIAServerHTTPReady(uiaPort, 10*time.Second); err != nil {
 				_ = conn.Close()
 				a.uiaServerConn = nil
-				_ = a.device.ForwardKill(uiaPort)
+				_ = a.device.ForwardKill(context.Background(), uiaPort)
 				a.uiaPort = 0
 				return err
 			}
@@ -675,7 +676,7 @@ func (a *AndroidDriver) startUIAServer(uiaPort int) error {
 		case err := <-errCh:
 			_ = conn.Close()
 			a.uiaServerConn = nil
-			_ = a.device.ForwardKill(uiaPort)
+			_ = a.device.ForwardKill(context.Background(), uiaPort)
 			a.uiaPort = 0
 			return err
 		case <-ticker.C:
@@ -686,7 +687,7 @@ func (a *AndroidDriver) startUIAServer(uiaPort int) error {
 			if time.Now().After(deadline) {
 				_ = conn.Close()
 				a.uiaServerConn = nil
-				_ = a.device.ForwardKill(uiaPort)
+				_ = a.device.ForwardKill(context.Background(), uiaPort)
 				a.uiaPort = 0
 				return fmt.Errorf("wait for uia server startup timeout after %s", uiaStartupWaitTimeout)
 			}

@@ -287,19 +287,19 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	screenshot, err := driver.Screenshot()
+	screenshot, err := driver.Screenshot(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: fmt.Sprintf("获取截图失败: %v", err)})
 		return
 	}
 
 	packageName := ""
-	if pkg, err := driver.GetCurrentPackage(); err == nil {
+	if pkg, err := driver.GetCurrentPackage(r.Context()); err == nil {
 		packageName = strings.TrimSpace(pkg)
 	}
 	activityName := ""
 	if previewPageNameStrategyNeedsActivity(req.Config, pageSourceType) {
-		if activity, err := driver.GetCurrentActivity(); err == nil {
+		if activity, err := driver.GetCurrentActivity(r.Context()); err == nil {
 			activityName = strings.TrimSpace(activity)
 		}
 	}

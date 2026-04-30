@@ -125,45 +125,72 @@ func LoadScriptPlugin(path string) error {
 	plugin, err := engineplugin.LoadFile(path)
 	if err != nil {
 		if errors.Is(err, scripting.ErrPluginNotFound) {
+			mu.Lock()
 			scriptPlugin = nil
+			mu.Unlock()
 			return nil
 		}
+		mu.Lock()
 		scriptPlugin = nil
+		mu.Unlock()
 		return err
 	}
+	mu.Lock()
+	if scriptPlugin != nil {
+		_ = scriptPlugin.OnDestroy(lifecycleCtx)
+	}
 	scriptPlugin = plugin
-	_ = scriptPlugin.OnInit(lifecycleCtx)
+	ctx := lifecycleCtx
+	mu.Unlock()
+	_ = plugin.OnInit(ctx)
 	return nil
 }
 
 func ClearScriptPlugin() {
+	mu.Lock()
 	if scriptPlugin != nil {
-		_ = scriptPlugin.OnDestroy(lifecycleCtx)
+		p := scriptPlugin
+		ctx := lifecycleCtx
 		scriptPlugin = nil
+		mu.Unlock()
+		_ = p.OnDestroy(ctx)
+		return
 	}
+	mu.Unlock()
 }
 
 func HasScriptPlugin() bool {
+	mu.RLock()
+	defer mu.RUnlock()
 	return scriptPlugin != nil
 }
 
 func transformPageForDecision(ctx engineplugin.PluginContext) (engineplugin.PageSnapshot, error) {
-	if scriptPlugin == nil {
+	mu.RLock()
+	p := scriptPlugin
+	mu.RUnlock()
+	if p == nil {
 		return ctx.Page, nil
 	}
-	return scriptPlugin.TransformPage(ctx)
+	return p.TransformPage(ctx)
 }
 
 func beforeDecide(ctx engineplugin.PluginContext) (*types.ActionCommand, bool, error) {
-	if scriptPlugin == nil {
+	mu.RLock()
+	p := scriptPlugin
+	mu.RUnlock()
+	if p == nil {
 		return nil, false, nil
 	}
-	return scriptPlugin.BeforeDecide(ctx)
+	return p.BeforeDecide(ctx)
 }
 
 func afterDecide(ctx engineplugin.PluginContext, cmd *types.ActionCommand) (*types.ActionCommand, bool, error) {
-	if scriptPlugin == nil {
+	mu.RLock()
+	p := scriptPlugin
+	mu.RUnlock()
+	if p == nil {
 		return cmd, false, nil
 	}
-	return scriptPlugin.AfterDecide(ctx, cmd)
+	return p.AfterDecide(ctx, cmd)
 }

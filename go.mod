@@ -4,9 +4,9 @@ go 1.23.6
 
 require (
 	github.com/beevik/etree v1.6.0
+	github.com/coder/websocket v1.8.14
 	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
 	github.com/glebarez/sqlite v1.11.0
-	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.8.1

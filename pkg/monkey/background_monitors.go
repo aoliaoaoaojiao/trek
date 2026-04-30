@@ -1,6 +1,7 @@
 package monkey
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"time"
@@ -8,7 +9,7 @@ import (
 )
 
 type currentPackageProvider interface {
-	GetCurrentPackage() (string, error)
+	GetCurrentPackage(ctx context.Context) (string, error)
 }
 
 type foregroundPackageMonitor struct {
@@ -122,7 +123,7 @@ func (m *foregroundPackageMonitor) stop() {
 }
 
 func (m *foregroundPackageMonitor) refresh() {
-	pkg, err := m.provider.GetCurrentPackage()
+	pkg, err := m.provider.GetCurrentPackage(context.Background())
 	m.mu.Lock()
 	m.pkg = strings.TrimSpace(pkg)
 	m.err = err

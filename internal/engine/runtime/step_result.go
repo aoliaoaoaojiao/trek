@@ -5,7 +5,10 @@ import (
 )
 
 func OnStepResult(input StepResultInput) error {
-	if scriptPlugin == nil {
+	mu.RLock()
+	p := scriptPlugin
+	mu.RUnlock()
+	if p == nil {
 		return nil
 	}
 	before := pageSnapshotFromInput(input.Before)
@@ -28,7 +31,7 @@ func OnStepResult(input StepResultInput) error {
 			After:      pageSnapshotPtrFromInput(input.After),
 		},
 	}
-	return scriptPlugin.OnStepResult(ctx)
+	return p.OnStepResult(ctx)
 }
 
 func pageSnapshotFromInput(input PageSnapshotInput) engineplugin.PageSnapshot {

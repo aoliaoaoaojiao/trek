@@ -1,11 +1,15 @@
 package runtime
 
 import (
+	"sync"
+
 	"trek/internal/engine/decision"
 	"trek/internal/engine/decision/shared/types"
 	perceptionfusion "trek/internal/engine/perception/fusion"
 	engineplugin "trek/internal/engine/plugin"
 )
+
+var mu sync.RWMutex
 
 var engineModel *decision.Model
 var observationMode = perceptionfusion.ModeXMLOnly
@@ -15,14 +19,19 @@ var lifecycleCtx engineplugin.LifecycleContext
 
 // SetLifecycleContext 设置插件生命周期上下文，应在加载插件前调用。
 func SetLifecycleContext(ctx engineplugin.LifecycleContext) {
+	mu.Lock()
 	lifecycleCtx = ctx
+	mu.Unlock()
 }
 
 // NewLifecycleContext 构造生命周期上下文。
 func NewLifecycleContext(packageName string) engineplugin.LifecycleContext {
+	mu.RLock()
+	mode := observationMode
+	mu.RUnlock()
 	return engineplugin.LifecycleContext{
 		PackageName:    packageName,
-		PageSourceType: string(observationMode),
+		PageSourceType: string(mode),
 	}
 }
 
@@ -54,12 +63,16 @@ func SetObservationMode(mode string) error {
 	if err != nil {
 		return err
 	}
+	mu.Lock()
 	observationMode = parsed
 	defaultOrchestrator = newOrchestratorWithMode(observationMode)
+	mu.Unlock()
 	return nil
 }
 
 // GetObservationMode 返回当前感知模式。
 func GetObservationMode() string {
+	mu.RLock()
+	defer mu.RUnlock()
 	return string(observationMode)
 }

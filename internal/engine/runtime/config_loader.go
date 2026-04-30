@@ -52,12 +52,18 @@ func LoadPluginsFromConfig(configPath string) error {
 		adapters = append(adapters, plugin)
 	}
 	// 替换前先销毁旧插件
-	if scriptPlugin != nil {
-		_ = scriptPlugin.OnDestroy(lifecycleCtx)
+	mu.Lock()
+	oldPlugin := scriptPlugin
+	ctx := lifecycleCtx
+	chain := newPluginChain(adapters)
+	scriptPlugin = chain
+	mu.Unlock()
+
+	if oldPlugin != nil {
+		_ = oldPlugin.OnDestroy(ctx)
 	}
-	scriptPlugin = newPluginChain(adapters)
-	if scriptPlugin != nil {
-		_ = scriptPlugin.OnInit(lifecycleCtx)
+	if chain != nil {
+		_ = chain.OnInit(ctx)
 	}
 	return nil
 }

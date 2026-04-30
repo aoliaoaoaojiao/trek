@@ -30,16 +30,26 @@ func GetBlockRecoveryActionOptWithInput(activity string, xmlDescOfGuiTree string
 }
 
 func getActionOptWithOptions(activity string, xmlDescOfGuiTree string, screenshot []byte, options ActionRequestOptions) *types.ActionCommand {
-	if defaultOrchestrator == nil {
-		defaultOrchestrator = newDefaultOrchestrator()
+	// 快照编排器（懒初始化）
+	mu.RLock()
+	orch := defaultOrchestrator
+	mu.RUnlock()
+	if orch == nil {
+		mu.Lock()
+		if defaultOrchestrator == nil {
+			defaultOrchestrator = newDefaultOrchestrator()
+		}
+		orch = defaultOrchestrator
+		mu.Unlock()
 	}
+
 	pluginCtx := buildPluginContext(activity, xmlDescOfGuiTree, screenshot, options)
 	page, _ := transformPageForDecision(pluginCtx)
 	pluginCtx.Page = page
 	if cmd, handled, err := beforeDecide(pluginCtx); err == nil && handled {
 		return cmd
 	}
-	operate := defaultOrchestrator.NextActionWithInput(context.Background(), decision.PerceptionInput{
+	operate := orch.NextActionWithInput(context.Background(), decision.PerceptionInput{
 		PageName:   page.Name,
 		XMLDesc:    page.XML,
 		Screenshot: screenshot,
@@ -74,15 +84,20 @@ func buildPluginContext(activity string, xmlDescOfGuiTree string, screenshot []b
 			MIME:  "image/png",
 		}
 	}
-	packageName := ""
+
+	mu.RLock()
+	pkg := ""
 	if engineModel != nil {
-		packageName = engineModel.GetPackageName()
+		pkg = engineModel.GetPackageName()
 	}
+	mode := observationMode
+	mu.RUnlock()
+
 	return engineplugin.PluginContext{
 		Page: page,
 		Runtime: engineplugin.RuntimeContext{
-			PackageName:    packageName,
-			PageSourceType: string(observationMode),
+			PackageName:    pkg,
+			PageSourceType: string(mode),
 			BlockRecovery: &engineplugin.BlockRecoveryContext{
 				Requested: options.BlockRecovery,
 			},

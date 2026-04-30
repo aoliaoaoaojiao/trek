@@ -1,6 +1,7 @@
 package touch
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"trek/internal/engine/decision/shared/types"
@@ -30,7 +31,7 @@ func (a *ADBTouch) Click(point types.Point) error {
 	if a.device == nil {
 		return common.NoADBDeviceErr
 	}
-	_, err := a.device.RunShellCommand("input", "tap", fmt.Sprintf("%d %d", int(point.X), int(point.Y)))
+	_, err := a.device.RunShellCommand(context.Background(), "input", "tap", fmt.Sprintf("%d %d", int(point.X), int(point.Y)))
 	return err
 }
 
@@ -39,7 +40,7 @@ func (a *ADBTouch) LongClick(point types.Point, duration int64) error {
 		return common.NoADBDeviceErr
 	}
 
-	_, err := a.device.RunShellCommand(
+	_, err := a.device.RunShellCommand(context.Background(),
 		"input", "swipe",
 		fmt.Sprintf("%d %d %d %d %d",
 			int(point.X), int(point.Y),
@@ -63,7 +64,7 @@ func (a *ADBTouch) Swipe(startPoint types.Point, endPoint types.Point, step int6
 		return fmt.Errorf("duration must be greater than 0, current: %d", duration)
 	}
 
-	_, err := a.device.RunShellCommand(
+	_, err := a.device.RunShellCommand(context.Background(),
 		"input", "swipe",
 		fmt.Sprintf("%d %d %d %d %d",
 			int(startPoint.X), int(startPoint.Y),

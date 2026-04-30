@@ -2,6 +2,8 @@
 package common
 
 import (
+	"context"
+
 	"trek/internal/engine/decision/shared/types"
 )
 
@@ -35,7 +37,7 @@ type IPageSource interface {
 }
 
 type IScreenCapture interface {
-	Screenshot() ([]byte, error)
+	Screenshot(ctx context.Context) ([]byte, error)
 	SaveScreenshot(path string) error
 	Record(path string) error
 	StopRecording() error

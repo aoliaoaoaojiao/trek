@@ -63,12 +63,12 @@ func (s *Scrcpy) SetVideoFrameHandler(handler func(frameData []byte, oriPTS uint
 func (s *Scrcpy) Start(maxsize int) error {
 	// todo
 	var err error
-	err = s.device.Push(bytes.NewReader(scrcpyBytes), deviceServerPath, time.Now())
+	err = s.device.Push(context.Background(), bytes.NewReader(scrcpyBytes), deviceServerPath, time.Now())
 	if err != nil {
 		return err
 	}
 
-	err = s.device.ReverseLocalAbstract(getSocketName(-1), s.localPort)
+	err = s.device.ReverseLocalAbstract(context.Background(), getSocketName(-1), s.localPort)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func (s *Scrcpy) Start(maxsize int) error {
 func (s *Scrcpy) runBinary(maxSize int) error {
 	var output net.Conn
 
-	output, err := s.device.RunShellLoopCommandSock(
+	output, err := s.device.RunShellLoopCommandSock(context.Background(),
 		fmt.Sprintf("CLASSPATH=%s", deviceServerPath),
 		"app_process",
 		"/",

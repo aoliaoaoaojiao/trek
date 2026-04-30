@@ -35,30 +35,30 @@ func NewScreenCapture(device *adb.Device) *ScreenCapture {
 	return &ScreenCapture{device: device}
 }
 
-func (s *ScreenCapture) Screenshot() ([]byte, error) {
+func (s *ScreenCapture) Screenshot(ctx context.Context) ([]byte, error) {
 	uuid := uuid.NewString()
 	imgPath := fmt.Sprintf("/sdcard/%s.png", uuid)
 	logger.Debugf("Starting device screenshot, serial=%s remotePath=%s", s.device.Serial(), imgPath)
 
-	_, err := s.device.RunShellCommand(fmt.Sprintf("screencap -p %s", imgPath))
+	_, err := s.device.RunShellCommand(ctx, fmt.Sprintf("screencap -p %s", imgPath))
 	if err != nil {
 		return nil, fmt.Errorf("鎴浘澶辫触: %v", err)
 	}
 
 	dest := bytes.Buffer{}
-	err = s.device.Pull(imgPath, &dest)
+	err = s.device.Pull(ctx, imgPath, &dest)
 	if err != nil {
 		return nil, fmt.Errorf("鎷夊彇鎴浘澶辫触: %v", err)
 	}
 
-	_, _ = s.device.RunShellCommand(fmt.Sprintf("rm %s", imgPath))
+	_, _ = s.device.RunShellCommand(ctx, fmt.Sprintf("rm %s", imgPath))
 	logger.Debugf("Device screenshot completed, serial=%s size=%d", s.device.Serial(), dest.Len())
 	return dest.Bytes(), nil
 }
 
 func (s *ScreenCapture) SaveScreenshot(path string) error {
 	logger.Debugf("Starting screenshot save, serial=%s path=%s", s.device.Serial(), path)
-	data, err := s.Screenshot()
+	data, err := s.Screenshot(context.Background())
 	if err != nil {
 		return fmt.Errorf("鎴浘澶辫触: %v", err)
 	}

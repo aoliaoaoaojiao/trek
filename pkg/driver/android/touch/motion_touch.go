@@ -2,6 +2,7 @@ package touch
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"fmt"
 	"net"
@@ -31,12 +32,12 @@ type MotionTouch struct {
 // NewMotionTouch 初始化触摸工具，推送apk并建立shell循环连接
 func NewMotionTouch(device *adb.Device) (*MotionTouch, error) {
 	// 推送触摸工具到设备
-	err := device.Push(bytes.NewReader(touchBytes), touchToolPath, time.Now())
+	err := device.Push(context.Background(), bytes.NewReader(touchBytes), touchToolPath, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("push touch apk failed: %w", err)
 	}
 	// 启动AndroidTouch并建立socket连接
-	conn, err := device.RunShellLoopCommandSock(fmt.Sprintf(
+	conn, err := device.RunShellLoopCommandSock(context.Background(), fmt.Sprintf(
 		"CLASSPATH=%s app_process / com.aoliaoaojiao.AndroidTouch.Run v2.2",
 		touchToolPath))
 	if err != nil {

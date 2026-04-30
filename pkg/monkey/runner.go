@@ -249,7 +249,7 @@ type RecoverySuccessfulActionProvider interface {
 
 
 type currentActivityProvider interface {
-	GetCurrentActivity() (string, error)
+	GetCurrentActivity(ctx context.Context) (string, error)
 }
 
 // Runner 执行 Smart Monkey 真机闭环。
@@ -458,9 +458,9 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 
 		var screenshot []byte
 		if r.cfg.CaptureScreenshot {
-			screenshot, _ = r.driver.Screenshot()
+			screenshot, _ = r.driver.Screenshot(ctx)
 		}
-		pageName, xml := r.resolvePageInfo(xml, screenshot)
+		pageName, xml := r.resolvePageInfo(ctx, xml, screenshot)
 
 		beforePage := session.PageSnapshot{
 			PageName:   pageName,
@@ -513,7 +513,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 
 		if err = r.execute(cmd); err != nil {
 			record.Err = err.Error()
-			afterPage := r.capturePageSnapshot(pageSource, pageName)
+			afterPage := r.capturePageSnapshot(ctx, pageSource, pageName)
 			r.notifyTraversalOutcome(step, beforePage, afterPage, cmd, false)
 			r.recordRecoveryOutcome(false)
 			crash, anr := r.currentHealthSignals()
@@ -542,7 +542,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			report.ConsecutiveFailures = 0
 		}
 
-		afterPage := r.capturePageSnapshot(pageSource, pageName)
+		afterPage := r.capturePageSnapshot(ctx, pageSource, pageName)
 		escaped := afterPage != nil &&
 			pageSignature(beforePage.PageName, beforePage.XML) != pageSignature(afterPage.PageName, afterPage.XML)
 		r.notifyTraversalOutcome(step, beforePage, afterPage, cmd, true)
@@ -568,7 +568,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	return report, nil
 }
 
-func (r *Runner) capturePageSnapshot(pageSource common.IPageSource, fallbackPageName string) *session.PageSnapshot {
+func (r *Runner) capturePageSnapshot(ctx context.Context, pageSource common.IPageSource, fallbackPageName string) *session.PageSnapshot {
 	if pageSource == nil {
 		return nil
 	}
@@ -582,9 +582,9 @@ func (r *Runner) capturePageSnapshot(pageSource common.IPageSource, fallbackPage
 	}
 	var screenshot []byte
 	if r.cfg.CaptureScreenshot {
-		screenshot, _ = r.driver.Screenshot()
+		screenshot, _ = r.driver.Screenshot(ctx)
 	}
-	nextPageName, nextXML := r.resolvePageInfo(xml, screenshot)
+	nextPageName, nextXML := r.resolvePageInfo(ctx, xml, screenshot)
 	if strings.TrimSpace(nextPageName) == "" {
 		nextPageName = pageName
 	}
@@ -720,8 +720,8 @@ func (r *Runner) detectANRBySystem() bool {
 	return err == nil && anr
 }
 
-func (r *Runner) resolvePageInfo(xml string, screenshot []byte) (string, string) {
-	pageName := r.resolveBasePageName(xml)
+func (r *Runner) resolvePageInfo(ctx context.Context, xml string, screenshot []byte) (string, string) {
+	pageName := r.resolveBasePageName(ctx, xml)
 	transformer, ok := r.decider.(PageInfoTransformer)
 	if !ok || transformer == nil {
 		return pageName, xml
@@ -745,8 +745,8 @@ func (r *Runner) resolvePageInfo(xml string, screenshot []byte) (string, string)
 	return nextPageName, nextXML
 }
 
-func (r *Runner) resolveBasePageName(xml string) string {
-	return resolveBasePageNameByStrategy(r, xml)
+func (r *Runner) resolveBasePageName(ctx context.Context, xml string) string {
+	return resolveBasePageNameByStrategy(ctx, r, xml)
 }
 
 func (r *Runner) currentHealthSignals() (crash bool, anr bool) {

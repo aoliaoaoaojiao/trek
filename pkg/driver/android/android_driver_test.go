@@ -1,6 +1,7 @@
 package android_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -118,7 +119,7 @@ func TestScreenshot(t *testing.T) {
 
 	assert.NotEmpty(t, driver.Name())
 
-	data, err := driver.Screenshot()
+	data, err := driver.Screenshot(context.Background())
 	assert.NoError(t, err)
 	assert.NotEmpty(t, data)
 

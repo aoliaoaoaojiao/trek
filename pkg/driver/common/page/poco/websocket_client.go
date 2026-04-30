@@ -1,12 +1,13 @@
 package poco
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 )
 
 type WebSocketClient struct {
@@ -25,9 +26,12 @@ func NewWebSocketClient(port int) *WebSocketClient {
 }
 
 func (w *WebSocketClient) Connect() error {
-	dialer := websocket.Dialer{}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	conn, _, err := dialer.Dial(fmt.Sprintf("ws://localhost:%d", w.port), http.Header{})
+	conn, _, err := websocket.Dial(ctx, fmt.Sprintf("ws://localhost:%d", w.port), &websocket.DialOptions{
+		HTTPHeader: http.Header{},
+	})
 	if err != nil {
 		return fmt.Errorf("连接 Poco WebSocket 失败: %v", err)
 	}
@@ -61,7 +65,7 @@ func (w *WebSocketClient) readLoop() {
 	}()
 
 	for {
-		_, message, err := w.conn.ReadMessage()
+		_, message, err := w.conn.Read(context.Background())
 		if err != nil {
 			break
 		}
@@ -94,7 +98,7 @@ func (w *WebSocketClient) SendAndReceive(data []byte) ([]byte, error) {
 	default:
 	}
 
-	err := conn.WriteMessage(websocket.TextMessage, data)
+	err := conn.Write(context.Background(), websocket.MessageText, data)
 	if err != nil {
 		return nil, fmt.Errorf("发送数据失败: %v", err)
 	}
@@ -111,7 +115,7 @@ func (w *WebSocketClient) Disconnect() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.conn != nil {
-		w.conn.Close()
+		w.conn.CloseNow()
 		w.conn = nil
 		w.connected = false
 	}

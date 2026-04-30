@@ -90,7 +90,7 @@ type stateReader interface {
 }
 
 // NewSession 创建新会话
-func NewSession(config Config) *Session {
+func NewSession(config Config) (*Session, error) {
 	if config.Algorithm == 0 {
 		config.Algorithm = decision.AlgorithmReuse
 	}
@@ -106,8 +106,10 @@ func NewSession(config Config) *Session {
 	// 在 Reset 之前设置生命周期上下文，供插件 onInit/onDestroy 使用
 	engineruntime.SetLifecycleContext(engineruntime.NewLifecycleContext(config.PackageName))
 
-	session.Reset()
-	return session
+	if err := session.Reset(); err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 func (s *Session) initRecoveryMemoryProvider() {
@@ -214,12 +216,13 @@ func (s *Session) initRecoveryLLMProvider() {
 }
 
 // Reset 重置引擎模型和脚本插件状态
-func (s *Session) Reset() {
+func (s *Session) Reset() error {
 	engineruntime.ResetModel()
 	if err := engineruntime.InitAgent(s.config.Algorithm, s.config.PackageName, s.config.DeviceType); err != nil {
-		logger.Errorf("重置时初始化决策代理失败: %v", err)
+		return fmt.Errorf("重置时初始化决策代理失败: %w", err)
 	}
 	s.initTraversalAlgorithm()
+	return nil
 }
 
 // LoadConfigFile 加载 JS 配置文件

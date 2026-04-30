@@ -287,7 +287,7 @@ func (f *fakeDriver) Pinch(centerPoint types.Point, startDistance float64, endDi
 }
 func (f *fakeDriver) TouchEvent(touchList ...common.TouchEvent) error { return nil }
 func (f *fakeDriver) Close() error                                    { return nil }
-func (f *fakeDriver) Screenshot() ([]byte, error)                     { return []byte{1}, nil }
+func (f *fakeDriver) Screenshot(ctx context.Context) ([]byte, error)   { return []byte{1}, nil }
 func (f *fakeDriver) SaveScreenshot(path string) error                { return nil }
 func (f *fakeDriver) Record(path string) error                        { return nil }
 func (f *fakeDriver) StopRecording() error                            { return nil }
@@ -316,14 +316,14 @@ func (f *fakeDriver) ActivateApp(packageName string) error {
 	f.targetOnActivate = packageName
 	return nil
 }
-func (f *fakeDriver) GetCurrentPackage() (string, error) {
+func (f *fakeDriver) GetCurrentPackage(ctx context.Context) (string, error) {
 	f.currentPkgCalls++
 	if f.currentPkgErr != nil {
 		return "", f.currentPkgErr
 	}
 	return f.currentPackage, nil
 }
-func (f *fakeDriver) GetCurrentActivity() (string, error) {
+func (f *fakeDriver) GetCurrentActivity(ctx context.Context) (string, error) {
 	if f.currentActErr != nil {
 		return "", f.currentActErr
 	}

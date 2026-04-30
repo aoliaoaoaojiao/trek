@@ -185,7 +185,7 @@ func runMonkey(logLevelStr string, opts struct {
 
 	packageName := opts.packageName
 	if opts.autoCurrentApp {
-		pkg, err := driver.GetCurrentPackage()
+		pkg, err := driver.GetCurrentPackage(context.Background())
 		if err != nil {
 			return fmt.Errorf("获取当前前台应用失败: %w", err)
 		}
@@ -203,12 +203,15 @@ func runMonkey(logLevelStr string, opts struct {
 		return err
 	}
 
-	sess := session.NewSession(session.Config{
+	sess, err := session.NewSession(session.Config{
 		PackageName:        packageName,
 		Algorithm:          algorithmType,
 		ExploreOCRTimeout:  exploreOCRTimeout,
 		RecoveryLLMTimeout: recoveryLLMTimeout,
 	})
+	if err != nil {
+		return fmt.Errorf("创建会话失败: %w", err)
+	}
 	if opts.configPath != "" {
 		if err := sess.LoadConfigFile(opts.configPath); err != nil {
 			return fmt.Errorf("加载配置文件失败(%s): %w", opts.configPath, err)

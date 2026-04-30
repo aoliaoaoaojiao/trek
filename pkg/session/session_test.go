@@ -64,11 +64,14 @@ func (m *mockTraversalAlgorithm) ObserveOutcome(ctx enginestate.TraversalContext
 }
 
 func TestSessionNextAction(t *testing.T) {
-	session := NewSession(Config{
+	session, err := NewSession(Config{
 		PackageName: "com.demo",
 		Algorithm:   decision.AlgorithmReuse,
 		DeviceType:  types.Phone,
 	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 
 	action, err := session.NextAction("LoginActivity", `
 <hierarchy>
@@ -86,7 +89,10 @@ func TestSessionNextAction(t *testing.T) {
 }
 
 func TestSessionCheckPointInBlackRects(t *testing.T) {
-	session := NewSession(Config{PackageName: "com.demo"})
+	session, err := NewSession(Config{PackageName: "com.demo"})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 
 	configPath := filepath.Join(t.TempDir(), "mix.js")
 	configContent := `const config = {
@@ -107,7 +113,10 @@ func TestSessionCheckPointInBlackRects(t *testing.T) {
 }
 
 func TestSessionTransformPageInfoWithInput(t *testing.T) {
-	session := NewSession(Config{PackageName: "com.demo"})
+	session, err := NewSession(Config{PackageName: "com.demo"})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 
 	configPath := filepath.Join(t.TempDir(), "mix.js")
 	configContent := `const plugin = {
@@ -138,7 +147,10 @@ func TestSessionTransformPageInfoWithInput(t *testing.T) {
 }
 
 func TestSessionBeforeDecideUsesGojaPluginAction(t *testing.T) {
-	session := NewSession(Config{PackageName: "com.demo"})
+	session, err := NewSession(Config{PackageName: "com.demo"})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 
 	configPath := filepath.Join(t.TempDir(), "plugin.js")
 	configContent := `const plugin = {
@@ -163,7 +175,10 @@ func TestSessionBeforeDecideUsesGojaPluginAction(t *testing.T) {
 }
 
 func TestSessionOnStepResultFeedsGojaPluginState(t *testing.T) {
-	session := NewSession(Config{PackageName: "com.demo"})
+	session, err := NewSession(Config{PackageName: "com.demo"})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 
 	configPath := filepath.Join(t.TempDir(), "plugin.js")
 	configContent := `const plugin = {
@@ -206,7 +221,10 @@ func TestSessionOnStepResultFeedsGojaPluginState(t *testing.T) {
 }
 
 func TestSessionNextBlockRecoveryActionUsesPluginBlockRecoveryContext(t *testing.T) {
-	session := NewSession(Config{PackageName: "com.demo"})
+	session, err := NewSession(Config{PackageName: "com.demo"})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 
 	configPath := filepath.Join(t.TempDir(), "plugin.js")
 	configContent := `const plugin = {
@@ -236,7 +254,10 @@ func TestSessionNextBlockRecoveryActionUsesPluginBlockRecoveryContext(t *testing
 }
 
 func TestSessionNextBlockRecoveryActionRejectsRestartActions(t *testing.T) {
-	session := NewSession(Config{PackageName: "com.demo"})
+	session, err := NewSession(Config{PackageName: "com.demo"})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 
 	configPath := filepath.Join(t.TempDir(), "plugin.js")
 	configContent := `const plugin = {
@@ -298,10 +319,13 @@ func TestSessionBuildMemoryRecoveryCandidates(t *testing.T) {
 		t.Fatalf("写入 memory 记录失败: %v", err)
 	}
 
-	session := NewSession(Config{
+	session, err := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryMemoryFile: memoryPath,
 	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 	t.Cleanup(func() {
 		closeSessionMemoryStore(session)
 	})
@@ -332,7 +356,10 @@ func TestSessionBuildMemoryRecoveryCandidates(t *testing.T) {
 }
 
 func TestSessionBuildHeuristicRecoveryCandidates(t *testing.T) {
-	session := NewSession(Config{PackageName: "com.demo"})
+	session, err := NewSession(Config{PackageName: "com.demo"})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 
 	configPath := filepath.Join(t.TempDir(), "plugin.js")
 	configContent := `const plugin = {
@@ -371,7 +398,10 @@ func TestSessionBuildHeuristicRecoveryCandidates(t *testing.T) {
 }
 
 func TestSessionBuildHeuristicRecoveryCandidatesRejectRestart(t *testing.T) {
-	session := NewSession(Config{PackageName: "com.demo"})
+	session, err := NewSession(Config{PackageName: "com.demo"})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 
 	configPath := filepath.Join(t.TempDir(), "plugin.js")
 	configContent := `const plugin = {
@@ -403,11 +433,14 @@ func TestSessionBuildHeuristicRecoveryCandidatesRejectRestart(t *testing.T) {
 }
 
 func TestSessionSelectRecoveryActionPrefersAlgorithmCandidate(t *testing.T) {
-	session := NewSession(Config{
+	session, err := NewSession(Config{
 		PackageName: "com.demo",
 		Algorithm:   decision.AlgorithmReuse,
 		DeviceType:  types.Phone,
 	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 	ctx := enginestate.TraversalContext{Mode: "Recover"}
 	items := []candidate.Candidate{
 		{
@@ -431,11 +464,14 @@ func TestSessionSelectRecoveryActionPrefersAlgorithmCandidate(t *testing.T) {
 }
 
 func TestSessionBuildAlgorithmCandidatesDelegatesTraversalAlgorithm(t *testing.T) {
-	session := NewSession(Config{
+	session, err := NewSession(Config{
 		PackageName: "com.demo",
 		Algorithm:   decision.AlgorithmReuse,
 		DeviceType:  types.Phone,
 	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 	called := false
 	expected := []candidate.Candidate{
 		{
@@ -467,11 +503,14 @@ func TestSessionBuildAlgorithmCandidatesDelegatesTraversalAlgorithm(t *testing.T
 }
 
 func TestSessionBuildAlgorithmCandidatesMergesOCRCandidates(t *testing.T) {
-	session := NewSession(Config{
+	session, err := NewSession(Config{
 		PackageName: "com.demo",
 		Algorithm:   decision.AlgorithmReuse,
 		DeviceType:  types.Phone,
 	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 	session.traversalAlgo = &mockTraversalAlgorithm{
 		proposeFn: func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
 			return []candidate.Candidate{
@@ -512,12 +551,15 @@ func TestSessionBuildAlgorithmCandidatesMergesOCRCandidates(t *testing.T) {
 }
 
 func TestSessionObserveTraversalOutcomeNoError(t *testing.T) {
-	session := NewSession(Config{
+	session, err := NewSession(Config{
 		PackageName: "com.demo",
 		Algorithm:   decision.AlgorithmReuse,
 		DeviceType:  types.Phone,
 	})
-	err := session.ObserveTraversalOutcome(
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
+	err = session.ObserveTraversalOutcome(
 		enginestate.TraversalContext{Mode: "Explore", PageName: "MainActivity"},
 		&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
 		traversal.OutcomeNewState,
@@ -529,15 +571,18 @@ func TestSessionObserveTraversalOutcomeNoError(t *testing.T) {
 
 func TestSessionRecordRecoveryMemoryOutcome(t *testing.T) {
 	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
-	session := NewSession(Config{
+	session, err := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryMemoryFile: memoryPath,
 	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 	t.Cleanup(func() {
 		closeSessionMemoryStore(session)
 	})
 
-	err := session.RecordRecoveryMemoryOutcome(
+	err = session.RecordRecoveryMemoryOutcome(
 		enginestate.TraversalContext{
 			Mode:             "Recover",
 			PageSignature:    "page.sig",
@@ -582,10 +627,13 @@ func TestSessionRecordRecoveryMemoryOutcome(t *testing.T) {
 
 func TestSessionRecordRecoveryMemoryOutcomeAggregatesCounts(t *testing.T) {
 	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
-	session := NewSession(Config{
+	session, err := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryMemoryFile: memoryPath,
 	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 	t.Cleanup(func() {
 		closeSessionMemoryStore(session)
 	})
@@ -631,10 +679,13 @@ func TestSessionRecordRecoveryMemoryOutcomeAggregatesCounts(t *testing.T) {
 
 func TestSessionRecordCandidateEnhancementOutcome(t *testing.T) {
 	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
-	session := NewSession(Config{
+	session, err := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryMemoryFile: memoryPath,
 	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 	t.Cleanup(func() {
 		closeSessionMemoryStore(session)
 	})
@@ -675,10 +726,13 @@ func TestSessionRecordCandidateEnhancementOutcome(t *testing.T) {
 
 func TestSessionBuildKnownFailedRecoveryActions(t *testing.T) {
 	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
-	session := NewSession(Config{
+	session, err := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryMemoryFile: memoryPath,
 	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 	t.Cleanup(func() {
 		closeSessionMemoryStore(session)
 	})
@@ -710,10 +764,13 @@ func TestSessionBuildKnownFailedRecoveryActions(t *testing.T) {
 
 func TestSessionBuildKnownSuccessfulRecoveryActions(t *testing.T) {
 	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
-	session := NewSession(Config{
+	session, err := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryMemoryFile: memoryPath,
 	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 	t.Cleanup(func() {
 		closeSessionMemoryStore(session)
 	})
@@ -764,13 +821,16 @@ func TestSessionBuildLLMRecoveryCandidates(t *testing.T) {
 	}))
 	defer server.Close()
 
-	session := NewSession(Config{
+	session, err := NewSession(Config{
 		PackageName:         "com.demo",
 		RecoveryLLMEndpoint: server.URL,
 		RecoveryLLMAPIKey:   "test-key",
 		RecoveryLLMModel:    "gpt-x",
 		RecoveryLLMTimeout:  2 * time.Second,
 	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 	items, err := session.BuildLLMRecoveryCandidates(enginestate.TraversalContext{
 		Step:        5,
 		Mode:        "Recover",
@@ -808,13 +868,16 @@ func TestSessionBuildLLMRecoveryCandidatesWithOpenAIResponsesProvider(t *testing
 	}))
 	defer server.Close()
 
-	session := NewSession(Config{
+	session, err := NewSession(Config{
 		PackageName:              "com.demo",
 		RecoveryLLMOpenAIModel:   "gpt-4.1-mini",
 		RecoveryLLMOpenAIAPIKey:  "sk-test",
 		RecoveryLLMOpenAIBaseURL: server.URL,
 		RecoveryLLMTimeout:       2 * time.Second,
 	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 	items, err := session.BuildLLMRecoveryCandidates(enginestate.TraversalContext{
 		Step:        6,
 		Mode:        "Recover",
@@ -846,10 +909,13 @@ func TestSessionInitRecoveryLLMProviderFromEnv(t *testing.T) {
 	t.Setenv("LLM_API_KEY", "env-key")
 	t.Setenv("LLM_MODEL", "env-model")
 
-	session := NewSession(Config{
+	session, err := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryLLMTimeout: 2 * time.Second,
 	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 	items, err := session.BuildLLMRecoveryCandidates(enginestate.TraversalContext{Mode: "Recover"})
 	if err != nil {
 		t.Fatalf("环境变量 LLM provider 构建候选失败: %v", err)
@@ -874,10 +940,13 @@ func TestSessionInitOpenAIRecoveryProviderFromEnv(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "sk-env")
 	t.Setenv("OPENAI_API_URL", server.URL)
 
-	session := NewSession(Config{
+	session, err := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryLLMTimeout: 2 * time.Second,
 	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
 	items, err := session.BuildLLMRecoveryCandidates(enginestate.TraversalContext{Mode: "Recover"})
 	if err != nil {
 		t.Fatalf("环境变量 OpenAI provider 构建候选失败: %v", err)

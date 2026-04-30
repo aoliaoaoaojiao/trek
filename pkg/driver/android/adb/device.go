@@ -45,35 +45,35 @@ func (d Device) IsUsb() bool {
 	return d.Usb() != ""
 }
 
-func (d Device) State() (DeviceState, error) {
-	resp, err := d.client.run(context.Background(), d.serial, "get-state")
+func (d Device) State(ctx context.Context) (DeviceState, error) {
+	resp, err := d.client.run(ctx, d.serial, "get-state")
 	return deviceStateConv(resp), err
 }
 
-func (d Device) DevicePath() (string, error) {
-	resp, err := d.client.run(context.Background(), d.serial, "get-devpath")
+func (d Device) DevicePath(ctx context.Context) (string, error) {
+	resp, err := d.client.run(ctx, d.serial, "get-devpath")
 	return resp, err
 }
 
-func (d Device) ForwardLocalAbstract(localPort int, remotePort string, noRebind ...bool) (err error) {
+func (d Device) ForwardLocalAbstract(ctx context.Context, localPort int, remotePort string, noRebind ...bool) (err error) {
 	local := fmt.Sprintf("tcp:%d", localPort)
 	remote := fmt.Sprintf("localabstract:%s", remotePort)
-	return d.forward(local, remote, noRebind...)
+	return d.forward(ctx, local, remote, noRebind...)
 }
 
-func (d Device) ForwardTcp(localPort int, remotePort int, noRebind ...bool) (err error) {
+func (d Device) ForwardTcp(ctx context.Context, localPort int, remotePort int, noRebind ...bool) (err error) {
 	local := fmt.Sprintf("tcp:%d", localPort)
 	remote := fmt.Sprintf("tcp:%d", remotePort)
-	return d.forward(local, remote, noRebind...)
+	return d.forward(ctx, local, remote, noRebind...)
 }
 
-func (d Device) forward(local, remote string, noRebind ...bool) (err error) {
+func (d Device) forward(ctx context.Context, local, remote string, noRebind ...bool) (err error) {
 	args := []string{"forward"}
 	if len(noRebind) != 0 && noRebind[0] {
 		args = append(args, "--no-rebind")
 	}
 	args = append(args, local, remote)
-	_, err = d.client.run(context.Background(), d.serial, args...)
+	_, err = d.client.run(ctx, d.serial, args...)
 	return
 }
 
@@ -92,37 +92,37 @@ func (d Device) ForwardList() (deviceForwardList []DeviceForward, err error) {
 	return
 }
 
-func (d Device) ForwardKill(localPort int) (err error) {
+func (d Device) ForwardKill(ctx context.Context, localPort int) (err error) {
 	local := fmt.Sprintf("tcp:%d", localPort)
-	_, err = d.client.run(context.Background(), d.serial, "forward", "--remove", local)
+	_, err = d.client.run(ctx, d.serial, "forward", "--remove", local)
 	return
 }
 
-func (d Device) ReverseLocalAbstract(remotePort string, localPort int, noRebind ...bool) (err error) {
+func (d Device) ReverseLocalAbstract(ctx context.Context, remotePort string, localPort int, noRebind ...bool) (err error) {
 	local := fmt.Sprintf("tcp:%d", localPort)
 	remote := fmt.Sprintf("localabstract:%s", remotePort)
-	return d.reverse(remote, local, noRebind...)
+	return d.reverse(ctx, remote, local, noRebind...)
 }
 
-func (d Device) ReverseTcp(remotePort, localPort int, noRebind ...bool) (err error) {
+func (d Device) ReverseTcp(ctx context.Context, remotePort, localPort int, noRebind ...bool) (err error) {
 	local := fmt.Sprintf("tcp:%d", localPort)
 	remote := fmt.Sprintf("tcp:%d", remotePort)
-	return d.reverse(remote, local, noRebind...)
+	return d.reverse(ctx, remote, local, noRebind...)
 }
 
-func (d Device) reverse(remote, local string, noRebind ...bool) (err error) {
+func (d Device) reverse(ctx context.Context, remote, local string, noRebind ...bool) (err error) {
 	args := []string{"reverse"}
 	if len(noRebind) != 0 && noRebind[0] {
 		args = append(args, "--no-rebind")
 	}
 	args = append(args, remote, local)
-	_, err = d.client.run(context.Background(), d.serial, args...)
+	_, err = d.client.run(ctx, d.serial, args...)
 	return
 }
 
-func (d Device) ReverseList() (deviceForward []DeviceForward, err error) {
+func (d Device) ReverseList(ctx context.Context) (deviceForward []DeviceForward, err error) {
 	var resp string
-	if resp, err = d.client.run(context.Background(), d.serial, "reverse", "--list"); err != nil {
+	if resp, err = d.client.run(ctx, d.serial, "reverse", "--list"); err != nil {
 		return nil, err
 	}
 
@@ -142,32 +142,32 @@ func (d Device) ReverseList() (deviceForward []DeviceForward, err error) {
 	return
 }
 
-func (d Device) ReverseKillLocalAbstract(remotePort string) (err error) {
+func (d Device) ReverseKillLocalAbstract(ctx context.Context, remotePort string) (err error) {
 	remote := fmt.Sprintf("localabstract:%s", remotePort)
-	return d.reverseKill(remote)
+	return d.reverseKill(ctx, remote)
 }
 
-func (d Device) ReverseKillTcp(localPort int) (err error) {
+func (d Device) ReverseKillTcp(ctx context.Context, localPort int) (err error) {
 	remote := fmt.Sprintf("tcp:%d", localPort)
-	return d.reverseKill(remote)
+	return d.reverseKill(ctx, remote)
 }
 
-func (d Device) reverseKill(remote string) (err error) {
-	_, err = d.client.run(context.Background(), d.serial, "reverse", "--remove", remote)
+func (d Device) reverseKill(ctx context.Context, remote string) (err error) {
+	_, err = d.client.run(ctx, d.serial, "reverse", "--remove", remote)
 	return
 }
 
-func (d Device) ReverseKillAll() (err error) {
-	_, err = d.client.run(context.Background(), d.serial, "reverse", "--remove-all")
+func (d Device) ReverseKillAll(ctx context.Context) (err error) {
+	_, err = d.client.run(ctx, d.serial, "reverse", "--remove-all")
 	return
 }
 
-func (d Device) RunShellCommand(cmd string, args ...string) (string, error) {
-	raw, err := d.RunShellCommandWithBytes(cmd, args...)
+func (d Device) RunShellCommand(ctx context.Context, cmd string, args ...string) (string, error) {
+	raw, err := d.RunShellCommandWithBytes(ctx, cmd, args...)
 	return string(raw), err
 }
 
-func (d Device) RunShellCommandWithBytes(cmd string, args ...string) ([]byte, error) {
+func (d Device) RunShellCommandWithBytes(ctx context.Context, cmd string, args ...string) ([]byte, error) {
 	if len(args) > 0 {
 		cmd = fmt.Sprintf("%s %s", cmd, strings.Join(args, " "))
 	}
@@ -185,10 +185,10 @@ func (d Device) RunShellCommandWithBytes(cmd string, args ...string) ([]byte, er
 		shellArgs = append([]string{"-s", d.serial}, shellArgs...)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	shellCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	command := exec.CommandContext(ctx, executable, shellArgs...)
+	command := exec.CommandContext(shellCtx, executable, shellArgs...)
 	output, err := command.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
@@ -199,8 +199,8 @@ func (d Device) RunShellCommandWithBytes(cmd string, args ...string) ([]byte, er
 	return output, nil
 }
 
-func (d Device) GetCurrentPackage() (string, error) {
-	output, err := d.RunShellCommand("dumpsys", "activity", "top")
+func (d Device) GetCurrentPackage(ctx context.Context) (string, error) {
+	output, err := d.RunShellCommand(ctx, "dumpsys", "activity", "top")
 	if err != nil {
 		return "", err
 	}
@@ -215,8 +215,8 @@ func (d Device) GetCurrentPackage() (string, error) {
 	return pkg, nil
 }
 
-func (d Device) GetCurrentActivity() (string, error) {
-	output, err := d.RunShellCommand("dumpsys", "activity", "top")
+func (d Device) GetCurrentActivity(ctx context.Context) (string, error) {
+	output, err := d.RunShellCommand(ctx, "dumpsys", "activity", "top")
 	if err != nil {
 		return "", err
 	}
@@ -268,7 +268,7 @@ func splitActivityToken(token string) (pkg string, activity string, err error) {
 	return pkg, activity, nil
 }
 
-func (d Device) RunShellLoopCommandSock(cmd string, args ...string) (net.Conn, error) {
+func (d Device) RunShellLoopCommandSock(ctx context.Context, cmd string, args ...string) (net.Conn, error) {
 	if len(args) > 0 {
 		cmd = fmt.Sprintf("%s %s", cmd, strings.Join(args, " "))
 	}
@@ -286,7 +286,7 @@ func (d Device) RunShellLoopCommandSock(cmd string, args ...string) (net.Conn, e
 		shellArgs = append([]string{"-s", d.serial}, shellArgs...)
 	}
 
-	cmdExec := exec.Command(executable, shellArgs...)
+	cmdExec := exec.CommandContext(ctx, executable, shellArgs...)
 
 	stdin, err := cmdExec.StdinPipe()
 	if err != nil {
@@ -416,17 +416,17 @@ func (c *shellConn) scheduleKill(t time.Time) {
 	}
 }
 
-func (d Device) EnableAdbOverTCP(port ...int) (err error) {
+func (d Device) EnableAdbOverTCP(ctx context.Context, port ...int) (err error) {
 	if len(port) == 0 {
 		port = []int{AdbDaemonPort}
 	}
 
-	_, err = d.client.run(context.Background(), d.serial, "tcpip", fmt.Sprintf("%d", port[0]))
+	_, err = d.client.run(ctx, d.serial, "tcpip", fmt.Sprintf("%d", port[0]))
 	return
 }
 
-func (d Device) List(remotePath string) (devFileInfos []DeviceFileInfo, err error) {
-	output, err := d.RunShellCommand("ls", "-la", remotePath)
+func (d Device) List(ctx context.Context, remotePath string) (devFileInfos []DeviceFileInfo, err error) {
+	output, err := d.RunShellCommand(ctx, "ls", "-la", remotePath)
 	if err != nil {
 		return nil, err
 	}
@@ -455,7 +455,7 @@ func (d Device) List(remotePath string) (devFileInfos []DeviceFileInfo, err erro
 	return
 }
 
-func (d Device) PushFile(local *os.File, remotePath string, modification ...time.Time) (err error) {
+func (d Device) PushFile(ctx context.Context, local *os.File, remotePath string, modification ...time.Time) (err error) {
 	if len(modification) == 0 {
 		var stat os.FileInfo
 		if stat, err = local.Stat(); err != nil {
@@ -464,10 +464,10 @@ func (d Device) PushFile(local *os.File, remotePath string, modification ...time
 		modification = []time.Time{stat.ModTime()}
 	}
 
-	return d.Push(local, remotePath, modification[0], DefaultFileMode)
+	return d.Push(ctx, local, remotePath, modification[0], DefaultFileMode)
 }
 
-func (d Device) Push(source io.Reader, remotePath string, _ time.Time, mode ...os.FileMode) (err error) {
+func (d Device) Push(ctx context.Context, source io.Reader, remotePath string, _ time.Time, mode ...os.FileMode) (err error) {
 	if len(mode) == 0 {
 		mode = []os.FileMode{DefaultFileMode}
 	}
@@ -495,10 +495,10 @@ func (d Device) Push(source io.Reader, remotePath string, _ time.Time, mode ...o
 		args = append([]string{"-s", d.serial}, args...)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	pushCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd := exec.CommandContext(pushCtx, executable, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("adb push failed: %s: %w", string(output), err)
@@ -507,7 +507,7 @@ func (d Device) Push(source io.Reader, remotePath string, _ time.Time, mode ...o
 	return nil
 }
 
-func (d Device) Pull(remotePath string, dest io.Writer) (err error) {
+func (d Device) Pull(ctx context.Context, remotePath string, dest io.Writer) (err error) {
 	executable, err := d.client.resolveExecutable()
 	if err != nil {
 		return err
@@ -518,10 +518,10 @@ func (d Device) Pull(remotePath string, dest io.Writer) (err error) {
 		args = append([]string{"-s", d.serial}, args...)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	pullCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd := exec.CommandContext(pullCtx, executable, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -538,14 +538,14 @@ func normalizeRemotePath(path string) string {
 	return strings.ReplaceAll(path, "\\", "/")
 }
 
-func (d Device) Install(apkPath string, replace bool) error {
+func (d Device) Install(ctx context.Context, apkPath string, replace bool) error {
 	args := []string{"install"}
 	if replace {
 		args = append(args, "-r")
 	}
 	args = append(args, filepath.Clean(apkPath))
 
-	output, err := d.client.run(context.Background(), d.serial, args...)
+	output, err := d.client.run(ctx, d.serial, args...)
 	if err != nil {
 		return err
 	}
@@ -557,14 +557,14 @@ func (d Device) Install(apkPath string, replace bool) error {
 	return nil
 }
 
-func (d Device) Uninstall(packageName string, keepData bool) error {
+func (d Device) Uninstall(ctx context.Context, packageName string, keepData bool) error {
 	args := []string{"uninstall"}
 	if keepData {
 		args = append(args, "-k")
 	}
 	args = append(args, packageName)
 
-	output, err := d.client.run(context.Background(), d.serial, args...)
+	output, err := d.client.run(ctx, d.serial, args...)
 	if err != nil {
 		return err
 	}
@@ -576,7 +576,7 @@ func (d Device) Uninstall(packageName string, keepData bool) error {
 	return nil
 }
 
-func (d Device) Screenshot() ([]byte, error) {
+func (d Device) Screenshot(ctx context.Context) ([]byte, error) {
 	executable, err := d.client.resolveExecutable()
 	if err != nil {
 		return nil, err
@@ -587,10 +587,10 @@ func (d Device) Screenshot() ([]byte, error) {
 		args = append([]string{"-s", d.serial}, args...)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	screenCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd := exec.CommandContext(screenCtx, executable, args...)
 	output, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {

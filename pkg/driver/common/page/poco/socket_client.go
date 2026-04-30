@@ -26,6 +26,9 @@ func (s *SocketClient) Connect() error {
 	var conn net.Conn
 	var err error
 
+	backoff := 200 * time.Millisecond
+	maxBackoff := 5 * time.Second
+
 	for i := 0; i < 20; i++ {
 		conn, err = net.Dial("tcp", fmt.Sprintf("localhost:%d", s.port))
 		if err == nil {
@@ -33,7 +36,11 @@ func (s *SocketClient) Connect() error {
 			s.connected = true
 			return nil
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(backoff)
+		backoff *= 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
 	}
 
 	return fmt.Errorf("连接 Poco Socket 失败: %v", err)

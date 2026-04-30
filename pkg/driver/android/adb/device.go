@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -323,17 +324,26 @@ func (d Device) RunShellLoopCommandSock(cmd string, args ...string) (net.Conn, e
 }
 
 type shellConn struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout io.Reader
-	stderr io.Reader
+	cmd           *exec.Cmd
+	stdin         io.WriteCloser
+	stdout        io.Reader
+	stderr        io.Reader
+	mu            sync.Mutex
+	readDeadline  time.Time
+	writeDeadline time.Time
 }
 
 func (c *shellConn) Read(b []byte) (n int, err error) {
+	if d := c.getReadDeadline(); !d.IsZero() && time.Now().After(d) {
+		return 0, &net.OpError{Op: "read", Net: "pipe", Err: os.ErrDeadlineExceeded}
+	}
 	return c.stdout.Read(b)
 }
 
 func (c *shellConn) Write(b []byte) (n int, err error) {
+	if d := c.getWriteDeadline(); !d.IsZero() && time.Now().After(d) {
+		return 0, &net.OpError{Op: "write", Net: "pipe", Err: os.ErrDeadlineExceeded}
+	}
 	return c.stdin.Write(b)
 }
 
@@ -356,15 +366,54 @@ func (c *shellConn) RemoteAddr() net.Addr {
 }
 
 func (c *shellConn) SetDeadline(t time.Time) error {
+	c.mu.Lock()
+	c.readDeadline = t
+	c.writeDeadline = t
+	c.mu.Unlock()
+	c.scheduleKill(t)
 	return nil
 }
 
 func (c *shellConn) SetReadDeadline(t time.Time) error {
+	c.mu.Lock()
+	c.readDeadline = t
+	c.mu.Unlock()
+	c.scheduleKill(t)
 	return nil
 }
 
 func (c *shellConn) SetWriteDeadline(t time.Time) error {
+	c.mu.Lock()
+	c.writeDeadline = t
+	c.mu.Unlock()
+	c.scheduleKill(t)
 	return nil
+}
+
+func (c *shellConn) getReadDeadline() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.readDeadline
+}
+
+func (c *shellConn) getWriteDeadline() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.writeDeadline
+}
+
+// scheduleKill 在 deadline 到期时终止进程，使阻塞中的 Read/Write 返回错误。
+func (c *shellConn) scheduleKill(t time.Time) {
+	if t.IsZero() || c.cmd == nil || c.cmd.Process == nil {
+		return
+	}
+	if d := time.Until(t); d > 0 {
+		time.AfterFunc(d, func() {
+			if c.cmd != nil && c.cmd.Process != nil {
+				c.cmd.Process.Kill()
+			}
+		})
+	}
 }
 
 func (d Device) EnableAdbOverTCP(port ...int) (err error) {

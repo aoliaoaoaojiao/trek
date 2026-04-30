@@ -122,7 +122,8 @@ func (u *UiaClient) Request(method, url string, body []byte, timeout ...time.Dur
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	const maxUIABodySize = 10 * 1024 * 1024 // 10MB
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxUIABodySize))
 	if err != nil {
 		return nil, err
 	}

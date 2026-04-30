@@ -146,7 +146,8 @@ func (p *OpenAIResponsesProvider) postWithRetry(payload []byte) ([]byte, int, er
 			return nil, 0, err
 		}
 		defer resp.Body.Close()
-		body, readErr := io.ReadAll(resp.Body)
+		const maxLLMBodySize = 50 * 1024 * 1024 // 50MB
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxLLMBodySize))
 		if readErr != nil {
 			return nil, resp.StatusCode, readErr
 		}

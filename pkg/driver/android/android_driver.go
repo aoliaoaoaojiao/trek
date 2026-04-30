@@ -259,7 +259,9 @@ func (a *AndroidDriver) ClearLogcat() error {
 	return err
 }
 
-// CheckCrash 通过系统日志/状态检测是否出现 crash。
+// CheckCrash 通过系统日志检测是否出现 crash。
+// 仅依赖 logcat 中的 fatal exception 信号，不使用 pidof 判定。
+// 原因：pidof 对后台进程可能返回空，导致系统正常回收进程时误判为 crash。
 func (a *AndroidDriver) CheckCrash(packageName string) (bool, error) {
 	if a.device == nil {
 		return false, fmt.Errorf("device is nil")
@@ -267,7 +269,6 @@ func (a *AndroidDriver) CheckCrash(packageName string) (bool, error) {
 
 	pkgLower := strings.ToLower(strings.TrimSpace(packageName))
 
-	// 只基于当前日志与进程状态判断 crash，避免被 dropbox 历史记录误判。
 	logcatOut, err := a.device.RunShellCommand("logcat", "-d", "-b", "main", "-t", "50", "AndroidRuntime:E", "*:S")
 	if err != nil {
 		return false, err
@@ -275,13 +276,6 @@ func (a *AndroidDriver) CheckCrash(packageName string) (bool, error) {
 	logLower := strings.ToLower(logcatOut)
 	if strings.Contains(logLower, "fatal exception") {
 		if pkgLower == "" || strings.Contains(logLower, pkgLower) {
-			return true, nil
-		}
-	}
-
-	if pkgLower != "" {
-		pidOut, err := a.device.RunShellCommand("pidof", packageName)
-		if err == nil && strings.TrimSpace(pidOut) == "" {
 			return true, nil
 		}
 	}

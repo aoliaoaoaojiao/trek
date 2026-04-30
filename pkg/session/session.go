@@ -102,6 +102,10 @@ func NewSession(config Config) *Session {
 	session.initRecoveryMemoryProvider()
 	session.initExploreOCRProvider()
 	session.initRecoveryLLMProvider()
+
+	// 在 Reset 之前设置生命周期上下文，供插件 onInit/onDestroy 使用
+	engineruntime.SetLifecycleContext(engineruntime.NewLifecycleContext(config.PackageName))
+
 	session.Reset()
 	return session
 }

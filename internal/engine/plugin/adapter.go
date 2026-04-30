@@ -15,6 +15,7 @@ type Screenshot = scripting.Screenshot
 type PageNode = scripting.PageNode
 type StepResult = scripting.StepResult
 type StepResultContext = scripting.StepResultContext
+type LifecycleContext = scripting.LifecycleContext
 
 type Adapter struct {
 	manager *scripting.Manager
@@ -72,6 +73,20 @@ func (a *Adapter) OnStepResult(ctx StepResultContext) error {
 		return nil
 	}
 	return a.manager.OnStepResult(ctx)
+}
+
+func (a *Adapter) OnInit(ctx LifecycleContext) error {
+	if a == nil || a.manager == nil {
+		return nil
+	}
+	return a.manager.OnInit(ctx)
+}
+
+func (a *Adapter) OnDestroy(ctx LifecycleContext) error {
+	if a == nil || a.manager == nil {
+		return nil
+	}
+	return a.manager.OnDestroy(ctx)
 }
 
 func ToActionCommand(action scripting.Action) (*types2.ActionCommand, error) {

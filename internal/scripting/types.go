@@ -96,3 +96,10 @@ type StepResultContext struct {
 	PluginContext
 	Result StepResult
 }
+
+// LifecycleContext 生命周期钩子上下文（onInit / onDestroy），
+// 不含页面快照，仅提供基本配置信息。
+type LifecycleContext struct {
+	PackageName    string
+	PageSourceType string
+}

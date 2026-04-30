@@ -96,6 +96,16 @@ func (m *Manager) OnStepResult(ctx StepResultContext) error {
 	return err
 }
 
+func (m *Manager) OnInit(ctx LifecycleContext) error {
+	_, _, err := m.callHook("onInit", lifecycleCtxToMap(ctx))
+	return err
+}
+
+func (m *Manager) OnDestroy(ctx LifecycleContext) error {
+	_, _, err := m.callHook("onDestroy", lifecycleCtxToMap(ctx))
+	return err
+}
+
 func (m *Manager) StateGet(key string) any {
 	return m.state[key]
 }
@@ -314,6 +324,13 @@ func ctxToMap(ctx PluginContext) map[string]any {
 	return map[string]any{
 		"page":    pageToMap(ctx.Page),
 		"runtime": runtimeToMap(ctx.Runtime),
+	}
+}
+
+func lifecycleCtxToMap(ctx LifecycleContext) map[string]any {
+	return map[string]any{
+		"package_name":     ctx.PackageName,
+		"page_source_type": ctx.PageSourceType,
 	}
 }
 

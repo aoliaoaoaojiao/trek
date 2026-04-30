@@ -42,12 +42,28 @@ var engineModel *decision.Model
 var observationMode = perceptionfusion.ModeXMLOnly
 var defaultOrchestrator = newDefaultOrchestrator()
 var scriptPlugin scriptPluginRunner
+var lifecycleCtx engineplugin.LifecycleContext
+
+// SetLifecycleContext 设置插件生命周期上下文，应在加载插件前调用。
+func SetLifecycleContext(ctx engineplugin.LifecycleContext) {
+	lifecycleCtx = ctx
+}
+
+// NewLifecycleContext 构造生命周期上下文。
+func NewLifecycleContext(packageName string) engineplugin.LifecycleContext {
+	return engineplugin.LifecycleContext{
+		PackageName:    packageName,
+		PageSourceType: string(observationMode),
+	}
+}
 
 type scriptPluginRunner interface {
 	TransformPage(ctx engineplugin.PluginContext) (engineplugin.PageSnapshot, error)
 	BeforeDecide(ctx engineplugin.PluginContext) (*types2.ActionCommand, bool, error)
 	AfterDecide(ctx engineplugin.PluginContext, cmd *types2.ActionCommand) (*types2.ActionCommand, bool, error)
 	OnStepResult(ctx engineplugin.StepResultContext) error
+	OnInit(ctx engineplugin.LifecycleContext) error
+	OnDestroy(ctx engineplugin.LifecycleContext) error
 }
 
 type pluginChain struct {
@@ -131,6 +147,30 @@ func (c *pluginChain) OnStepResult(ctx engineplugin.StepResultContext) error {
 	return nil
 }
 
+func (c *pluginChain) OnInit(ctx engineplugin.LifecycleContext) error {
+	if c == nil || len(c.items) == 0 {
+		return nil
+	}
+	for _, item := range c.items {
+		if err := item.OnInit(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *pluginChain) OnDestroy(ctx engineplugin.LifecycleContext) error {
+	if c == nil || len(c.items) == 0 {
+		return nil
+	}
+	for _, item := range c.items {
+		if err := item.OnDestroy(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func GetAction(activity string, xmlDescOfGuiTree string) string {
 	operate := GetActionOpt(activity, xmlDescOfGuiTree)
 	if operate == nil {
@@ -198,11 +238,15 @@ func LoadScriptPlugin(path string) error {
 		return err
 	}
 	scriptPlugin = plugin
+	_ = scriptPlugin.OnInit(lifecycleCtx)
 	return nil
 }
 
 func ClearScriptPlugin() {
-	scriptPlugin = nil
+	if scriptPlugin != nil {
+		_ = scriptPlugin.OnDestroy(lifecycleCtx)
+		scriptPlugin = nil
+	}
 }
 
 func HasScriptPlugin() bool {
@@ -299,7 +343,14 @@ func LoadPluginsFromConfig(configPath string) error {
 		}
 		adapters = append(adapters, plugin)
 	}
+	// 替换前先销毁旧插件
+	if scriptPlugin != nil {
+		_ = scriptPlugin.OnDestroy(lifecycleCtx)
+	}
 	scriptPlugin = newPluginChain(adapters)
+	if scriptPlugin != nil {
+		_ = scriptPlugin.OnInit(lifecycleCtx)
+	}
 	return nil
 }
 

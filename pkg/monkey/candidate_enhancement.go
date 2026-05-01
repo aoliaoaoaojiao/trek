@@ -24,7 +24,7 @@ func (r *Runner) recordCandidateEnhancementOutcome(step int, cmd *types.ActionCo
 	if attempt.candidate.Command == nil || attempt.candidate.Command.ToJSON() != cmd.ToJSON() {
 		return
 	}
-	writer, ok := r.decider.(CandidateEnhancementMemoryWriter)
+	writer, ok := r.decider.(RecoveryMemoryWriter)
 	if !ok || writer == nil {
 		return
 	}
@@ -57,7 +57,7 @@ func (r *Runner) tryEnhanceCandidates(step int, beforePage session.PageSnapshot,
 		return nil, nil
 	}
 
-	llmProvider, ok := r.decider.(RecoveryLLMProvider)
+	llmProvider, ok := r.decider.(RecoveryCandidateProvider)
 	if !ok || llmProvider == nil {
 		return nil, nil
 	}

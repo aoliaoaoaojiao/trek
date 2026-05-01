@@ -259,16 +259,6 @@ func (r *Runner) nextBlockRecoveryCommand(pageName string, input session.ActionI
 			return cmd, nil
 		}
 	}
-	if provider, ok := r.decider.(BlockRecoveryDecider); ok && provider != nil {
-		cmd, err := provider.NextBlockRecoveryAction(pageName, input)
-		if err != nil {
-			return nil, err
-		}
-		if cmd != nil {
-			r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, candidate: candidateFromCommand(cmd, candidate.SourceHeuristic)}
-			return cmd, nil
-		}
-	}
 	fallback := &types.ActionCommand{Act: types.BACK}
 	r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, candidate: candidateFromCommand(fallback, candidate.SourceHeuristic)}
 	return fallback, nil
@@ -283,13 +273,9 @@ func (r *Runner) getRecoveryPlanner() recovery.RecoveryPlanner {
 	}
 
 	config := recovery.PlannerConfig{}
-	if provider, ok := r.decider.(RecoveryMemoryProvider); ok && provider != nil {
+	if provider, ok := r.decider.(RecoveryCandidateProvider); ok && provider != nil {
 		config.Memory = recoveryProviderFunc(provider.BuildMemoryRecoveryCandidates)
-	}
-	if provider, ok := r.decider.(RecoveryHeuristicProvider); ok && provider != nil {
 		config.Heuristic = recoveryProviderFunc(provider.BuildHeuristicRecoveryCandidates)
-	}
-	if provider, ok := r.decider.(RecoveryLLMProvider); ok && provider != nil {
 		config.LLM = recoveryProviderFunc(provider.BuildLLMRecoveryCandidates)
 	}
 	if r.cfg.LLMBudgetMaxCalls > 0 {
@@ -363,7 +349,7 @@ func (r *Runner) collectKnownFailedRecoveryActions(ctx enginestate.TraversalCont
 		}
 	}
 
-	provider, ok := r.decider.(RecoveryFailedActionProvider)
+	provider, ok := r.decider.(RecoveryActionHistoryProvider)
 	if !ok || provider == nil {
 		return known, nil
 	}
@@ -386,7 +372,7 @@ func (r *Runner) collectKnownSuccessfulRecoveryActions(ctx enginestate.Traversal
 			known[key] = true
 		}
 	}
-	provider, ok := r.decider.(RecoverySuccessfulActionProvider)
+	provider, ok := r.decider.(RecoveryActionHistoryProvider)
 	if !ok || provider == nil {
 		return known, nil
 	}

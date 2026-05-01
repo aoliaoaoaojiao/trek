@@ -338,6 +338,11 @@ func (s *Session) NextBlockRecoveryAction(pageName string, input ActionInput) (*
 	return operate, nil
 }
 
+// NextBlockRecoveryActionWithContext 在 Runner 检测到阻塞后提供兜底动作（上下文感知版本）。
+func (s *Session) NextBlockRecoveryActionWithContext(ctx enginestate.TraversalContext, input ActionInput) (*types.ActionCommand, error) {
+	return s.NextBlockRecoveryAction(ctx.PageName, input)
+}
+
 // BuildMemoryRecoveryCandidates 将 memory 经验转为恢复候选，供 runner 的 RecoveryPlanner 调用。
 func (s *Session) BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
 	if s == nil || s.memoryProvider == nil {

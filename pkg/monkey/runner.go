@@ -204,29 +204,16 @@ type TraversalOutcomeObserver interface {
 	ObserveTraversalOutcome(ctx enginestate.TraversalContext, action *types.ActionCommand, outcome traversal.ActionOutcome) error
 }
 
-// BlockRecoveryDecider 是可选接口：当 Runner 识别到“滚动无进展阻塞”时，
+// ContextAwareBlockRecoveryDecider 是可选恢复接口：当 Runner 识别到阻塞时，
 // 由决策层提供恢复动作；未实现时 Runner 使用 BACK 兜底。
-type BlockRecoveryDecider interface {
-	NextBlockRecoveryAction(pageName string, input session.ActionInput) (*types.ActionCommand, error)
-}
-
-// ContextAwareBlockRecoveryDecider 是面向第一阶段统一上下文的可选恢复接口。
 type ContextAwareBlockRecoveryDecider interface {
 	NextBlockRecoveryActionWithContext(ctx enginestate.TraversalContext, input session.ActionInput) (*types.ActionCommand, error)
 }
 
-// RecoveryMemoryProvider 提供恢复阶段 memory 候选。
-type RecoveryMemoryProvider interface {
+// RecoveryCandidateProvider 聚合恢复阶段各来源候选：memory / heuristic / llm。
+type RecoveryCandidateProvider interface {
 	BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
-}
-
-// RecoveryHeuristicProvider 提供恢复阶段 heuristic 候选。
-type RecoveryHeuristicProvider interface {
 	BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
-}
-
-// RecoveryLLMProvider 提供恢复阶段 llm 候选。
-type RecoveryLLMProvider interface {
 	BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
 }
 
@@ -240,23 +227,15 @@ type AlgorithmCandidateProvider interface {
 	BuildAlgorithmCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
 }
 
-// RecoveryMemoryWriter 在恢复动作执行后写回成功/失败经验。
+// RecoveryMemoryWriter 在恢复动作执行后写回成功/失败经验，以及候选增强动作的正负样本。
 type RecoveryMemoryWriter interface {
 	RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, item candidate.Candidate, escaped bool) error
-}
-
-// CandidateEnhancementMemoryWriter 写回候选增强动作的正负样本。
-type CandidateEnhancementMemoryWriter interface {
 	RecordCandidateEnhancementOutcome(ctx enginestate.TraversalContext, item candidate.Candidate, improved bool) error
 }
 
-// RecoveryFailedActionProvider 提供可持久化的已知失败恢复动作集合。
-type RecoveryFailedActionProvider interface {
+// RecoveryActionHistoryProvider 提供可持久化的已知失败/成功恢复动作集合。
+type RecoveryActionHistoryProvider interface {
 	BuildKnownFailedRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error)
-}
-
-// RecoverySuccessfulActionProvider 提供可持久化的已知成功恢复动作集合。
-type RecoverySuccessfulActionProvider interface {
 	BuildKnownSuccessfulRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error)
 }
 

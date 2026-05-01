@@ -142,6 +142,10 @@ func (d *recoveryAwareDecider) NextBlockRecoveryAction(pageName string, input se
 	return d.recoveryAction, nil
 }
 
+func (d *recoveryAwareDecider) NextBlockRecoveryActionWithContext(ctx enginestate.TraversalContext, input session.ActionInput) (*types.ActionCommand, error) {
+	return d.NextBlockRecoveryAction(ctx.PageName, input)
+}
+
 func (d *contextAwareRecoveryDecider) NextBlockRecoveryActionWithContext(ctx enginestate.TraversalContext, input session.ActionInput) (*types.ActionCommand, error) {
 	d.recoveryCalls++
 	d.lastContext = ctx

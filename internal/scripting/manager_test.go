@@ -11,7 +11,7 @@ func TestManagerTransformBeforeAfterAndState(t *testing.T) {
     }
   },
   beforeDecide(ctx) {
-    if (trek.state.increment("decide_count") === 1) {
+    if (trek.store.increment("decide_count") === 1) {
       return trek.action.click([1, 2, 3, 4])
     }
     return null
@@ -102,9 +102,9 @@ func TestManagerExposesScreenshotBytesToScript(t *testing.T) {
 func TestManagerOnStepResultSeesCrashANRAndBeforeAfterPages(t *testing.T) {
 	manager, err := LoadScript(`const plugin = {
   onStepResult(ctx) {
-    if (ctx.result.crash) trek.state.set("crash_page", ctx.result.before.page_name)
-    if (ctx.result.anr) trek.state.set("anr_page", ctx.result.after.page_name)
-    trek.state.set("after_xml", ctx.result.after.xml)
+    if (ctx.result.crash) trek.store.set("crash_page", ctx.result.before.page_name)
+    if (ctx.result.anr) trek.store.set("anr_page", ctx.result.after.page_name)
+    trek.store.set("after_xml", ctx.result.after.xml)
   },
 }`)
 	if err != nil {

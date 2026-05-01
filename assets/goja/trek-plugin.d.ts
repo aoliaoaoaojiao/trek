@@ -169,7 +169,7 @@ interface LifecycleContext {
  *
  * 完整生命周期：
  *
- *   1. onInit          — 插件加载完成后调用（仅一次）。适合初始化 trek.state。
+ *   1. onInit          — 插件加载完成后调用（仅一次）。适合初始化 trek.store。
  *   ┌─ 每个遍历步骤循环 ─────────────────────────────────────┐
  *   │  2. transformPage  — 引擎抓取页面源后调用，可改页面名和 XML。   │
  *   │                      注意：会被调用两次（页面名解析+决策阶段）。  │
@@ -181,14 +181,14 @@ interface LifecycleContext {
  *   └──────────────────────────────────────────────────────────────┘
  *   8. onDestroy       — 插件被清除或替换前调用（仅一次）。适合清理资源。
  *
- * trek.state 是跨步骤持久的，在同一脚本实例生命周期内一直存在。
+ * trek.store 是跨步骤持久的，在同一脚本实例生命周期内一直存在。
  * 多插件时按 plugins 数组顺序链式调用，前一个 transformPage 的输出是下一个的输入。
  */
 interface TrekPlugin {
   /**
    * 初始化钩子。
-   * 插件加载完成后调用，仅触发一次。适合在此初始化 trek.state 或执行一次性配置。
-   * 注意：由于 Goja 每次钩子调用都会重建 VM，此钩子中的 trek.state 会跨步持久。
+   * 插件加载完成后调用，仅触发一次。适合在此初始化 trek.store 或执行一次性配置。
+   * 注意：由于 Goja 每次钩子调用都会重建 VM，此钩子中的 trek.store 会跨步持久。
    */
   onInit?(ctx: LifecycleContext): void
   /**
@@ -224,13 +224,13 @@ interface TrekPlugin {
    * - duration_ms：本步耗时（毫秒）
    * - crash / anr：健康检测信号
    * - before / after：执行前后页面快照
-   * 适合在此用 trek.state 维护跨步骤的策略状态。
+   * 适合在此用 trek.store 维护跨步骤的策略状态。
    */
   onStepResult?(ctx: StepResultContext): void
   /**
    * 卸载钩子。
    * 插件被清除或替换前调用，仅触发一次。适合在此清理资源或保存状态。
-   * 注意：此钩子在新 VM 中执行，无法访问之前钩子的局部变量，但 trek.state 数据仍然可用。
+   * 注意：此钩子在新 VM 中执行，无法访问之前钩子的局部变量，但 trek.store 数据仍然可用。
    */
   onDestroy?(ctx: LifecycleContext): void
 }
@@ -452,21 +452,100 @@ interface TrekActionAPI {
 }
 
 interface TrekPageAPI {
+  /**
+   * 通过标准 XPath 从页面 XML 中查找节点，返回 PageNode 或 null。
+   * @example
+   * const node = trek.page.findByXpath(ctx.page, '//node[@resource-id="com.example:id/btn"]');
+   * if (node) trek.log.info(`found: ${node.text}`);
+   */
   findByXpath(page: PageSnapshot, xpath: string): PageNode | null
+  /**
+   * 从 XML 中移除所有包含指定文本的节点（字符串精确匹配）。
+   * @example
+   * ctx.page.xml = trek.page.excludeByText(ctx.page.xml, '广告');
+   */
   excludeByText(xml: string, text: string): string
+  /**
+   * 从 XML 中移除所有包含指定 resource-id 的节点（字符串精确匹配）。
+   * @example
+   * ctx.page.xml = trek.page.excludeByResourceId(ctx.page.xml, 'com.example:id/ad_container');
+   */
   excludeByResourceId(xml: string, id: string): string
+  /**
+   * 替换 XML 中的文本；from 支持字符串或正则（如 /pattern/flags）。
+   * @example
+   * ctx.page.xml = trek.page.replaceText(ctx.page.xml, '登录', 'Sign In');
+   * ctx.page.xml = trek.page.replaceText(ctx.page.xml, /用户\d+/g, '用户***');
+   */
   replaceText(xml: string, from: string | RegExp, to: string): string
+  /**
+   * 替换 XML 中的 resource-id；from 支持字符串或正则。
+   * @example
+   * ctx.page.xml = trek.page.replaceResourceId(ctx.page.xml, 'com.example.v2', 'com.example');
+   */
   replaceResourceId(xml: string, from: string | RegExp, to: string): string
+  /**
+   * 判断页面快照是否包含截图。
+   * @example
+   * if (trek.page.hasScreenshot(ctx.page)) { ... }
+   */
   hasScreenshot(page: PageSnapshot): boolean
+  /**
+   * 获取截图原始字节，无截图时返回 null。
+   * @example
+   * const bytes = trek.page.screenshotBytes(ctx.page);
+   * if (bytes) trek.log.info(`size: ${bytes.length}`);
+   */
   screenshotBytes(page: PageSnapshot): Uint8Array | null
+  /**
+   * 获取截图字节数，无截图时返回 0。
+   * @example
+   * trek.log.info(`screenshot: ${trek.page.screenshotSize(ctx.page)} bytes`);
+   */
   screenshotSize(page: PageSnapshot): number
 }
 
-interface TrekStateAPI {
+/**
+ * 跨步骤持久键值存储（插件私有，不参与引擎内部决策）。
+ * key 为插件脚本中自定义的任意字符串，无预定义 schema，按需命名即可。
+ * 同一插件生命周期内（onInit → onDestroy），所有钩子共享此状态；
+ * 适合记录访问计数、决策历史、页面标记等策略数据。
+ * 多插件时各插件实例独立，互不影响。
+ *
+ * 注意：引擎决策层使用的页面访问计数、动作计数等数据在 ctx.runtime 中提供，
+ * 与 trek.store 互不干扰。
+ */
+interface PluginStoreAPI {
+  /**
+   * 读取持久状态值，key 不存在返回 undefined。
+   * @example
+   * const count = trek.store.get('click_count') || 0;
+   */
   get<T = unknown>(key: string): T | undefined
+  /**
+   * 写入持久状态值，跨步骤可用。
+   * @example
+   * trek.store.set('last_page', ctx.page.page_name);
+   */
   set<T = unknown>(key: string, value: T): void
+  /**
+   * 对指定 key 做整数自增（默认 +1），返回自增后的值。
+   * @example
+   * const n = trek.store.increment('visit_count');
+   * trek.store.increment('score', 10);
+   */
   increment(key: string, delta?: number): number
+  /**
+   * 删除指定 key。
+   * @example
+   * trek.store.delete('temp_data');
+   */
   delete(key: string): void
+  /**
+   * 清空所有持久状态。
+   * @example
+   * trek.store.clear();
+   */
   clear(): void
 }
 
@@ -480,7 +559,7 @@ interface TrekLogAPI {
 interface TrekAPI {
   action: TrekActionAPI
   page: TrekPageAPI
-  state: TrekStateAPI
+  store: PluginStoreAPI
   log: TrekLogAPI
 }
 

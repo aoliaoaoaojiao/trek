@@ -184,11 +184,11 @@ func TestSessionOnStepResultFeedsGojaPluginState(t *testing.T) {
 	configContent := `const plugin = {
   onStepResult(ctx) {
     if (ctx.result.crash && ctx.result.after.xml.indexOf("After") >= 0) {
-      trek.state.set("should_back", true)
+      trek.store.set("should_back", true)
     }
   },
   beforeDecide(ctx) {
-    if (trek.state.get("should_back")) return trek.action.back()
+    if (trek.store.get("should_back")) return trek.action.back()
     return null
   }
 };`

@@ -275,7 +275,7 @@ func (m *Manager) installTrekAPI(vm *goja.Runtime) error {
 	return vm.Set("trek", map[string]any{
 		"action": actionAPI,
 		"page":   pageAPI,
-		"state":  stateAPI,
+		"store": stateAPI,
 		"log":    logAPI,
 	})
 }

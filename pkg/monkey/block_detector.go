@@ -88,7 +88,7 @@ func (d *blockDetector) Observe(cmd *types.ActionCommand, before session.PageSna
 	beforeSkeleton := d.resolveSkeleton(before.XML, before.Screenshot)
 	afterSkeleton := d.resolveSkeleton(after.XML, after.Screenshot)
 	// 内容签名：基于页面名+XML 全文，用于检测内容是否有实质变化
-	afterContent := pageSignature(after.PageName, after.XML)
+	afterContent := cachedSignaturePtr(after)
 
 	if !isBlockDetectorIgnoredAction(cmd.Act) && afterSkeleton != "" {
 		d.pageVisitCount[afterSkeleton]++
@@ -108,7 +108,7 @@ func (d *blockDetector) Observe(cmd *types.ActionCommand, before session.PageSna
 
 	// 同页面无移动：骨架和内容都相同才算"什么都没发生"
 	if !isBlockDetectorIgnoredAction(cmd.Act) && !cmd.IsScrollAction() && beforeSkeleton != "" && beforeSkeleton == afterSkeleton {
-		beforeContent := pageSignature(before.PageName, before.XML)
+		beforeContent := cachedSignature(before)
 		if beforeContent == afterContent {
 			d.consecutiveSamePageNoMove++
 		} else {
@@ -245,4 +245,23 @@ func pageSignature(pageName string, xml string) string {
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write([]byte(content))
 	return fmt.Sprintf("%x", h.Sum64())
+}
+
+// cachedSignature 优先使用 PageSnapshot 缓存的签名，未缓存时现场计算。
+func cachedSignature(page session.PageSnapshot) string {
+	if page.Signature != "" {
+		return page.Signature
+	}
+	return pageSignature(page.PageName, page.XML)
+}
+
+// cachedSignaturePtr 对 *PageSnapshot 同理。
+func cachedSignaturePtr(page *session.PageSnapshot) string {
+	if page == nil {
+		return ""
+	}
+	if page.Signature != "" {
+		return page.Signature
+	}
+	return pageSignature(page.PageName, page.XML)
 }

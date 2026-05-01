@@ -66,6 +66,8 @@ type AndroidDriver struct {
 	pocoPort        int
 	forwardPocoPort int
 	pocoEngine      poco.Engine
+
+	anrRegexCache sync.Map // map[string]*regexp.Regexp，按包名缓存编译后的 ANR 正则
 }
 
 type AndroidDriverOption func(*AndroidDriver)
@@ -309,8 +311,7 @@ func (a *AndroidDriver) CheckANR(packageName string) (bool, error) {
 	// 1. 先锚定包含目标包名的 ProcessRecord 行
 	// 2. 在其后有限行范围（最多 120 行）内查找 notResponding=true
 	// 3. 使用 DOTALL/不区分大小写匹配，兼容不同 ROM 输出格式
-	pattern := fmt.Sprintf(`(?is)processrecord\{[^\n]*%s[^\n]*\n(?:[^\n]*\n){0,120}?[^\n]*notresponding=true`, regexp.QuoteMeta(pkgLower))
-	re := regexp.MustCompile(pattern)
+	re := a.getOrCompileANRRegex(pkgLower)
 	if re.MatchString(dumpLower) {
 		return true, nil
 	}
@@ -321,6 +322,17 @@ func (a *AndroidDriver) CheckANR(packageName string) (bool, error) {
 	}
 
 	return false, nil
+}
+
+// getOrCompileANRRegex 按包名缓存编译后的 ANR 检测正则，避免每步重复编译。
+func (a *AndroidDriver) getOrCompileANRRegex(pkgLower string) *regexp.Regexp {
+	if cached, ok := a.anrRegexCache.Load(pkgLower); ok {
+		return cached.(*regexp.Regexp)
+	}
+	pattern := fmt.Sprintf(`(?is)processrecord\{[^\n]*%s[^\n]*\n(?:[^\n]*\n){0,120}?[^\n]*notresponding=true`, regexp.QuoteMeta(pkgLower))
+	re := regexp.MustCompile(pattern)
+	a.anrRegexCache.Store(pkgLower, re)
+	return re
 }
 
 func (a *AndroidDriver) Close() error {

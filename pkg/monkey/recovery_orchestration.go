@@ -155,7 +155,7 @@ func (r *Runner) buildTraversalContext(step int, page session.PageSnapshot, page
 	if actionCount == nil && r != nil {
 		actionCount = r.actionCount
 	}
-	signature := pageSignature(page.PageName, page.XML)
+	signature := cachedSignature(page)
 	return enginestate.BuildTraversalContext(enginestate.BuildInput{
 		Step:             step,
 		Mode:             mode,
@@ -176,7 +176,7 @@ func (r *Runner) recordActionTrace(page session.PageSnapshot, cmd *types.ActionC
 		return
 	}
 	trace := enginestate.ActionTrace{
-		PageSignature: pageSignature(page.PageName, page.XML),
+		PageSignature: cachedSignature(page),
 		ActionKey:     commandTraceKey(cmd),
 	}
 	if strings.TrimSpace(trace.PageSignature) == "" || strings.TrimSpace(trace.ActionKey) == "" {

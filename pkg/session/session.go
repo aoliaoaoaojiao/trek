@@ -52,6 +52,7 @@ type PageSnapshot struct {
 	PageName   string
 	XML        string
 	Screenshot []byte
+	Signature  string // pageSignature 缓存，避免每步重复 FNV 哈希
 }
 
 // StepResultInput 步骤结果输入，用于向引擎报告步骤执行结果

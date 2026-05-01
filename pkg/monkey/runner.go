@@ -458,6 +458,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			PageName:   pageName,
 			XML:        xml,
 			Screenshot: screenshot,
+			Signature:  pageSignature(pageName, xml),
 		}
 
 		record.PageName = pageName
@@ -536,7 +537,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 
 		afterPage := r.capturePageSnapshot(ctx, pageSource, pageName)
 		escaped := afterPage != nil &&
-			pageSignature(beforePage.PageName, beforePage.XML) != pageSignature(afterPage.PageName, afterPage.XML)
+			beforePage.Signature != afterPage.Signature
 		r.notifyTraversalOutcome(step, beforePage, afterPage, cmd, true)
 		if r.shouldEnableBlockRecovery() && r.blockDetector.Observe(cmd, beforePage, afterPage) {
 			r.handleBlockDetected(r.blockDetector.LastReason())
@@ -584,6 +585,7 @@ func (r *Runner) capturePageSnapshot(ctx context.Context, pageSource common.IPag
 		PageName:   nextPageName,
 		XML:        nextXML,
 		Screenshot: screenshot,
+		Signature:  pageSignature(nextPageName, nextXML),
 	}
 }
 
@@ -629,8 +631,8 @@ func (r *Runner) deriveTraversalOutcome(
 	if cmd.Act == types.NOP {
 		return traversal.OutcomeNoOp
 	}
-	beforeSig := pageSignature(before.PageName, before.XML)
-	afterSig := pageSignature(after.PageName, after.XML)
+	beforeSig := cachedSignature(before)
+	afterSig := cachedSignaturePtr(after)
 	if beforeSig == "" || afterSig == "" {
 		return traversal.OutcomeNoOp
 	}

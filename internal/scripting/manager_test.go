@@ -218,10 +218,10 @@ func TestLoadStaticConfigReadsCaptureScreenshotAndKeepStepRecords(t *testing.T) 
 	if err != nil {
 		t.Fatalf("加载静态配置失败: %v", err)
 	}
-	if !cfg.HasCaptureScreenshot || !cfg.CaptureScreenshot {
+	if !cfg.CaptureScreenshot.IsSet() || !cfg.CaptureScreenshot.Get() {
 		t.Fatalf("capture_screenshot 不符合预期: %+v", cfg)
 	}
-	if !cfg.HasKeepStepRecords || cfg.KeepStepRecords {
+	if !cfg.KeepStepRecords.IsSet() || cfg.KeepStepRecords.Get() {
 		t.Fatalf("keep_step_records 不符合预期: %+v", cfg)
 	}
 }
@@ -234,10 +234,10 @@ func TestLoadStaticConfigReadsCamelCaseCaptureScreenshotAndKeepStepRecords(t *te
 	if err != nil {
 		t.Fatalf("加载静态配置失败: %v", err)
 	}
-	if !cfg.HasCaptureScreenshot || cfg.CaptureScreenshot {
+	if !cfg.CaptureScreenshot.IsSet() || cfg.CaptureScreenshot.Get() {
 		t.Fatalf("captureScreenshot 不符合预期: %+v", cfg)
 	}
-	if !cfg.HasKeepStepRecords || !cfg.KeepStepRecords {
+	if !cfg.KeepStepRecords.IsSet() || !cfg.KeepStepRecords.Get() {
 		t.Fatalf("keepStepRecords 不符合预期: %+v", cfg)
 	}
 }
@@ -260,40 +260,40 @@ func TestLoadStaticConfigReadsRecoveryAndCandidateTuningSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("加载静态配置失败: %v", err)
 	}
-	if !cfg.HasExploreOCRTimeout || cfg.ExploreOCRTimeoutMs != 12000 {
+	if !cfg.ExploreOCRTimeoutMs.IsSet() || cfg.ExploreOCRTimeoutMs.Get() != 12000 {
 		t.Fatalf("explore_ocr_timeout_ms 不符合预期: %+v", cfg)
 	}
-	if !cfg.HasLLMTimeout || cfg.LLMTimeoutMs != 23000 {
+	if !cfg.LLMTimeoutMs.IsSet() || cfg.LLMTimeoutMs.Get() != 23000 {
 		t.Fatalf("llm_timeout_ms 不符合预期: %+v", cfg)
 	}
-	if !cfg.HasRecoveryCooldownSteps || cfg.RecoveryCooldownSteps != 3 {
+	if !cfg.RecoveryCooldownSteps.IsSet() || cfg.RecoveryCooldownSteps.Get() != 3 {
 		t.Fatalf("recovery_cooldown_steps 不符合预期: %+v", cfg)
 	}
-	if !cfg.HasLLMMaxCalls || cfg.LLMMaxCalls != 5 {
+	if !cfg.LLMMaxCalls.IsSet() || cfg.LLMMaxCalls.Get() != 5 {
 		t.Fatalf("llm_max_calls 不符合预期: %+v", cfg)
 	}
-	if !cfg.HasLLMWindowSteps || cfg.LLMWindowSteps != 40 {
+	if !cfg.LLMWindowSteps.IsSet() || cfg.LLMWindowSteps.Get() != 40 {
 		t.Fatalf("llm_window_steps 不符合预期: %+v", cfg)
 	}
-	if !cfg.HasRecoveryTwoStateLoopThreshold || cfg.RecoveryTwoStateLoopThreshold != 4 {
+	if !cfg.RecoveryTwoStateLoopThreshold.IsSet() || cfg.RecoveryTwoStateLoopThreshold.Get() != 4 {
 		t.Fatalf("recovery_two_state_loop_threshold 不符合预期: %+v", cfg)
 	}
-	if !cfg.HasRecoveryHighVisitThreshold || cfg.RecoveryHighVisitThreshold != 9 {
+	if !cfg.RecoveryHighVisitThreshold.IsSet() || cfg.RecoveryHighVisitThreshold.Get() != 9 {
 		t.Fatalf("recovery_high_visit_threshold 不符合预期: %+v", cfg)
 	}
-	if !cfg.HasRecoveryLowRewardWindow || cfg.RecoveryLowRewardWindow != 7 {
+	if !cfg.RecoveryLowRewardWindow.IsSet() || cfg.RecoveryLowRewardWindow.Get() != 7 {
 		t.Fatalf("recovery_low_reward_window 不符合预期: %+v", cfg)
 	}
-	if !cfg.HasCandidateAmbiguityTopGapThreshold || cfg.CandidateAmbiguityTopGapThreshold != 0.12 {
+	if !cfg.CandidateAmbiguityTopGapThreshold.IsSet() || cfg.CandidateAmbiguityTopGapThreshold.Get() != 0.12 {
 		t.Fatalf("candidate_ambiguity_top_gap_threshold 不符合预期: %+v", cfg)
 	}
-	if !cfg.HasHighValuePageVisitLimit || cfg.HighValuePageVisitLimit != 3 {
+	if !cfg.HighValuePageVisitLimit.IsSet() || cfg.HighValuePageVisitLimit.Get() != 3 {
 		t.Fatalf("high_value_page_visit_limit 不符合预期: %+v", cfg)
 	}
-	if !cfg.HasCandidateRiskDropThreshold || cfg.CandidateRiskDropThreshold != 1.9 {
+	if !cfg.CandidateRiskDropThreshold.IsSet() || cfg.CandidateRiskDropThreshold.Get() != 1.9 {
 		t.Fatalf("candidate_risk_drop_threshold 不符合预期: %+v", cfg)
 	}
-	if !cfg.HasCandidateMinFusionScore || cfg.CandidateMinFusionScore != -0.2 {
+	if !cfg.CandidateMinFusionScore.IsSet() || cfg.CandidateMinFusionScore.Get() != -0.2 {
 		t.Fatalf("candidate_min_fusion_score 不符合预期: %+v", cfg)
 	}
 }
@@ -363,22 +363,22 @@ func TestLoadStaticConfigReadsUCTBanditSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("加载静态配置失败: %v", err)
 	}
-	if !cfg.UCTBandit.HasTwoStateLoopPenalty || cfg.UCTBandit.TwoStateLoopPenalty != -4.5 {
+	if !cfg.UCTBandit.TwoStateLoopPenalty.IsSet() || cfg.UCTBandit.TwoStateLoopPenalty.Get() != -4.5 {
 		t.Fatalf("two_state_loop_penalty 不符合预期: %+v", cfg.UCTBandit)
 	}
-	if !cfg.UCTBandit.HasEdgeRepeatPenalty || cfg.UCTBandit.EdgeRepeatPenalty != -1.2 {
+	if !cfg.UCTBandit.EdgeRepeatPenalty.IsSet() || cfg.UCTBandit.EdgeRepeatPenalty.Get() != -1.2 {
 		t.Fatalf("edge_repeat_penalty 不符合预期: %+v", cfg.UCTBandit)
 	}
-	if !cfg.UCTBandit.HasEdgeRepeatThreshold || cfg.UCTBandit.EdgeRepeatThreshold != 3 {
+	if !cfg.UCTBandit.EdgeRepeatThreshold.IsSet() || cfg.UCTBandit.EdgeRepeatThreshold.Get() != 3 {
 		t.Fatalf("edge_repeat_threshold 不符合预期: %+v", cfg.UCTBandit)
 	}
-	if !cfg.UCTBandit.HasActionCooldownPenalty || cfg.UCTBandit.ActionCooldownPenalty != 0.75 {
+	if !cfg.UCTBandit.ActionCooldownPenalty.IsSet() || cfg.UCTBandit.ActionCooldownPenalty.Get() != 0.75 {
 		t.Fatalf("action_cooldown_penalty 不符合预期: %+v", cfg.UCTBandit)
 	}
-	if !cfg.UCTBandit.HasRecentActionWindow || cfg.UCTBandit.RecentActionWindow != 8 {
+	if !cfg.UCTBandit.RecentActionWindow.IsSet() || cfg.UCTBandit.RecentActionWindow.Get() != 8 {
 		t.Fatalf("recent_action_window 不符合预期: %+v", cfg.UCTBandit)
 	}
-	if !cfg.UCTBandit.HasLoopEscapeExploreBoost || cfg.UCTBandit.LoopEscapeExploreBoost != 0.2 {
+	if !cfg.UCTBandit.LoopEscapeExploreBoost.IsSet() || cfg.UCTBandit.LoopEscapeExploreBoost.Get() != 0.2 {
 		t.Fatalf("loop_escape_explore_boost 不符合预期: %+v", cfg.UCTBandit)
 	}
 }

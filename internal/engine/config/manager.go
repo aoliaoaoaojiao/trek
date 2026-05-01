@@ -206,18 +206,12 @@ func (m *Manager) GetUCTBanditConfig() coretypes.UCTBanditStaticConfig {
 	}
 	uctCfg := m.staticConfig.UCTBandit
 	return coretypes.UCTBanditStaticConfig{
-		TwoStateLoopPenalty:      uctCfg.TwoStateLoopPenalty,
-		EdgeRepeatPenalty:        uctCfg.EdgeRepeatPenalty,
-		EdgeRepeatThreshold:      uctCfg.EdgeRepeatThreshold,
-		ActionCooldownPenalty:    uctCfg.ActionCooldownPenalty,
-		RecentActionWindow:       uctCfg.RecentActionWindow,
-		LoopEscapeExploreBoost:   uctCfg.LoopEscapeExploreBoost,
-		HasTwoStateLoopPenalty:   uctCfg.HasTwoStateLoopPenalty,
-		HasEdgeRepeatPenalty:     uctCfg.HasEdgeRepeatPenalty,
-		HasEdgeRepeatThreshold:   uctCfg.HasEdgeRepeatThreshold,
-		HasActionCooldownPenalty: uctCfg.HasActionCooldownPenalty,
-		HasRecentActionWindow:    uctCfg.HasRecentActionWindow,
-		HasLoopEscapeExploreBoost: uctCfg.HasLoopEscapeExploreBoost,
+		TwoStateLoopPenalty:    uctCfg.TwoStateLoopPenalty,
+		EdgeRepeatPenalty:      uctCfg.EdgeRepeatPenalty,
+		EdgeRepeatThreshold:    uctCfg.EdgeRepeatThreshold,
+		ActionCooldownPenalty:  uctCfg.ActionCooldownPenalty,
+		RecentActionWindow:     uctCfg.RecentActionWindow,
+		LoopEscapeExploreBoost: uctCfg.LoopEscapeExploreBoost,
 	}
 }
 

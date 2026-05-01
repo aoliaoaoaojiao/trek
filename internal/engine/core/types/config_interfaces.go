@@ -17,18 +17,12 @@ type ConfigProvider interface {
 
 // UCTBanditStaticConfig 保存 UCT-Bandit 算法的静态配置覆盖项。
 type UCTBanditStaticConfig struct {
-	TwoStateLoopPenalty    float64
-	EdgeRepeatPenalty      float64
-	EdgeRepeatThreshold    int
-	ActionCooldownPenalty  float64
-	RecentActionWindow     int
-	LoopEscapeExploreBoost float64
-	HasTwoStateLoopPenalty    bool
-	HasEdgeRepeatPenalty      bool
-	HasEdgeRepeatThreshold    bool
-	HasActionCooldownPenalty  bool
-	HasRecentActionWindow     bool
-	HasLoopEscapeExploreBoost bool
+	TwoStateLoopPenalty    Optional[float64]
+	EdgeRepeatPenalty      Optional[float64]
+	EdgeRepeatThreshold    Optional[int]
+	ActionCooldownPenalty  Optional[float64]
+	RecentActionWindow     Optional[int]
+	LoopEscapeExploreBoost Optional[float64]
 }
 
 // StaticConfigProvider 抽象静态配置访问，用于 uctbandit agent 获取配置覆盖。

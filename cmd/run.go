@@ -100,60 +100,24 @@ func runMonkey(logLevelStr string, opts struct {
 		// 仅在 CLI 未显式指定（仍为默认值）时，使用配置文件中的值
 		opts.algorithm = staticCfg.Algorithm
 	}
-	if staticCfg.HasCaptureScreenshot && !captureScreenshotCLISet {
-		opts.captureScreenshot = staticCfg.CaptureScreenshot
+	if staticCfg.CaptureScreenshot.IsSet() && !captureScreenshotCLISet {
+		opts.captureScreenshot = staticCfg.CaptureScreenshot.Get()
 	}
-	if staticCfg.HasKeepStepRecords && !keepStepRecordsCLISet {
-		opts.keepStepRecords = staticCfg.KeepStepRecords
+	if staticCfg.KeepStepRecords.IsSet() && !keepStepRecordsCLISet {
+		opts.keepStepRecords = staticCfg.KeepStepRecords.Get()
 	}
-	exploreOCRTimeout := 10 * time.Second
-	recoveryCooldownSteps := 2
-	llmTimeout := 15 * time.Second
-	llmMaxCalls := 0
-	llmWindowSteps := 0
-	recoveryTwoStateLoopThreshold := 2
-	recoveryHighVisitThreshold := 8
-	recoveryLowRewardWindow := 6
-	candidateAmbiguityTopGapThreshold := 0.15
-	highValuePageVisitLimit := 2
-	candidateRiskDropThreshold := 2.1
-	candidateMinFusionScore := -0.3
-	if staticCfg.HasExploreOCRTimeout {
-		exploreOCRTimeout = time.Duration(staticCfg.ExploreOCRTimeoutMs) * time.Millisecond
-	}
-	if staticCfg.HasRecoveryCooldownSteps {
-		recoveryCooldownSteps = staticCfg.RecoveryCooldownSteps
-	}
-	if staticCfg.HasLLMTimeout {
-		llmTimeout = time.Duration(staticCfg.LLMTimeoutMs) * time.Millisecond
-	}
-	if staticCfg.HasLLMMaxCalls {
-		llmMaxCalls = staticCfg.LLMMaxCalls
-	}
-	if staticCfg.HasLLMWindowSteps {
-		llmWindowSteps = staticCfg.LLMWindowSteps
-	}
-	if staticCfg.HasRecoveryTwoStateLoopThreshold {
-		recoveryTwoStateLoopThreshold = staticCfg.RecoveryTwoStateLoopThreshold
-	}
-	if staticCfg.HasRecoveryHighVisitThreshold {
-		recoveryHighVisitThreshold = staticCfg.RecoveryHighVisitThreshold
-	}
-	if staticCfg.HasRecoveryLowRewardWindow {
-		recoveryLowRewardWindow = staticCfg.RecoveryLowRewardWindow
-	}
-	if staticCfg.HasCandidateAmbiguityTopGapThreshold {
-		candidateAmbiguityTopGapThreshold = staticCfg.CandidateAmbiguityTopGapThreshold
-	}
-	if staticCfg.HasHighValuePageVisitLimit {
-		highValuePageVisitLimit = staticCfg.HighValuePageVisitLimit
-	}
-	if staticCfg.HasCandidateRiskDropThreshold {
-		candidateRiskDropThreshold = staticCfg.CandidateRiskDropThreshold
-	}
-	if staticCfg.HasCandidateMinFusionScore {
-		candidateMinFusionScore = staticCfg.CandidateMinFusionScore
-	}
+	exploreOCRTimeout := time.Duration(staticCfg.ExploreOCRTimeoutMs.OrDefault(10000)) * time.Millisecond
+	recoveryCooldownSteps := staticCfg.RecoveryCooldownSteps.OrDefault(2)
+	llmTimeout := time.Duration(staticCfg.LLMTimeoutMs.OrDefault(15000)) * time.Millisecond
+	llmMaxCalls := staticCfg.LLMMaxCalls.OrDefault(0)
+	llmWindowSteps := staticCfg.LLMWindowSteps.OrDefault(0)
+	recoveryTwoStateLoopThreshold := staticCfg.RecoveryTwoStateLoopThreshold.OrDefault(2)
+	recoveryHighVisitThreshold := staticCfg.RecoveryHighVisitThreshold.OrDefault(8)
+	recoveryLowRewardWindow := staticCfg.RecoveryLowRewardWindow.OrDefault(6)
+	candidateAmbiguityTopGapThreshold := staticCfg.CandidateAmbiguityTopGapThreshold.OrDefault(0.15)
+	highValuePageVisitLimit := staticCfg.HighValuePageVisitLimit.OrDefault(2)
+	candidateRiskDropThreshold := staticCfg.CandidateRiskDropThreshold.OrDefault(2.1)
+	candidateMinFusionScore := staticCfg.CandidateMinFusionScore.OrDefault(-0.3)
 
 	pageSourceType, err := resolvePageSourceType(staticCfg)
 	if err != nil {

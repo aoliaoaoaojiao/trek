@@ -8,51 +8,38 @@ import (
 	"strings"
 
 	"github.com/dop251/goja"
+	coretypes "trek/internal/engine/core/types"
 )
 
 type StaticConfig struct {
-	ResMapping                           map[string]string
-	BlackRects                           map[string][][4]int
-	SkipAll                              bool
-	PageSource                           string
-	TouchMode                            string
-	PageNameStrategy                     string
-	Algorithm                            string
-	Plugins                              []string
-	CaptureScreenshot                    bool
-	HasCaptureScreenshot                 bool
-	KeepStepRecords                      bool
-	HasKeepStepRecords                   bool
-	ExploreOCRTimeoutMs                  int
-	HasExploreOCRTimeout                 bool
-	LLMTimeoutMs                 int
-	HasLLMTimeout                bool
-	RecoveryCooldownSteps                int
-	HasRecoveryCooldownSteps             bool
-	LLMMaxCalls                  int
-	HasLLMMaxCalls               bool
-	LLMWindowSteps               int
-	HasLLMWindowSteps            bool
-	RecoveryTwoStateLoopThreshold        int
-	HasRecoveryTwoStateLoopThreshold     bool
-	RecoveryHighVisitThreshold           int
-	HasRecoveryHighVisitThreshold        bool
-	RecoveryLowRewardWindow              int
-	HasRecoveryLowRewardWindow           bool
-	CandidateAmbiguityTopGapThreshold    float64
-	HasCandidateAmbiguityTopGapThreshold bool
-	HighValuePageVisitLimit              int
-	HasHighValuePageVisitLimit           bool
-	CandidateRiskDropThreshold           float64
-	HasCandidateRiskDropThreshold        bool
-	CandidateMinFusionScore              float64
-	HasCandidateMinFusionScore           bool
-	ScrollInferThreshold                 int
-	UIA                                  StaticUIAConfig
-	Poco                                 StaticPocoConfig
-	Log                                  StaticLogConfig
-	EffectiveTouchArea                   *StaticEffectiveTouchArea
-	UCTBandit                            StaticUCTBanditConfig
+	ResMapping                map[string]string
+	BlackRects                map[string][][4]int
+	SkipAll                   bool
+	PageSource                string
+	TouchMode                 string
+	PageNameStrategy          string
+	Algorithm                 string
+	Plugins                   []string
+	CaptureScreenshot         coretypes.Optional[bool]
+	KeepStepRecords           coretypes.Optional[bool]
+	ExploreOCRTimeoutMs       coretypes.Optional[int]
+	LLMTimeoutMs              coretypes.Optional[int]
+	RecoveryCooldownSteps     coretypes.Optional[int]
+	LLMMaxCalls               coretypes.Optional[int]
+	LLMWindowSteps            coretypes.Optional[int]
+	RecoveryTwoStateLoopThreshold  coretypes.Optional[int]
+	RecoveryHighVisitThreshold     coretypes.Optional[int]
+	RecoveryLowRewardWindow        coretypes.Optional[int]
+	CandidateAmbiguityTopGapThreshold coretypes.Optional[float64]
+	HighValuePageVisitLimit        coretypes.Optional[int]
+	CandidateRiskDropThreshold     coretypes.Optional[float64]
+	CandidateMinFusionScore        coretypes.Optional[float64]
+	ScrollInferThreshold     int
+	UIA                       StaticUIAConfig
+	Poco                      StaticPocoConfig
+	Log                       StaticLogConfig
+	EffectiveTouchArea        *StaticEffectiveTouchArea
+	UCTBandit                 StaticUCTBanditConfig
 }
 
 type StaticLogConfig struct {
@@ -82,18 +69,12 @@ type StaticTouchRange struct {
 }
 
 type StaticUCTBanditConfig struct {
-	TwoStateLoopPenalty       float64
-	HasTwoStateLoopPenalty    bool
-	EdgeRepeatPenalty         float64
-	HasEdgeRepeatPenalty      bool
-	EdgeRepeatThreshold       int
-	HasEdgeRepeatThreshold    bool
-	ActionCooldownPenalty     float64
-	HasActionCooldownPenalty  bool
-	RecentActionWindow        int
-	HasRecentActionWindow     bool
-	LoopEscapeExploreBoost    float64
-	HasLoopEscapeExploreBoost bool
+	TwoStateLoopPenalty    coretypes.Optional[float64]
+	EdgeRepeatPenalty      coretypes.Optional[float64]
+	EdgeRepeatThreshold    coretypes.Optional[int]
+	ActionCooldownPenalty  coretypes.Optional[float64]
+	RecentActionWindow     coretypes.Optional[int]
+	LoopEscapeExploreBoost coretypes.Optional[float64]
 }
 
 func LoadStaticConfigFile(path string) (StaticConfig, error) {
@@ -203,262 +184,27 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 		}
 		cfg.Plugins = plugins
 	}
-	if captureValue := obj.Get("capture_screenshot"); !isEmptyJSValue(captureValue) {
-		cfg.CaptureScreenshot = captureValue.ToBoolean()
-		cfg.HasCaptureScreenshot = true
-	}
-	if captureValue := obj.Get("captureScreenshot"); !cfg.HasCaptureScreenshot && !isEmptyJSValue(captureValue) {
-		cfg.CaptureScreenshot = captureValue.ToBoolean()
-		cfg.HasCaptureScreenshot = true
-	}
-	if keepValue := obj.Get("keep_step_records"); !isEmptyJSValue(keepValue) {
-		cfg.KeepStepRecords = keepValue.ToBoolean()
-		cfg.HasKeepStepRecords = true
-	}
-	if keepValue := obj.Get("keepStepRecords"); !cfg.HasKeepStepRecords && !isEmptyJSValue(keepValue) {
-		cfg.KeepStepRecords = keepValue.ToBoolean()
-		cfg.HasKeepStepRecords = true
-	}
-	if value := obj.Get("explore_ocr_timeout_ms"); !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("explore_ocr_timeout_ms 非法: %w", err)
-		}
-		cfg.ExploreOCRTimeoutMs = parsed
-		cfg.HasExploreOCRTimeout = true
-	}
-	if value := obj.Get("exploreOcrTimeoutMs"); !cfg.HasExploreOCRTimeout && !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("exploreOcrTimeoutMs 非法: %w", err)
-		}
-		cfg.ExploreOCRTimeoutMs = parsed
-		cfg.HasExploreOCRTimeout = true
-	}
-	if value := obj.Get("llm_timeout_ms"); !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("llm_timeout_ms 非法: %w", err)
-		}
-		cfg.LLMTimeoutMs = parsed
-		cfg.HasLLMTimeout = true
-	}
-	if value := obj.Get("recovery_llm_timeout_ms"); !cfg.HasLLMTimeout && !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("recovery_llm_timeout_ms 非法: %w", err)
-		}
-		cfg.LLMTimeoutMs = parsed
-		cfg.HasLLMTimeout = true
-	}
-	if value := obj.Get("llmTimeoutMs"); !cfg.HasLLMTimeout && !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("llmTimeoutMs 非法: %w", err)
-		}
-		cfg.LLMTimeoutMs = parsed
-		cfg.HasLLMTimeout = true
-	}
-	if value := obj.Get("recoveryLlmTimeoutMs"); !cfg.HasLLMTimeout && !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("recoveryLlmTimeoutMs 非法: %w", err)
-		}
-		cfg.LLMTimeoutMs = parsed
-		cfg.HasLLMTimeout = true
-	}
-	if value := obj.Get("recovery_cooldown_steps"); !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("recovery_cooldown_steps 非法: %w", err)
-		}
-		cfg.RecoveryCooldownSteps = parsed
-		cfg.HasRecoveryCooldownSteps = true
-	}
-	if value := obj.Get("recoveryCooldownSteps"); !cfg.HasRecoveryCooldownSteps && !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("recoveryCooldownSteps 非法: %w", err)
-		}
-		cfg.RecoveryCooldownSteps = parsed
-		cfg.HasRecoveryCooldownSteps = true
-	}
-	if value := obj.Get("llm_max_calls"); !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("llm_max_calls 非法: %w", err)
-		}
-		cfg.LLMMaxCalls = parsed
-		cfg.HasLLMMaxCalls = true
-	}
-	if value := obj.Get("recovery_llm_max_calls"); !cfg.HasLLMMaxCalls && !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("recovery_llm_max_calls 非法: %w", err)
-		}
-		cfg.LLMMaxCalls = parsed
-		cfg.HasLLMMaxCalls = true
-	}
-	if value := obj.Get("llmMaxCalls"); !cfg.HasLLMMaxCalls && !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("llmMaxCalls 非法: %w", err)
-		}
-		cfg.LLMMaxCalls = parsed
-		cfg.HasLLMMaxCalls = true
-	}
-	if value := obj.Get("recoveryLlmMaxCalls"); !cfg.HasLLMMaxCalls && !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("recoveryLlmMaxCalls 非法: %w", err)
-		}
-		cfg.LLMMaxCalls = parsed
-		cfg.HasLLMMaxCalls = true
-	}
-	if value := obj.Get("llm_window_steps"); !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("llm_window_steps 非法: %w", err)
-		}
-		cfg.LLMWindowSteps = parsed
-		cfg.HasLLMWindowSteps = true
-	}
-	if value := obj.Get("recovery_llm_window_steps"); !cfg.HasLLMWindowSteps && !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("recovery_llm_window_steps 非法: %w", err)
-		}
-		cfg.LLMWindowSteps = parsed
-		cfg.HasLLMWindowSteps = true
-	}
-	if value := obj.Get("llmWindowSteps"); !cfg.HasLLMWindowSteps && !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("llmWindowSteps 非法: %w", err)
-		}
-		cfg.LLMWindowSteps = parsed
-		cfg.HasLLMWindowSteps = true
-	}
-	if value := obj.Get("recoveryLlmWindowSteps"); !cfg.HasLLMWindowSteps && !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("recoveryLlmWindowSteps 非法: %w", err)
-		}
-		cfg.LLMWindowSteps = parsed
-		cfg.HasLLMWindowSteps = true
-	}
-	if value := obj.Get("recovery_two_state_loop_threshold"); !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("recovery_two_state_loop_threshold 非法: %w", err)
-		}
-		cfg.RecoveryTwoStateLoopThreshold = parsed
-		cfg.HasRecoveryTwoStateLoopThreshold = true
-	}
-	if value := obj.Get("recoveryTwoStateLoopThreshold"); !cfg.HasRecoveryTwoStateLoopThreshold && !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("recoveryTwoStateLoopThreshold 非法: %w", err)
-		}
-		cfg.RecoveryTwoStateLoopThreshold = parsed
-		cfg.HasRecoveryTwoStateLoopThreshold = true
-	}
-	if value := obj.Get("recovery_high_visit_threshold"); !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("recovery_high_visit_threshold 非法: %w", err)
-		}
-		cfg.RecoveryHighVisitThreshold = parsed
-		cfg.HasRecoveryHighVisitThreshold = true
-	}
-	if value := obj.Get("recoveryHighVisitThreshold"); !cfg.HasRecoveryHighVisitThreshold && !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("recoveryHighVisitThreshold 非法: %w", err)
-		}
-		cfg.RecoveryHighVisitThreshold = parsed
-		cfg.HasRecoveryHighVisitThreshold = true
-	}
-	if value := obj.Get("recovery_low_reward_window"); !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("recovery_low_reward_window 非法: %w", err)
-		}
-		cfg.RecoveryLowRewardWindow = parsed
-		cfg.HasRecoveryLowRewardWindow = true
-	}
-	if value := obj.Get("recoveryLowRewardWindow"); !cfg.HasRecoveryLowRewardWindow && !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("recoveryLowRewardWindow 非法: %w", err)
-		}
-		cfg.RecoveryLowRewardWindow = parsed
-		cfg.HasRecoveryLowRewardWindow = true
-	}
-	if value := obj.Get("candidate_ambiguity_top_gap_threshold"); !isEmptyJSValue(value) {
-		parsed, err := floatFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("candidate_ambiguity_top_gap_threshold 非法: %w", err)
-		}
-		cfg.CandidateAmbiguityTopGapThreshold = parsed
-		cfg.HasCandidateAmbiguityTopGapThreshold = true
-	}
-	if value := obj.Get("candidateAmbiguityTopGapThreshold"); !cfg.HasCandidateAmbiguityTopGapThreshold && !isEmptyJSValue(value) {
-		parsed, err := floatFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("candidateAmbiguityTopGapThreshold 非法: %w", err)
-		}
-		cfg.CandidateAmbiguityTopGapThreshold = parsed
-		cfg.HasCandidateAmbiguityTopGapThreshold = true
-	}
-	if value := obj.Get("high_value_page_visit_limit"); !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("high_value_page_visit_limit 非法: %w", err)
-		}
-		cfg.HighValuePageVisitLimit = parsed
-		cfg.HasHighValuePageVisitLimit = true
-	}
-	if value := obj.Get("highValuePageVisitLimit"); !cfg.HasHighValuePageVisitLimit && !isEmptyJSValue(value) {
-		parsed, err := intFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("highValuePageVisitLimit 非法: %w", err)
-		}
-		cfg.HighValuePageVisitLimit = parsed
-		cfg.HasHighValuePageVisitLimit = true
-	}
-	if value := obj.Get("candidate_risk_drop_threshold"); !isEmptyJSValue(value) {
-		parsed, err := floatFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("candidate_risk_drop_threshold 非法: %w", err)
-		}
-		cfg.CandidateRiskDropThreshold = parsed
-		cfg.HasCandidateRiskDropThreshold = true
-	}
-	if value := obj.Get("candidateRiskDropThreshold"); !cfg.HasCandidateRiskDropThreshold && !isEmptyJSValue(value) {
-		parsed, err := floatFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("candidateRiskDropThreshold 非法: %w", err)
-		}
-		cfg.CandidateRiskDropThreshold = parsed
-		cfg.HasCandidateRiskDropThreshold = true
-	}
-	if value := obj.Get("candidate_min_fusion_score"); !isEmptyJSValue(value) {
-		parsed, err := floatFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("candidate_min_fusion_score 非法: %w", err)
-		}
-		cfg.CandidateMinFusionScore = parsed
-		cfg.HasCandidateMinFusionScore = true
-	}
-	if value := obj.Get("candidateMinFusionScore"); !cfg.HasCandidateMinFusionScore && !isEmptyJSValue(value) {
-		parsed, err := floatFromJSValue(value)
-		if err != nil {
-			return cfg, fmt.Errorf("candidateMinFusionScore 非法: %w", err)
-		}
-		cfg.CandidateMinFusionScore = parsed
-		cfg.HasCandidateMinFusionScore = true
-	}
+
+	// 可选布尔字段
+	cfg.CaptureScreenshot = optionalBool(obj, "capture_screenshot", "captureScreenshot")
+	cfg.KeepStepRecords = optionalBool(obj, "keep_step_records", "keepStepRecords")
+
+	// 可选整数字段
+	cfg.ExploreOCRTimeoutMs = optionalInt(obj, "explore_ocr_timeout_ms", "exploreOcrTimeoutMs")
+	cfg.LLMTimeoutMs = optionalInt(obj, "llm_timeout_ms", "recovery_llm_timeout_ms", "llmTimeoutMs", "recoveryLlmTimeoutMs")
+	cfg.RecoveryCooldownSteps = optionalInt(obj, "recovery_cooldown_steps", "recoveryCooldownSteps")
+	cfg.LLMMaxCalls = optionalInt(obj, "llm_max_calls", "recovery_llm_max_calls", "llmMaxCalls", "recoveryLlmMaxCalls")
+	cfg.LLMWindowSteps = optionalInt(obj, "llm_window_steps", "recovery_llm_window_steps", "llmWindowSteps", "recoveryLlmWindowSteps")
+	cfg.RecoveryTwoStateLoopThreshold = optionalInt(obj, "recovery_two_state_loop_threshold", "recoveryTwoStateLoopThreshold")
+	cfg.RecoveryHighVisitThreshold = optionalInt(obj, "recovery_high_visit_threshold", "recoveryHighVisitThreshold")
+	cfg.RecoveryLowRewardWindow = optionalInt(obj, "recovery_low_reward_window", "recoveryLowRewardWindow")
+	cfg.HighValuePageVisitLimit = optionalInt(obj, "high_value_page_visit_limit", "highValuePageVisitLimit")
+
+	// 可选浮点字段
+	cfg.CandidateAmbiguityTopGapThreshold = optionalFloat(obj, "candidate_ambiguity_top_gap_threshold", "candidateAmbiguityTopGapThreshold")
+	cfg.CandidateRiskDropThreshold = optionalFloat(obj, "candidate_risk_drop_threshold", "candidateRiskDropThreshold")
+	cfg.CandidateMinFusionScore = optionalFloat(obj, "candidate_min_fusion_score", "candidateMinFusionScore")
+
 	if scrollInferValue := obj.Get("scroll_infer_threshold"); !isEmptyJSValue(scrollInferValue) {
 		threshold, err := intFromJSValue(scrollInferValue)
 		if err != nil {
@@ -554,56 +300,76 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 	}
 	if uctBanditValue := obj.Get("uct_bandit"); !isEmptyJSValue(uctBanditValue) {
 		uctBanditObj := uctBanditValue.ToObject(vm)
-		if value := uctBanditObj.Get("two_state_loop_penalty"); !isEmptyJSValue(value) {
-			parsed, err := floatFromJSValue(value)
-			if err != nil {
-				return cfg, fmt.Errorf("uct_bandit.two_state_loop_penalty 非法: %w", err)
-			}
-			cfg.UCTBandit.TwoStateLoopPenalty = parsed
-			cfg.UCTBandit.HasTwoStateLoopPenalty = true
-		}
-		if value := uctBanditObj.Get("edge_repeat_penalty"); !isEmptyJSValue(value) {
-			parsed, err := floatFromJSValue(value)
-			if err != nil {
-				return cfg, fmt.Errorf("uct_bandit.edge_repeat_penalty 非法: %w", err)
-			}
-			cfg.UCTBandit.EdgeRepeatPenalty = parsed
-			cfg.UCTBandit.HasEdgeRepeatPenalty = true
-		}
-		if value := uctBanditObj.Get("edge_repeat_threshold"); !isEmptyJSValue(value) {
-			parsed, err := intFromJSValue(value)
-			if err != nil {
-				return cfg, fmt.Errorf("uct_bandit.edge_repeat_threshold 非法: %w", err)
-			}
-			cfg.UCTBandit.EdgeRepeatThreshold = parsed
-			cfg.UCTBandit.HasEdgeRepeatThreshold = true
-		}
-		if value := uctBanditObj.Get("action_cooldown_penalty"); !isEmptyJSValue(value) {
-			parsed, err := floatFromJSValue(value)
-			if err != nil {
-				return cfg, fmt.Errorf("uct_bandit.action_cooldown_penalty 非法: %w", err)
-			}
-			cfg.UCTBandit.ActionCooldownPenalty = parsed
-			cfg.UCTBandit.HasActionCooldownPenalty = true
-		}
-		if value := uctBanditObj.Get("recent_action_window"); !isEmptyJSValue(value) {
-			parsed, err := intFromJSValue(value)
-			if err != nil {
-				return cfg, fmt.Errorf("uct_bandit.recent_action_window 非法: %w", err)
-			}
-			cfg.UCTBandit.RecentActionWindow = parsed
-			cfg.UCTBandit.HasRecentActionWindow = true
-		}
-		if value := uctBanditObj.Get("loop_escape_explore_boost"); !isEmptyJSValue(value) {
-			parsed, err := floatFromJSValue(value)
-			if err != nil {
-				return cfg, fmt.Errorf("uct_bandit.loop_escape_explore_boost 非法: %w", err)
-			}
-			cfg.UCTBandit.LoopEscapeExploreBoost = parsed
-			cfg.UCTBandit.HasLoopEscapeExploreBoost = true
-		}
+		cfg.UCTBandit.TwoStateLoopPenalty = optionalFloatFromObj(uctBanditObj, "two_state_loop_penalty")
+		cfg.UCTBandit.EdgeRepeatPenalty = optionalFloatFromObj(uctBanditObj, "edge_repeat_penalty")
+		cfg.UCTBandit.EdgeRepeatThreshold = optionalIntFromObj(uctBanditObj, "edge_repeat_threshold")
+		cfg.UCTBandit.ActionCooldownPenalty = optionalFloatFromObj(uctBanditObj, "action_cooldown_penalty")
+		cfg.UCTBandit.RecentActionWindow = optionalIntFromObj(uctBanditObj, "recent_action_window")
+		cfg.UCTBandit.LoopEscapeExploreBoost = optionalFloatFromObj(uctBanditObj, "loop_escape_explore_boost")
 	}
 	return cfg, nil
+}
+
+// optionalBool 从 JS 对象中按优先级查找布尔可选值。
+func optionalBool(obj *goja.Object, keys ...string) coretypes.Optional[bool] {
+	for _, key := range keys {
+		if value := obj.Get(key); !isEmptyJSValue(value) {
+			return coretypes.Some(value.ToBoolean())
+		}
+	}
+	return coretypes.NoneOf[bool]()
+}
+
+// optionalInt 从 JS 对象中按优先级查找整数可选值。
+func optionalInt(obj *goja.Object, keys ...string) coretypes.Optional[int] {
+	for _, key := range keys {
+		if value := obj.Get(key); !isEmptyJSValue(value) {
+			parsed, err := intFromJSValue(value)
+			if err != nil {
+				continue
+			}
+			return coretypes.Some(parsed)
+		}
+	}
+	return coretypes.NoneOf[int]()
+}
+
+// optionalFloat 从 JS 对象中按优先级查找浮点可选值。
+func optionalFloat(obj *goja.Object, keys ...string) coretypes.Optional[float64] {
+	for _, key := range keys {
+		if value := obj.Get(key); !isEmptyJSValue(value) {
+			parsed, err := floatFromJSValue(value)
+			if err != nil {
+				continue
+			}
+			return coretypes.Some(parsed)
+		}
+	}
+	return coretypes.NoneOf[float64]()
+}
+
+// optionalIntFromObj 从嵌套 JS 对象中解析整数可选值（单键）。
+func optionalIntFromObj(obj *goja.Object, key string) coretypes.Optional[int] {
+	if value := obj.Get(key); !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return coretypes.NoneOf[int]()
+		}
+		return coretypes.Some(parsed)
+	}
+	return coretypes.NoneOf[int]()
+}
+
+// optionalFloatFromObj 从嵌套 JS 对象中解析浮点可选值（单键）。
+func optionalFloatFromObj(obj *goja.Object, key string) coretypes.Optional[float64] {
+	if value := obj.Get(key); !isEmptyJSValue(value) {
+		parsed, err := floatFromJSValue(value)
+		if err != nil {
+			return coretypes.NoneOf[float64]()
+		}
+		return coretypes.Some(parsed)
+	}
+	return coretypes.NoneOf[float64]()
 }
 
 func intFromJSValue(v goja.Value) (int, error) {

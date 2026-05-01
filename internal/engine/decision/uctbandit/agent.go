@@ -607,23 +607,23 @@ func (a *Agent) applyStaticConfigOverrides() {
 	}
 	uctCfg := a.staticConfig.GetUCTBanditConfig()
 
-	if uctCfg.HasTwoStateLoopPenalty {
-		a.rewardConfig.TwoStateLoopPenalty = uctCfg.TwoStateLoopPenalty
+	if uctCfg.TwoStateLoopPenalty.IsSet() {
+		a.rewardConfig.TwoStateLoopPenalty = uctCfg.TwoStateLoopPenalty.Get()
 	}
-	if uctCfg.HasEdgeRepeatPenalty {
-		a.rewardConfig.EdgeRepeatPenalty = uctCfg.EdgeRepeatPenalty
+	if uctCfg.EdgeRepeatPenalty.IsSet() {
+		a.rewardConfig.EdgeRepeatPenalty = uctCfg.EdgeRepeatPenalty.Get()
 	}
-	if uctCfg.HasEdgeRepeatThreshold && uctCfg.EdgeRepeatThreshold > 0 {
-		a.rewardConfig.EdgeRepeatThreshold = uctCfg.EdgeRepeatThreshold
+	if uctCfg.EdgeRepeatThreshold.IsSet() && uctCfg.EdgeRepeatThreshold.Get() > 0 {
+		a.rewardConfig.EdgeRepeatThreshold = uctCfg.EdgeRepeatThreshold.Get()
 	}
-	if uctCfg.HasActionCooldownPenalty {
-		a.config.ActionCooldownPenalty = uctCfg.ActionCooldownPenalty
+	if uctCfg.ActionCooldownPenalty.IsSet() {
+		a.config.ActionCooldownPenalty = uctCfg.ActionCooldownPenalty.Get()
 	}
-	if uctCfg.HasRecentActionWindow && uctCfg.RecentActionWindow > 0 {
-		a.config.RecentActionWindow = uctCfg.RecentActionWindow
+	if uctCfg.RecentActionWindow.IsSet() && uctCfg.RecentActionWindow.Get() > 0 {
+		a.config.RecentActionWindow = uctCfg.RecentActionWindow.Get()
 	}
-	if uctCfg.HasLoopEscapeExploreBoost {
-		a.config.LoopEscapeExploreBoost = uctCfg.LoopEscapeExploreBoost
+	if uctCfg.LoopEscapeExploreBoost.IsSet() {
+		a.config.LoopEscapeExploreBoost = uctCfg.LoopEscapeExploreBoost.Get()
 	}
 	a.rewarder = NewRewarder(a.rewardConfig)
 }

@@ -11,8 +11,8 @@ func Some[T any](v T) Optional[T] {
 	return Optional[T]{value: v, set: true}
 }
 
-// None 创建一个未设置的 Optional 值。
-func None[T any]() Optional[T] {
+// NoneOf 创建一个未设置的 Optional 值。
+func NoneOf[T any]() Optional[T] {
 	return Optional[T]{}
 }
 

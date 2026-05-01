@@ -57,6 +57,7 @@ func (b *SlidingWindowLLMBudget) pruneLocked(step int) {
 		keepFrom++
 	}
 	if keepFrom > 0 {
-		b.steps = append([]int(nil), b.steps[keepFrom:]...)
+		n := copy(b.steps, b.steps[keepFrom:])
+		b.steps = b.steps[:n]
 	}
 }

@@ -86,7 +86,7 @@ func buildPluginContext(activity string, xmlDescOfGuiTree string, screenshot []b
 	}
 	if len(screenshot) > 0 {
 		page.Screenshot = &engineplugin.Screenshot{
-			Bytes: append([]byte(nil), screenshot...),
+			Bytes: screenshot,
 			MIME:  "image/png",
 		}
 	}

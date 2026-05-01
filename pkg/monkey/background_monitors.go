@@ -70,8 +70,19 @@ func (m *healthSignalMonitor) stop() {
 }
 
 func (m *healthSignalMonitor) refresh() {
-	crash, crashErr := m.driver.CheckCrash(m.packageName)
-	anr, anrErr := m.driver.CheckANR(m.packageName)
+	var wg sync.WaitGroup
+	var crash, anr bool
+	var crashErr, anrErr error
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		crash, crashErr = m.driver.CheckCrash(m.packageName)
+	}()
+	go func() {
+		defer wg.Done()
+		anr, anrErr = m.driver.CheckANR(m.packageName)
+	}()
+	wg.Wait()
 	m.mu.Lock()
 	if crashErr == nil {
 		m.crash = crash

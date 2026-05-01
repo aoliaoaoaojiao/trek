@@ -342,32 +342,20 @@ func (r *Runner) markRecoveryActionOutcome(item candidate.Candidate, escaped boo
 }
 
 func (r *Runner) collectKnownFailedRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
-	known := make(map[string]bool, len(r.recoveryFailedAction))
-	for key, value := range r.recoveryFailedAction {
-		if value {
-			known[key] = true
-		}
-	}
-
-	provider, ok := r.decider.(RecoveryActionHistoryProvider)
-	if !ok || provider == nil {
-		return known, nil
-	}
-	persisted, err := provider.BuildKnownFailedRecoveryActions(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for key, value := range persisted {
-		if value {
-			known[key] = true
-		}
-	}
-	return known, nil
+	return r.collectKnownActions(r.recoveryFailedAction, ctx, func(p RecoveryActionHistoryProvider, c enginestate.TraversalContext) (map[string]bool, error) {
+		return p.BuildKnownFailedRecoveryActions(c)
+	})
 }
 
 func (r *Runner) collectKnownSuccessfulRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
-	known := make(map[string]bool, len(r.recoverySuccessAction))
-	for key, value := range r.recoverySuccessAction {
+	return r.collectKnownActions(r.recoverySuccessAction, ctx, func(p RecoveryActionHistoryProvider, c enginestate.TraversalContext) (map[string]bool, error) {
+		return p.BuildKnownSuccessfulRecoveryActions(c)
+	})
+}
+
+func (r *Runner) collectKnownActions(local map[string]bool, ctx enginestate.TraversalContext, fetch func(RecoveryActionHistoryProvider, enginestate.TraversalContext) (map[string]bool, error)) (map[string]bool, error) {
+	known := make(map[string]bool, len(local))
+	for key, value := range local {
 		if value {
 			known[key] = true
 		}
@@ -376,7 +364,7 @@ func (r *Runner) collectKnownSuccessfulRecoveryActions(ctx enginestate.Traversal
 	if !ok || provider == nil {
 		return known, nil
 	}
-	persisted, err := provider.BuildKnownSuccessfulRecoveryActions(ctx)
+	persisted, err := fetch(provider, ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -3,7 +3,6 @@ package reuse
 import (
 	"math"
 	"math/rand"
-	"time"
 
 	"trek/internal/engine/decision/shared/tool"
 	"trek/internal/engine/decision/shared/types"
@@ -96,6 +95,8 @@ func (a *ModelReusableAgent) selectUnperformedActionInReuseModel() types.IAction
 	var nextAction types.IAction
 	maxValue := -math.MaxFloat64
 
+	visitedActivities := a.visitStats.SnapshotPages()
+
 	for _, action := range a.newState.TargetActions() {
 		actionHash := action.Hash()
 
@@ -104,8 +105,6 @@ func (a *ModelReusableAgent) selectUnperformedActionInReuseModel() types.IAction
 				logger.Debugf("action has been visited")
 				continue
 			}
-
-			visitedActivities := a.visitStats.SnapshotPages()
 
 			qualityValue := a.probabilityOfVisitingNewActivities(action, visitedActivities)
 
@@ -189,7 +188,6 @@ func (a *ModelReusableAgent) selectNewActionEpsilonGreedyRandomly() types.IActio
 }
 
 func (a *ModelReusableAgent) eGreedy() bool {
-	rand.Seed(time.Now().UnixNano())
 	r := float64(rand.Intn(100)) / 100.0
 
 	if r < a.epsilon {

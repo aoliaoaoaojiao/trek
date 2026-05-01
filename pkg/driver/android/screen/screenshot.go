@@ -1,7 +1,6 @@
 package screen
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -10,7 +9,6 @@ import (
 	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/common"
 
-	"github.com/google/uuid"
 	"github.com/yapingcat/gomedia/go-codec"
 	"github.com/yapingcat/gomedia/go-mp4"
 )
@@ -36,36 +34,25 @@ func NewScreenCapture(device *adb.Device) *ScreenCapture {
 }
 
 func (s *ScreenCapture) Screenshot(ctx context.Context) ([]byte, error) {
-	uuid := uuid.NewString()
-	imgPath := fmt.Sprintf("/sdcard/%s.png", uuid)
-	logger.Debugf("Starting device screenshot, serial=%s remotePath=%s", s.device.Serial(), imgPath)
-
-	_, err := s.device.RunShellCommand(ctx, fmt.Sprintf("screencap -p %s", imgPath))
+	logger.Debugf("Starting device screenshot, serial=%s", s.device.Serial())
+	data, err := s.device.Screenshot(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("鎴浘澶辫触: %v", err)
+		return nil, fmt.Errorf("截图失败: %v", err)
 	}
-
-	dest := bytes.Buffer{}
-	err = s.device.Pull(ctx, imgPath, &dest)
-	if err != nil {
-		return nil, fmt.Errorf("鎷夊彇鎴浘澶辫触: %v", err)
-	}
-
-	_, _ = s.device.RunShellCommand(ctx, fmt.Sprintf("rm %s", imgPath))
-	logger.Debugf("Device screenshot completed, serial=%s size=%d", s.device.Serial(), dest.Len())
-	return dest.Bytes(), nil
+	logger.Debugf("Device screenshot completed, serial=%s size=%d", s.device.Serial(), len(data))
+	return data, nil
 }
 
 func (s *ScreenCapture) SaveScreenshot(path string) error {
 	logger.Debugf("Starting screenshot save, serial=%s path=%s", s.device.Serial(), path)
 	data, err := s.Screenshot(context.Background())
 	if err != nil {
-		return fmt.Errorf("鎴浘澶辫触: %v", err)
+		return fmt.Errorf("截图失败: %v", err)
 	}
 
 	err = os.WriteFile(path, data, 0666)
 	if err != nil {
-		return fmt.Errorf("淇濆瓨鎴浘澶辫触: %v", err)
+		return fmt.Errorf("保存截图失败: %v", err)
 	}
 
 	logger.Debugf("Screenshot save completed, serial=%s path=%s size=%d", s.device.Serial(), path, len(data))
@@ -78,18 +65,18 @@ func (s *ScreenCapture) Record(path string) error {
 	logger.Debugf("Starting screen recording initialization, serial=%s path=%s", s.device.Serial(), path)
 
 	if s.isRecording {
-		return fmt.Errorf("宸茬粡姝ｅ湪褰曞埗涓?")
+		return fmt.Errorf("已经在录制中")
 	}
 
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0666)
 	if err != nil {
-		return fmt.Errorf("鍒涘缓鏂囦欢澶辫触: %v", err)
+		return fmt.Errorf("创建文件失败: %v", err)
 	}
 
 	muxer, err := mp4.CreateMp4Muxer(file)
 	if err != nil {
 		file.Close()
-		return fmt.Errorf("鍒涘缓 MP4 Muxer 澶辫触: %v", err)
+		return fmt.Errorf("创建 MP4 Muxer 失败: %v", err)
 	}
 
 	trackID := muxer.AddVideoTrack(mp4.MP4_CODEC_H264)
@@ -126,7 +113,7 @@ func (s *ScreenCapture) Record(path string) error {
 	if err := scrcpy.Start(1000); err != nil {
 		file.Close()
 		s.isRecording = false
-		return fmt.Errorf("鍚姩 scrcpy 澶辫触: %v", err)
+		return fmt.Errorf("启动 scrcpy 失败: %v", err)
 	}
 
 	s.scrcpy = scrcpy
@@ -140,7 +127,7 @@ func (s *ScreenCapture) StopRecording() error {
 	logger.Debugf("Starting screen recording stop, serial=%s", s.device.Serial())
 
 	if !s.isRecording {
-		return fmt.Errorf("褰撳墠娌℃湁鍦ㄥ綍鍒?")
+		return fmt.Errorf("当前没有在录制")
 	}
 
 	if s.cancelFunc != nil {
@@ -150,12 +137,12 @@ func (s *ScreenCapture) StopRecording() error {
 	var errs []error
 	if s.muxer != nil {
 		if err := s.muxer.WriteTrailer(); err != nil {
-			errs = append(errs, fmt.Errorf("鍐欏叆 MP4 trailer 澶辫触: %v", err))
+			errs = append(errs, fmt.Errorf("写入 MP4 trailer 失败: %v", err))
 		}
 	}
 	if s.file != nil {
 		if err := s.file.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("鍏抽棴鏂囦欢澶辫触: %v", err))
+			errs = append(errs, fmt.Errorf("关闭文件失败: %v", err))
 		}
 	}
 
@@ -168,7 +155,7 @@ func (s *ScreenCapture) StopRecording() error {
 	s.isInit = false
 
 	if len(errs) > 0 {
-		return fmt.Errorf("鍋滄褰曞埗鏃跺彂鐢熼敊璇? %v", errs)
+		return fmt.Errorf("停止录制时发生错误: %v", errs)
 	}
 
 	logger.Debugf("Screen recording stopped, serial=%s", s.device.Serial())

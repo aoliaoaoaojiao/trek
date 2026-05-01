@@ -6,3 +6,6 @@
 /local_docs
 *superpowers
 /.worktrees
+.claude/
+AGENTS.md
+CLAUDE.md

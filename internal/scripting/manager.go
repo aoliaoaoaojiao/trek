@@ -19,6 +19,7 @@ var ErrPluginNotFound = errors.New("脚本未暴露 plugin 对象")
 type Manager struct {
 	source string
 	state  map[string]any
+	vm     *goja.Runtime
 }
 
 func LoadFile(path string) (*Manager, error) {
@@ -44,6 +45,7 @@ func LoadScript(source string) (*Manager, error) {
 	if isEmptyJSValue(vm.Get("plugin")) {
 		return nil, ErrPluginNotFound
 	}
+	m.vm = vm
 	return m, nil
 }
 
@@ -123,10 +125,7 @@ func (m *Manager) StateGet(key string) any {
 }
 
 func (m *Manager) callHook(name string, args ...any) (goja.Value, bool, error) {
-	vm, err := m.newRuntime()
-	if err != nil {
-		return nil, false, err
-	}
+	vm := m.vm
 	pluginValue := vm.Get("plugin")
 	if isEmptyJSValue(pluginValue) {
 		return nil, false, fmt.Errorf("脚本必须暴露 plugin 对象")

@@ -48,8 +48,7 @@ type Manager struct {
 	fuzzingTexts            []string
 	pageTextsCache          []string
 	skipAllActionsFromModel bool
-	resMapping              map[string]string
-	blackRects              map[string][][4]int
+	blackRects              []scripting.BlackRect
 	staticConfig            scripting.StaticConfig
 }
 
@@ -66,8 +65,7 @@ func init() {
 		fuzzingTexts:            make([]string, 0),
 		pageTextsCache:          make([]string, 0),
 		skipAllActionsFromModel: false,
-		resMapping:              make(map[string]string),
-		blackRects:              make(map[string][][4]int),
+		blackRects:              nil,
 		staticConfig:            scripting.StaticConfig{},
 	}
 }
@@ -160,8 +158,7 @@ func (m *Manager) PatchOperate(operate *coretypes.ActionCommand) {
 }
 
 func (m *Manager) LoadResourceMapping(resourceMappingPath string) error {
-	m.resMapping = make(map[string]string)
-	m.blackRects = make(map[string][][4]int)
+	m.blackRects = nil
 	m.customEvents = make([]*CustomEvent, 0)
 	m.currentActions = make([]coretypes.IAction, 0)
 	m.skipAllActionsFromModel = false
@@ -179,7 +176,6 @@ func (m *Manager) LoadResourceMapping(resourceMappingPath string) error {
 		return err
 	}
 	m.staticConfig = staticConfig
-	m.resMapping = staticConfig.ResMapping
 	m.blackRects = staticConfig.BlackRects
 	m.skipAllActionsFromModel = staticConfig.SkipAll
 	if staticConfig.ScrollInferThreshold > 0 {
@@ -240,11 +236,13 @@ func (m *Manager) LoadMixResMapping(resourceMappingPath string) error {
 }
 
 func (m *Manager) CheckPointIsInBlackRects(pageName string, pointX int, pointY int) bool {
-	if rects, ok := m.blackRects[pageName]; ok {
-		for _, rect := range rects {
-			if pointX >= rect[0] && pointX <= rect[2] && pointY >= rect[1] && pointY <= rect[3] {
-				return true
-			}
+	for _, br := range m.blackRects {
+		if br.PageName != pageName {
+			continue
+		}
+		b := br.Bounds
+		if pointX >= b[0] && pointX <= b[2] && pointY >= b[1] && pointY <= b[3] {
+			return true
 		}
 	}
 	return false

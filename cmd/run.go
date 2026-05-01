@@ -254,7 +254,7 @@ func resolveAlgorithmType(text string) (decision.AlgorithmType, error) {
 		return decision.AlgorithmReuse, nil
 	case "uctbandit", "uct", "7":
 		return decision.AlgorithmUctBandit, nil
-	case "random", "monkey", "0":
+	case "random", "0":
 		return decision.AlgorithmRandom, nil
 	default:
 		return decision.AlgorithmReuse, nil

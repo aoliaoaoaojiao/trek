@@ -8,13 +8,14 @@ import (
 
 func TestLoadResourceMappingBlackRects(t *testing.T) {
 	m := GetInstance()
-	m.blackRects = map[string][][4]int{}
+	m.blackRects = nil
 
 	p := filepath.Join(t.TempDir(), "mix.js")
 	content := `const config = {
-  excluded_touch_areas: {
-    LoginActivity: [[0, 0, 100, 100], [200, 200, 300, 300]]
-  }
+  excluded_touch_areas: [
+    { page_name: "LoginActivity", bounds: [0, 0, 100, 100] },
+    { page_name: "LoginActivity", bounds: [200, 200, 300, 300] }
+  ]
 };`
 	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
 		t.Fatalf("写入测试文件失败: %v", err)
@@ -34,13 +35,13 @@ func TestLoadResourceMappingBlackRects(t *testing.T) {
 
 func TestLoadResourceMappingRejectInvalidRect(t *testing.T) {
 	m := GetInstance()
-	m.blackRects = map[string][][4]int{}
+	m.blackRects = nil
 
 	p := filepath.Join(t.TempDir(), "mix.js")
 	content := `const config = {
-  excluded_touch_areas: {
-    LoginActivity: [[0, 0, 100]]
-  }
+  excluded_touch_areas: [
+    { page_name: "LoginActivity", bounds: [0, 0, 100] }
+  ]
 };`
 	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
 		t.Fatalf("写入测试文件失败: %v", err)
@@ -53,10 +54,10 @@ func TestLoadResourceMappingRejectInvalidRect(t *testing.T) {
 
 func TestLoadResourceMappingRejectNonJS(t *testing.T) {
 	m := GetInstance()
-	m.blackRects = map[string][][4]int{}
+	m.blackRects = nil
 
 	p := filepath.Join(t.TempDir(), "mix.toml")
-	content := `excluded_touch_areas = { LoginActivity = [[0,0,100,100]] }`
+	content := `excluded_touch_areas = [{ page_name: "LoginActivity", bounds: [0,0,100,100] }]`
 	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
 		t.Fatalf("写入测试文件失败: %v", err)
 	}

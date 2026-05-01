@@ -11,9 +11,13 @@ import (
 	coretypes "trek/internal/engine/core/types"
 )
 
+type BlackRect struct {
+	PageName string
+	Bounds   [4]int
+}
+
 type StaticConfig struct {
-	ResMapping                map[string]string
-	BlackRects                map[string][][4]int
+	BlackRects                []BlackRect
 	SkipAll                   bool
 	PageSource                string
 	TouchMode                 string
@@ -89,10 +93,7 @@ func LoadStaticConfigFile(path string) (StaticConfig, error) {
 }
 
 func LoadStaticConfig(source string) (StaticConfig, error) {
-	cfg := StaticConfig{
-		ResMapping: make(map[string]string),
-		BlackRects: make(map[string][][4]int),
-	}
+	cfg := StaticConfig{}
 	vm := goja.New()
 	if _, err := vm.RunString(source); err != nil {
 		return cfg, fmt.Errorf("执行 goja 配置脚本失败: %w", err)
@@ -107,44 +108,32 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 	}
 	obj := value.ToObject(vm)
 
-	if resMappingValue := obj.Get("resource_mapping"); !isEmptyJSValue(resMappingValue) {
-		resMappingObj := resMappingValue.ToObject(vm)
-		for _, key := range resMappingObj.Keys() {
-			cfg.ResMapping[key] = resMappingObj.Get(key).String()
-		}
-	} else if resMappingValue := obj.Get("res_mapping"); !isEmptyJSValue(resMappingValue) {
-		resMappingObj := resMappingValue.ToObject(vm)
-		for _, key := range resMappingObj.Keys() {
-			cfg.ResMapping[key] = resMappingObj.Get(key).String()
-		}
-	}
-
 	blackRectsValue := obj.Get("excluded_touch_areas")
 	if isEmptyJSValue(blackRectsValue) {
 		blackRectsValue = obj.Get("black_rects")
 	}
 	if !isEmptyJSValue(blackRectsValue) {
-		blackRectsObj := blackRectsValue.ToObject(vm)
-		for _, pageName := range blackRectsObj.Keys() {
-			rectsObj := blackRectsObj.Get(pageName).ToObject(vm)
-			rects := make([][4]int, 0, len(rectsObj.Keys()))
-			for _, rectKey := range rectsObj.Keys() {
-				rectObj := rectsObj.Get(rectKey).ToObject(vm)
-				rectKeys := rectObj.Keys()
-				if len(rectKeys) != 4 {
-					return cfg, fmt.Errorf("excluded_touch_areas[%s][%s] 长度必须为4", pageName, rectKey)
-				}
-				var rect [4]int
-				for i, key := range rectKeys {
-					val, err := intFromJSValue(rectObj.Get(key))
-					if err != nil {
-						return cfg, fmt.Errorf("excluded_touch_areas[%s][%s][%d] 非法: %w", pageName, rectKey, i, err)
-					}
-					rect[i] = val
-				}
-				rects = append(rects, rect)
+		arrObj := blackRectsValue.ToObject(vm)
+		for _, key := range arrObj.Keys() {
+			item := arrObj.Get(key).ToObject(vm)
+			pageName := strings.TrimSpace(item.Get("page_name").String())
+			if pageName == "" {
+				pageName = strings.TrimSpace(item.Get("pageName").String())
 			}
-			cfg.BlackRects[pageName] = rects
+			boundsObj := item.Get("bounds").ToObject(vm)
+			boundsKeys := boundsObj.Keys()
+			if len(boundsKeys) != 4 {
+				return cfg, fmt.Errorf("excluded_touch_areas[%s].bounds 长度必须为4", key)
+			}
+			var bounds [4]int
+			for i, bk := range boundsKeys {
+				val, err := intFromJSValue(boundsObj.Get(bk))
+				if err != nil {
+					return cfg, fmt.Errorf("excluded_touch_areas[%s].bounds[%d] 非法: %w", key, i, err)
+				}
+				bounds[i] = val
+			}
+			cfg.BlackRects = append(cfg.BlackRects, BlackRect{PageName: pageName, Bounds: bounds})
 		}
 	}
 

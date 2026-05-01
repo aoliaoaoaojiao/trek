@@ -625,7 +625,7 @@ func (a *Agent) applyStaticConfigOverrides() {
 	if uctCfg.LoopEscapeExploreBoost.IsSet() {
 		a.config.LoopEscapeExploreBoost = uctCfg.LoopEscapeExploreBoost.Get()
 	}
-	a.rewarder = NewRewarder(a.rewardConfig)
+	a.rewarder.UpdateConfig(a.rewardConfig)
 }
 
 // getCurrentStagnationCount 获取当前状态停滞计数。

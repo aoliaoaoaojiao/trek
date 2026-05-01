@@ -4,11 +4,16 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"hash/fnv"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/beevik/etree"
 )
+
+// canonicalCache 缓存 canonicalPageSource 结果，避免同一 XML 重复解析 etree。
+var canonicalCache sync.Map // map[string]string
 
 const pageFingerprintPrefix = "XMLPage"
 
@@ -46,17 +51,34 @@ func pageFingerprintName(xml string) string {
 }
 
 func canonicalPageSource(xml string) string {
+	trimmed := strings.TrimSpace(xml)
+	if trimmed == "" {
+		return ""
+	}
+	// 用内容哈希作缓存键，避免大 XML 字符串作 map key 的内存开销。
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(trimmed))
+	key := h.Sum64()
+	if cached, ok := canonicalCache.Load(key); ok {
+		return cached.(string)
+	}
 	doc := etree.NewDocument()
 	if err := doc.ReadFromString(xml); err != nil {
-		return canonicalRawText(xml)
+		result := canonicalRawText(xml)
+		canonicalCache.Store(key, result)
+		return result
 	}
 	root := doc.Root()
 	if root == nil {
-		return canonicalRawText(xml)
+		result := canonicalRawText(xml)
+		canonicalCache.Store(key, result)
+		return result
 	}
 	var b strings.Builder
 	writeCanonicalElement(&b, root)
-	return b.String()
+	result := b.String()
+	canonicalCache.Store(key, result)
+	return result
 }
 
 func canonicalRawText(text string) string {

@@ -7,7 +7,7 @@ import (
 )
 
 func findMatches(records []RecoveryMemoryRecord, ctx enginestate.TraversalContext) []RecoveryMemoryRecord {
-	trace := buildTraceSignature(ctx)
+	trace := enginestate.BuildTraceSignature(ctx.RecentTrace)
 	ctxMode := string(ctx.Mode)
 
 	exact := make([]RecoveryMemoryRecord, 0, 8)
@@ -16,7 +16,7 @@ func findMatches(records []RecoveryMemoryRecord, ctx enginestate.TraversalContex
 			equalFold(item.PageSignature, ctx.PageSignature) &&
 			equalFold(item.BlockReason, ctx.BlockReason) &&
 			equalFold(item.TraceSignature, trace) {
-			exact = append(exact, cloneRecord(item))
+			exact = append(exact, item)
 		}
 	}
 	if len(exact) > 0 {
@@ -46,21 +46,6 @@ func findMatches(records []RecoveryMemoryRecord, ctx enginestate.TraversalContex
 	}
 	sortBySuccessRate(page)
 	return page
-}
-
-func buildTraceSignature(ctx enginestate.TraversalContext) string {
-	if len(ctx.RecentTrace) == 0 {
-		return ""
-	}
-	parts := make([]string, 0, len(ctx.RecentTrace))
-	for _, item := range ctx.RecentTrace {
-		key := strings.TrimSpace(item.ActionKey)
-		if key == "" {
-			continue
-		}
-		parts = append(parts, key)
-	}
-	return strings.Join(parts, ">")
 }
 
 func sortBySuccessRate(items []RecoveryMemoryRecord) {

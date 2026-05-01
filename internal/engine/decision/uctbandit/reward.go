@@ -71,6 +71,11 @@ func NewRewarder(config RewardConfig) *Rewarder {
 	return &Rewarder{config: config}
 }
 
+// UpdateConfig 更新配置，避免每步重建 Rewarder。
+func (r *Rewarder) UpdateConfig(config RewardConfig) {
+	r.config = config
+}
+
 // ComputeReward 根据输入计算 reward。
 func (r *Rewarder) ComputeReward(input RewardInput) RewardResult {
 	result := RewardResult{

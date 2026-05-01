@@ -126,7 +126,37 @@ func (s *Store) Find(ctx enginestate.TraversalContext) []RecoveryMemoryRecord {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return findMatches(s.allLocked(), ctx)
+	return findMatches(s.findByPageSignatureLocked(ctx.Mode, ctx.PageSignature, ctx.ClusterSignature), ctx)
+}
+
+// findByPageSignatureLocked 用 SQL WHERE 按 mode + page/cluster 签名预过滤，
+// 避免全表扫描后再在 Go 中逐条匹配。
+func (s *Store) findByPageSignatureLocked(mode enginestate.Mode, pageSignature, clusterSignature string) []RecoveryMemoryRecord {
+	ctxMode := strings.TrimSpace(string(mode))
+	pageSig := strings.TrimSpace(pageSignature)
+	clusterSig := strings.TrimSpace(clusterSignature)
+
+	if ctxMode == "" && pageSig == "" && clusterSig == "" {
+		return s.allLocked()
+	}
+
+	query := s.db.Order("id ASC")
+	if ctxMode != "" {
+		query = query.Where("mode = ?", ctxMode)
+	}
+	if pageSig != "" || clusterSig != "" {
+		query = query.Where("page_signature = ? OR cluster_signature = ?", pageSig, clusterSig)
+	}
+
+	rows := make([]recoveryMemoryRow, 0, 16)
+	if err := query.Find(&rows).Error; err != nil {
+		return nil
+	}
+	result := make([]RecoveryMemoryRecord, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, row.toRecord())
+	}
+	return result
 }
 
 func (s *Store) allLocked() []RecoveryMemoryRecord {

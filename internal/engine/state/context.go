@@ -1,5 +1,23 @@
 package state
 
+import "strings"
+
+// BuildTraceSignature 将最近动作轨迹拼接为签名字符串，用于记忆匹配。
+func BuildTraceSignature(traces []ActionTrace) string {
+	if len(traces) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(traces))
+	for _, item := range traces {
+		key := strings.TrimSpace(item.ActionKey)
+		if key == "" {
+			continue
+		}
+		parts = append(parts, key)
+	}
+	return strings.Join(parts, ">")
+}
+
 // Mode 表示当前遍历阶段。
 type Mode string
 

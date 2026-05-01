@@ -491,7 +491,7 @@ func (s *Session) RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, 
 	if s == nil || s.memoryStore == nil || item.Command == nil {
 		return nil
 	}
-	traceSignature := buildTraceSignature(ctx.RecentTrace)
+	traceSignature := enginestate.BuildTraceSignature(ctx.RecentTrace)
 	outcome := memory.OutcomeFailed
 	successCount := 0
 	failCount := 1
@@ -525,7 +525,7 @@ func (s *Session) RecordCandidateEnhancementOutcome(ctx enginestate.TraversalCon
 	if s == nil || s.memoryStore == nil || item.Command == nil {
 		return nil
 	}
-	traceSignature := buildTraceSignature(ctx.RecentTrace)
+	traceSignature := enginestate.BuildTraceSignature(ctx.RecentTrace)
 	outcome := memory.OutcomeFailed
 	successCount := 0
 	failCount := 1
@@ -644,19 +644,4 @@ func (p *sessionStateProvider) CurrentState() types.IState {
 		return nil
 	}
 	return p.reader.GetCurrentState()
-}
-
-func buildTraceSignature(trace []enginestate.ActionTrace) string {
-	if len(trace) == 0 {
-		return ""
-	}
-	parts := make([]string, 0, len(trace))
-	for _, item := range trace {
-		key := strings.TrimSpace(item.ActionKey)
-		if key == "" {
-			continue
-		}
-		parts = append(parts, key)
-	}
-	return strings.Join(parts, ">")
 }

@@ -452,24 +452,33 @@ func buildAbsoluteXPath(node *etree.Element) string {
 	if node == nil {
 		return ""
 	}
-	parent := node.Parent()
-	if parent == nil || strings.TrimSpace(parent.Tag) == "" {
-		return fmt.Sprintf("/%s[1]", node.Tag)
-	}
-
-	index := 0
-	for _, sibling := range parent.ChildElements() {
-		if sibling.Tag == node.Tag {
-			index++
-		}
-		if sibling == node {
+	// 收集路径段，自底向上，避免递归 fmt.Sprintf 的 O(D²) 分配。
+	var segments []string
+	for n := node; n != nil; n = n.Parent() {
+		if strings.TrimSpace(n.Tag) == "" {
 			break
 		}
+		parent := n.Parent()
+		index := 1
+		if parent != nil {
+			idx := 0
+			for _, sibling := range parent.ChildElements() {
+				if sibling.Tag == n.Tag {
+					idx++
+				}
+				if sibling == n {
+					index = idx
+					break
+				}
+			}
+		}
+		segments = append(segments, n.Tag+"["+strconv.Itoa(index)+"]")
 	}
-	if index <= 0 {
-		index = 1
+	// 反转
+	for i, j := 0, len(segments)-1; i < j; i, j = i+1, j-1 {
+		segments[i], segments[j] = segments[j], segments[i]
 	}
-	return fmt.Sprintf("%s/%s[%d]", buildAbsoluteXPath(parent), node.Tag, index)
+	return "/" + strings.Join(segments, "/")
 }
 
 func parseBounds(boundsStr string) *types.Rect {

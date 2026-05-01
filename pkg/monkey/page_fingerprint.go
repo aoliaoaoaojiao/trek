@@ -3,8 +3,6 @@ package monkey
 import (
 	"crypto/sha1"
 	"encoding/hex"
-	"fmt"
-	"hash/fnv"
 	"sort"
 	"strings"
 	"sync"
@@ -13,9 +11,21 @@ import (
 )
 
 // canonicalCache 缓存 canonicalPageSource 结果，避免同一 XML 重复解析 etree。
-var canonicalCache sync.Map // map[string]string
+var canonicalCache sync.Map // map[uint64]string
 
 const pageFingerprintPrefix = "XMLPage"
+const fnv64aOffset = 14695981039346656037
+const fnv64aPrime = 1099511628211
+
+// fnv64aString 内联计算 FNV-1a 哈希，避免分配 hash/fnv 对象。
+func fnv64aString(s string) uint64 {
+	h := uint64(fnv64aOffset)
+	for i := 0; i < len(s); i++ {
+		h ^= uint64(s[i])
+		h *= fnv64aPrime
+	}
+	return h
+}
 
 var pageStructureRoleAttrs = []string{
 	"class",
@@ -47,7 +57,7 @@ func pageFingerprintName(xml string) string {
 		return "UnknownPage"
 	}
 	sum := sha1.Sum([]byte(canonical))
-	return fmt.Sprintf("%s:%s", pageFingerprintPrefix, hex.EncodeToString(sum[:])[:16])
+	return pageFingerprintPrefix + ":" + hex.EncodeToString(sum[:])[:16]
 }
 
 func canonicalPageSource(xml string) string {
@@ -56,9 +66,7 @@ func canonicalPageSource(xml string) string {
 		return ""
 	}
 	// 用内容哈希作缓存键，避免大 XML 字符串作 map key 的内存开销。
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(trimmed))
-	key := h.Sum64()
+	key := fnv64aString(trimmed)
 	if cached, ok := canonicalCache.Load(key); ok {
 		return cached.(string)
 	}

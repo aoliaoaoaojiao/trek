@@ -210,13 +210,9 @@ func (r *Runner) nextBlockRecoveryCommand(pageName string, input session.ActionI
 		XML:        input.XMLDescOfGuiTree,
 		Screenshot: input.Screenshot,
 	}, nil, nil)
-	knownFailed, knownErr := r.collectKnownFailedRecoveryActions(ctx)
+	knownFailed, knownSuccess, knownErr := r.collectBothKnownActions(ctx)
 	if knownErr != nil {
 		return nil, knownErr
-	}
-	knownSuccess, knownSuccessErr := r.collectKnownSuccessfulRecoveryActions(ctx)
-	if knownSuccessErr != nil {
-		return nil, knownSuccessErr
 	}
 	ctx.KnownFailedActions = actionKeyList(knownFailed)
 	ctx.KnownSuccessActions = actionKeyList(knownSuccess)
@@ -341,6 +337,11 @@ func (r *Runner) markRecoveryActionOutcome(item candidate.Candidate, escaped boo
 	delete(r.recoverySuccessAction, key)
 }
 
+// BatchRecoveryActionHistoryProvider 支持单次遍历同时返回失败/成功集合的可选接口。
+type BatchRecoveryActionHistoryProvider interface {
+	BuildKnownRecoveryActions(ctx enginestate.TraversalContext) (failed, success map[string]bool, err error)
+}
+
 func (r *Runner) collectKnownFailedRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
 	return r.collectKnownActions(r.recoveryFailedAction, ctx, func(p RecoveryActionHistoryProvider, c enginestate.TraversalContext) (map[string]bool, error) {
 		return p.BuildKnownFailedRecoveryActions(c)
@@ -351,6 +352,43 @@ func (r *Runner) collectKnownSuccessfulRecoveryActions(ctx enginestate.Traversal
 	return r.collectKnownActions(r.recoverySuccessAction, ctx, func(p RecoveryActionHistoryProvider, c enginestate.TraversalContext) (map[string]bool, error) {
 		return p.BuildKnownSuccessfulRecoveryActions(c)
 	})
+}
+
+// collectBothKnownActions 单次遍历记忆库同时获取失败/成功集合，避免两次 Find。
+func (r *Runner) collectBothKnownActions(ctx enginestate.TraversalContext) (failed, success map[string]bool, err error) {
+	if batch, ok := r.decider.(BatchRecoveryActionHistoryProvider); ok && batch != nil {
+		persistedFailed, persistedSuccess, err := batch.BuildKnownRecoveryActions(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		failed = mergeBoolMaps(r.recoveryFailedAction, persistedFailed)
+		success = mergeBoolMaps(r.recoverySuccessAction, persistedSuccess)
+		return failed, success, nil
+	}
+	f, err1 := r.collectKnownFailedRecoveryActions(ctx)
+	if err1 != nil {
+		return nil, nil, err1
+	}
+	s, err2 := r.collectKnownSuccessfulRecoveryActions(ctx)
+	if err2 != nil {
+		return nil, nil, err2
+	}
+	return f, s, nil
+}
+
+func mergeBoolMaps(local, persisted map[string]bool) map[string]bool {
+	result := make(map[string]bool, len(local)+len(persisted))
+	for key, value := range local {
+		if value {
+			result[key] = true
+		}
+	}
+	for key, value := range persisted {
+		if value {
+			result[key] = true
+		}
+	}
+	return result
 }
 
 func (r *Runner) collectKnownActions(local map[string]bool, ctx enginestate.TraversalContext, fetch func(RecoveryActionHistoryProvider, enginestate.TraversalContext) (map[string]bool, error)) (map[string]bool, error) {

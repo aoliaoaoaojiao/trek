@@ -95,7 +95,7 @@ func BuildTraversalContext(input BuildInput) TraversalContext {
 		PageSignature:    input.PageSignature,
 		ClusterSignature: input.ClusterSignature,
 		XML:              input.XML,
-		Screenshot:       append([]byte(nil), input.Screenshot...),
+		Screenshot:       input.Screenshot,
 		BlockReason:      input.BlockReason,
 		RecentTrace:      cloneTrace(input.RecentTrace),
 		VisitStats: VisitStats{

@@ -386,38 +386,37 @@ func (s *Session) BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalCont
 
 // BuildKnownFailedRecoveryActions 返回恢复阶段已知失败动作，用于候选融合惩罚。
 func (s *Session) BuildKnownFailedRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
-	result := make(map[string]bool)
-	if s == nil || s.memoryStore == nil {
-		return result, nil
-	}
-	items := s.memoryStore.Find(ctx)
-	for _, item := range items {
-		if item.Candidate.Command == nil {
-			continue
-		}
-		if item.FailCount > item.SuccessCount || strings.EqualFold(item.Outcome, memory.OutcomeFailed) {
-			result[item.Candidate.Command.ToJSON()] = true
-		}
-	}
-	return result, nil
+	failed, _, err := s.BuildKnownRecoveryActions(ctx)
+	return failed, err
 }
 
 // BuildKnownSuccessfulRecoveryActions 返回恢复阶段已知成功动作，用于提示词增强。
 func (s *Session) BuildKnownSuccessfulRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
-	result := make(map[string]bool)
+	_, success, err := s.BuildKnownRecoveryActions(ctx)
+	return success, err
+}
+
+// BuildKnownRecoveryActions 单次 Find 返回失败/成功两个集合，避免重复遍历记忆库。
+func (s *Session) BuildKnownRecoveryActions(ctx enginestate.TraversalContext) (failed, success map[string]bool, err error) {
+	failed = make(map[string]bool)
+	success = make(map[string]bool)
 	if s == nil || s.memoryStore == nil {
-		return result, nil
+		return failed, success, nil
 	}
 	items := s.memoryStore.Find(ctx)
 	for _, item := range items {
 		if item.Candidate.Command == nil {
 			continue
 		}
+		key := item.Candidate.Command.ToJSON()
+		if item.FailCount > item.SuccessCount || strings.EqualFold(item.Outcome, memory.OutcomeFailed) {
+			failed[key] = true
+		}
 		if item.SuccessCount > item.FailCount || strings.EqualFold(item.Outcome, memory.OutcomeEscaped) {
-			result[item.Candidate.Command.ToJSON()] = true
+			success[key] = true
 		}
 	}
-	return result, nil
+	return failed, success, nil
 }
 
 // BuildLLMRecoveryCandidates 调用外部 LLM 服务构建恢复候选。

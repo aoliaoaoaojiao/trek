@@ -1,8 +1,8 @@
 package monkey
 
 import (
-	"fmt"
 	"hash/fnv"
+	"strconv"
 	"strings"
 	"trek/internal/engine/decision/shared/types"
 	"trek/pkg/session"
@@ -244,7 +244,7 @@ func pageSignature(pageName string, xml string) string {
 	_, _ = h.Write([]byte(name))
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write([]byte(content))
-	return fmt.Sprintf("%x", h.Sum64())
+	return strconv.FormatUint(h.Sum64(), 16)
 }
 
 // cachedSignature 优先使用 PageSnapshot 缓存的签名，未缓存时现场计算。

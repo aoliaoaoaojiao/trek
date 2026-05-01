@@ -21,7 +21,7 @@ func (r *Runner) recordCandidateEnhancementOutcome(step int, cmd *types.ActionCo
 	defer func() {
 		r.lastEnhancementAttempt = nil
 	}()
-	if attempt.candidate.Command == nil || attempt.candidate.Command.ToJSON() != cmd.ToJSON() {
+	if attempt.candidate.Command == nil || !attempt.candidate.Command.Equal(cmd) {
 		return
 	}
 	writer, ok := r.decider.(RecoveryMemoryWriter)
@@ -43,11 +43,7 @@ func (r *Runner) tryEnhanceCandidates(step int, beforePage session.PageSnapshot,
 	}
 	ctx := r.buildTraversalContext(step, beforePage, nil, nil)
 	ctx.LocalCandidates = summarizeWeightedCandidates(weighted, baseCmd)
-	knownFailed, err := r.collectKnownFailedRecoveryActions(ctx)
-	if err != nil {
-		return nil, err
-	}
-	knownSuccess, err := r.collectKnownSuccessfulRecoveryActions(ctx)
+	knownFailed, knownSuccess, err := r.collectBothKnownActions(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +93,7 @@ func (r *Runner) tryEnhanceCandidates(step int, beforePage session.PageSnapshot,
 	if selected == nil {
 		return nil, nil
 	}
-	if selected.ToJSON() == baseCmd.ToJSON() {
+	if selected.Equal(baseCmd) {
 		return nil, nil
 	}
 	if chosen := findCandidateByCommand(fused, selected); chosen != nil {
@@ -118,12 +114,11 @@ func findCandidateByCommand(items []candidate.Candidate, cmd *types.ActionComman
 	if cmd == nil {
 		return nil
 	}
-	key := cmd.ToJSON()
 	for _, item := range items {
 		if item.Command == nil {
 			continue
 		}
-		if item.Command.ToJSON() == key {
+		if item.Command.Equal(cmd) {
 			copyItem := item
 			return &copyItem
 		}

@@ -3,6 +3,7 @@ package uctbandit
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // BuildPageCluster 构造页面聚类标识。
@@ -42,7 +43,7 @@ func classifyTitle(title string) string {
 	if title == "" {
 		return "title_empty"
 	}
-	runeCount := len([]rune(title))
+	runeCount := utf8.RuneCountInString(title)
 	if runeCount <= 6 {
 		return "title_short"
 	}

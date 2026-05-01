@@ -219,6 +219,7 @@ export function ConfigPanel(props: Props) {
               <option value="xml_only">xml_only（XML 指纹）</option>
               <option value="xml_fingerprint">xml_fingerprint（XML 指纹）</option>
               <option value="activity_only">activity_only（仅 Activity）</option>
+              <option value="image_fingerprint">image_fingerprint（图片指纹）</option>
             </select>
           </label>
           <label className="flex flex-col gap-1 text-sm">

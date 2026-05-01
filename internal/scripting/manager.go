@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
+	"github.com/beevik/etree"
 	"github.com/dop251/goja"
 	"trek/logger"
 )
@@ -43,6 +45,16 @@ func LoadScript(source string) (*Manager, error) {
 		return nil, ErrPluginNotFound
 	}
 	return m, nil
+}
+
+// ResolvePageName 调用插件的 resolvePageName 钩子，返回自定义页面名。
+func (m *Manager) ResolvePageName(ctx PluginContext) (string, error) {
+	value, ok, err := m.callHook("resolvePageName", ctxToMap(ctx))
+	if err != nil || !ok || isEmptyJSValue(value) {
+		return "", err
+	}
+	name := strings.TrimSpace(value.String())
+	return name, nil
 }
 
 func (m *Manager) TransformPage(ctx PluginContext) (PageSnapshot, error) {
@@ -189,44 +201,23 @@ func (m *Manager) installTrekAPI(vm *goja.Runtime) error {
 	}
 
 	pageAPI := map[string]any{
-		"findByText": func(page map[string]any, text string) any {
-			return findNode(page, func(node map[string]any) bool { return node["text"] == text })
-		},
-		"findByResourceId": func(page map[string]any, id string) any {
-			return findNode(page, func(node map[string]any) bool { return node["resource_id"] == id })
-		},
-		"findByContentDesc": func(page map[string]any, desc string) any {
-			return findNode(page, func(node map[string]any) bool { return node["content_desc"] == desc })
-		},
-		"findByClass": func(page map[string]any, className string) any {
-			return findNode(page, func(node map[string]any) bool { return node["class_name"] == className })
-		},
-		"findAll": func(call goja.FunctionCall) goja.Value {
-			page, _ := call.Argument(0).Export().(map[string]any)
-			predicate, ok := goja.AssertFunction(call.Argument(1))
-			if !ok {
-				return vm.ToValue([]any{})
+		"findByXpath": func(page map[string]any, xpath string) any {
+			xml, _ := page["xml"].(string)
+			if xml == "" || xpath == "" {
+				return nil
 			}
-			nodes := nodesFromPageMap(page)
-			results := make([]any, 0)
-			for _, node := range nodes {
-				keep, err := predicate(goja.Undefined(), vm.ToValue(node))
-				if err == nil && keep.ToBoolean() {
-					results = append(results, node)
-				}
-			}
-			return vm.ToValue(results)
+			return findNodeByXPath(xml, xpath)
 		},
-		"removeByText": func(xml string, text string) string {
+		"excludeByText": func(xml string, text string) string {
 			return strings.ReplaceAll(xml, text, "")
 		},
-		"removeByResourceId": func(xml string, id string) string {
+		"excludeByResourceId": func(xml string, id string) string {
 			return strings.ReplaceAll(xml, id, "")
 		},
-		"patchText": func(xml string, from goja.Value, to string) string {
+		"replaceText": func(xml string, from goja.Value, to string) string {
 			return patchString(xml, from, to)
 		},
-		"patchResourceId": func(xml string, from goja.Value, to string) string {
+		"replaceResourceId": func(xml string, from goja.Value, to string) string {
 			return patchString(xml, from, to)
 		},
 		"hasScreenshot": func(page map[string]any) bool {
@@ -256,7 +247,7 @@ func (m *Manager) installTrekAPI(vm *goja.Runtime) error {
 		"set": func(key string, value any) {
 			m.state[key] = value
 		},
-		"inc": func(key string, delta ...int64) int64 {
+		"increment": func(key string, delta ...int64) int64 {
 			inc := int64(1)
 			if len(delta) > 0 {
 				inc = delta[0]
@@ -290,7 +281,7 @@ func (m *Manager) installTrekAPI(vm *goja.Runtime) error {
 }
 
 func actionObject(actionType ActionType, bounds []float64) map[string]any {
-	action := map[string]any{"action": string(actionType)}
+	action := map[string]any{"type": string(actionType)}
 	if len(bounds) == 4 {
 		action["bounds"] = bounds
 	}
@@ -352,7 +343,7 @@ func stepResultCtxToMap(ctx StepResultContext) map[string]any {
 
 func pageToMap(page PageSnapshot) map[string]any {
 	result := map[string]any{
-		"name":  page.Name,
+		"page_name": page.Name,
 		"xml":   page.XML,
 		"nodes": nodesToMaps(page.Nodes),
 	}
@@ -387,7 +378,6 @@ func nodesToMaps(nodes []PageNode) []map[string]any {
 			"clickable":    node.Clickable,
 			"enabled":      node.Enabled,
 			"editable":     node.Editable,
-			"path":         node.Path,
 			"xpath":        node.XPath,
 		})
 	}
@@ -407,10 +397,11 @@ func runtimeToMap(runtime RuntimeContext) map[string]any {
 	if runtime.LastAction != nil {
 		result["last_action"] = actionToMap(*runtime.LastAction)
 	}
-	if runtime.BlockRecovery != nil {
-		result["block_recovery"] = map[string]any{
-			"requested": runtime.BlockRecovery.Requested,
-			"reason":    runtime.BlockRecovery.Reason,
+	if runtime.BlockRecovery != nil && runtime.BlockRecovery.Requested {
+		if runtime.BlockRecovery.Reason != "" {
+			result["block_recovery"] = runtime.BlockRecovery.Reason
+		} else {
+			result["block_recovery"] = true
 		}
 	}
 	return result
@@ -418,7 +409,7 @@ func runtimeToMap(runtime RuntimeContext) map[string]any {
 
 func actionToMap(action Action) map[string]any {
 	return map[string]any{
-		"action":        string(action.Type),
+		"type":          string(action.Type),
 		"bounds":        []float64{action.Bounds[0], action.Bounds[1], action.Bounds[2], action.Bounds[3]},
 		"text":          action.Text,
 		"clear":         action.Clear,
@@ -434,12 +425,15 @@ func actionFromValue(value goja.Value) (*Action, error) {
 	if !ok {
 		return nil, fmt.Errorf("脚本动作必须是对象")
 	}
-	actionName, _ := exported["action"].(string)
+	actionName, _ := exported["type"].(string)
+	if actionName == "" {
+		actionName, _ = exported["action"].(string)
+	}
 	if actionName == "" {
 		actionName, _ = exported["act"].(string)
 	}
 	if actionName == "" {
-		return nil, fmt.Errorf("脚本动作缺少 action")
+		return nil, fmt.Errorf("脚本动作缺少 type")
 	}
 	action := &Action{
 		Type:         ActionType(actionName),
@@ -530,26 +524,83 @@ func patchString(text string, from goja.Value, to string) string {
 	return strings.ReplaceAll(text, pattern, to)
 }
 
-func findNode(page map[string]any, match func(map[string]any) bool) any {
-	for _, node := range nodesFromPageMap(page) {
-		if match(node) {
-			return node
-		}
-	}
-	return nil
-}
-
-func nodesFromPageMap(page map[string]any) []map[string]any {
-	rawNodes, _ := page["nodes"].([]any)
-	nodes := make([]map[string]any, 0, len(rawNodes))
-	for _, rawNode := range rawNodes {
-		if node, ok := rawNode.(map[string]any); ok {
-			nodes = append(nodes, node)
-		}
-	}
-	return nodes
-}
-
 func isEmptyJSValue(v goja.Value) bool {
 	return v == nil || goja.IsUndefined(v) || goja.IsNull(v)
+}
+
+func findNodeByXPath(xml string, xpath string) map[string]any {
+	doc := etree.NewDocument()
+	if err := doc.ReadFromString(xml); err != nil {
+		return nil
+	}
+	elem := doc.FindElement(xpath)
+	if elem == nil {
+		return nil
+	}
+	return elementToNodeMap(elem)
+}
+
+func elementToNodeMap(elem *etree.Element) map[string]any {
+	boundsStr := elem.SelectAttrValue("bounds", "")
+	var bounds [4]float64
+	if boundsStr != "" {
+		if b, ok := parseBoundsString(boundsStr); ok {
+			bounds = b
+		}
+	}
+	return map[string]any{
+		"text":         elem.SelectAttrValue("text", ""),
+		"resource_id":  elem.SelectAttrValue("resource-id", ""),
+		"content_desc": elem.SelectAttrValue("content-desc", ""),
+		"class_name":   elem.SelectAttrValue("class", ""),
+		"bounds":       []float64{bounds[0], bounds[1], bounds[2], bounds[3]},
+		"clickable":    elem.SelectAttrValue("clickable", "false") == "true",
+		"enabled":      elem.SelectAttrValue("enabled", "false") == "true",
+		"editable":     elem.SelectAttrValue("editable", "false") == "true",
+		"xpath":        buildXPath(elem),
+	}
+}
+
+func buildXPath(node *etree.Element) string {
+	if node == nil {
+		return ""
+	}
+	parent := node.Parent()
+	if parent == nil || strings.TrimSpace(parent.Tag) == "" {
+		return fmt.Sprintf("/%s[1]", node.Tag)
+	}
+	index := 0
+	for _, sibling := range parent.ChildElements() {
+		if sibling.Tag == node.Tag {
+			index++
+		}
+		if sibling == node {
+			break
+		}
+	}
+	if index <= 0 {
+		index = 1
+	}
+	return fmt.Sprintf("%s/%s[%d]", buildXPath(parent), node.Tag, index)
+}
+
+func parseBoundsString(s string) ([4]float64, bool) {
+	parts := strings.Split(s, "][")
+	if len(parts) != 2 {
+		return [4]float64{}, false
+	}
+	lt := strings.Split(strings.Trim(parts[0], "[]"), ",")
+	rt := strings.Split(strings.Trim(parts[1], "[]"), ",")
+	if len(lt) != 2 || len(rt) != 2 {
+		return [4]float64{}, false
+	}
+	vals := make([]float64, 4)
+	for i, s := range append(lt, rt...) {
+		v, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return [4]float64{}, false
+		}
+		vals[i] = v
+	}
+	return [4]float64{vals[0], vals[1], vals[2], vals[3]}, true
 }

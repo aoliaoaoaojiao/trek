@@ -25,14 +25,14 @@ type StaticConfig struct {
 	HasKeepStepRecords                   bool
 	ExploreOCRTimeoutMs                  int
 	HasExploreOCRTimeout                 bool
-	RecoveryLLMTimeoutMs                 int
-	HasRecoveryLLMTimeout                bool
+	LLMTimeoutMs                 int
+	HasLLMTimeout                bool
 	RecoveryCooldownSteps                int
 	HasRecoveryCooldownSteps             bool
-	RecoveryLLMMaxCalls                  int
-	HasRecoveryLLMMaxCalls               bool
-	RecoveryLLMWindowSteps               int
-	HasRecoveryLLMWindowSteps            bool
+	LLMMaxCalls                  int
+	HasLLMMaxCalls               bool
+	LLMWindowSteps               int
+	HasLLMWindowSteps            bool
 	RecoveryTwoStateLoopThreshold        int
 	HasRecoveryTwoStateLoopThreshold     bool
 	RecoveryHighVisitThreshold           int
@@ -126,14 +126,23 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 	}
 	obj := value.ToObject(vm)
 
-	if resMappingValue := obj.Get("res_mapping"); !isEmptyJSValue(resMappingValue) {
+	if resMappingValue := obj.Get("resource_mapping"); !isEmptyJSValue(resMappingValue) {
+		resMappingObj := resMappingValue.ToObject(vm)
+		for _, key := range resMappingObj.Keys() {
+			cfg.ResMapping[key] = resMappingObj.Get(key).String()
+		}
+	} else if resMappingValue := obj.Get("res_mapping"); !isEmptyJSValue(resMappingValue) {
 		resMappingObj := resMappingValue.ToObject(vm)
 		for _, key := range resMappingObj.Keys() {
 			cfg.ResMapping[key] = resMappingObj.Get(key).String()
 		}
 	}
 
-	if blackRectsValue := obj.Get("black_rects"); !isEmptyJSValue(blackRectsValue) {
+	blackRectsValue := obj.Get("excluded_touch_areas")
+	if isEmptyJSValue(blackRectsValue) {
+		blackRectsValue = obj.Get("black_rects")
+	}
+	if !isEmptyJSValue(blackRectsValue) {
 		blackRectsObj := blackRectsValue.ToObject(vm)
 		for _, pageName := range blackRectsObj.Keys() {
 			rectsObj := blackRectsObj.Get(pageName).ToObject(vm)
@@ -142,13 +151,13 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 				rectObj := rectsObj.Get(rectKey).ToObject(vm)
 				rectKeys := rectObj.Keys()
 				if len(rectKeys) != 4 {
-					return cfg, fmt.Errorf("black_rects[%s][%s] 长度必须为4", pageName, rectKey)
+					return cfg, fmt.Errorf("excluded_touch_areas[%s][%s] 长度必须为4", pageName, rectKey)
 				}
 				var rect [4]int
 				for i, key := range rectKeys {
 					val, err := intFromJSValue(rectObj.Get(key))
 					if err != nil {
-						return cfg, fmt.Errorf("black_rects[%s][%s][%d] 非法: %w", pageName, rectKey, i, err)
+						return cfg, fmt.Errorf("excluded_touch_areas[%s][%s][%d] 非法: %w", pageName, rectKey, i, err)
 					}
 					rect[i] = val
 				}
@@ -226,21 +235,37 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 		cfg.ExploreOCRTimeoutMs = parsed
 		cfg.HasExploreOCRTimeout = true
 	}
-	if value := obj.Get("recovery_llm_timeout_ms"); !isEmptyJSValue(value) {
+	if value := obj.Get("llm_timeout_ms"); !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("llm_timeout_ms 非法: %w", err)
+		}
+		cfg.LLMTimeoutMs = parsed
+		cfg.HasLLMTimeout = true
+	}
+	if value := obj.Get("recovery_llm_timeout_ms"); !cfg.HasLLMTimeout && !isEmptyJSValue(value) {
 		parsed, err := intFromJSValue(value)
 		if err != nil {
 			return cfg, fmt.Errorf("recovery_llm_timeout_ms 非法: %w", err)
 		}
-		cfg.RecoveryLLMTimeoutMs = parsed
-		cfg.HasRecoveryLLMTimeout = true
+		cfg.LLMTimeoutMs = parsed
+		cfg.HasLLMTimeout = true
 	}
-	if value := obj.Get("recoveryLlmTimeoutMs"); !cfg.HasRecoveryLLMTimeout && !isEmptyJSValue(value) {
+	if value := obj.Get("llmTimeoutMs"); !cfg.HasLLMTimeout && !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("llmTimeoutMs 非法: %w", err)
+		}
+		cfg.LLMTimeoutMs = parsed
+		cfg.HasLLMTimeout = true
+	}
+	if value := obj.Get("recoveryLlmTimeoutMs"); !cfg.HasLLMTimeout && !isEmptyJSValue(value) {
 		parsed, err := intFromJSValue(value)
 		if err != nil {
 			return cfg, fmt.Errorf("recoveryLlmTimeoutMs 非法: %w", err)
 		}
-		cfg.RecoveryLLMTimeoutMs = parsed
-		cfg.HasRecoveryLLMTimeout = true
+		cfg.LLMTimeoutMs = parsed
+		cfg.HasLLMTimeout = true
 	}
 	if value := obj.Get("recovery_cooldown_steps"); !isEmptyJSValue(value) {
 		parsed, err := intFromJSValue(value)
@@ -258,37 +283,69 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 		cfg.RecoveryCooldownSteps = parsed
 		cfg.HasRecoveryCooldownSteps = true
 	}
-	if value := obj.Get("recovery_llm_max_calls"); !isEmptyJSValue(value) {
+	if value := obj.Get("llm_max_calls"); !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("llm_max_calls 非法: %w", err)
+		}
+		cfg.LLMMaxCalls = parsed
+		cfg.HasLLMMaxCalls = true
+	}
+	if value := obj.Get("recovery_llm_max_calls"); !cfg.HasLLMMaxCalls && !isEmptyJSValue(value) {
 		parsed, err := intFromJSValue(value)
 		if err != nil {
 			return cfg, fmt.Errorf("recovery_llm_max_calls 非法: %w", err)
 		}
-		cfg.RecoveryLLMMaxCalls = parsed
-		cfg.HasRecoveryLLMMaxCalls = true
+		cfg.LLMMaxCalls = parsed
+		cfg.HasLLMMaxCalls = true
 	}
-	if value := obj.Get("recoveryLlmMaxCalls"); !cfg.HasRecoveryLLMMaxCalls && !isEmptyJSValue(value) {
+	if value := obj.Get("llmMaxCalls"); !cfg.HasLLMMaxCalls && !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("llmMaxCalls 非法: %w", err)
+		}
+		cfg.LLMMaxCalls = parsed
+		cfg.HasLLMMaxCalls = true
+	}
+	if value := obj.Get("recoveryLlmMaxCalls"); !cfg.HasLLMMaxCalls && !isEmptyJSValue(value) {
 		parsed, err := intFromJSValue(value)
 		if err != nil {
 			return cfg, fmt.Errorf("recoveryLlmMaxCalls 非法: %w", err)
 		}
-		cfg.RecoveryLLMMaxCalls = parsed
-		cfg.HasRecoveryLLMMaxCalls = true
+		cfg.LLMMaxCalls = parsed
+		cfg.HasLLMMaxCalls = true
 	}
-	if value := obj.Get("recovery_llm_window_steps"); !isEmptyJSValue(value) {
+	if value := obj.Get("llm_window_steps"); !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("llm_window_steps 非法: %w", err)
+		}
+		cfg.LLMWindowSteps = parsed
+		cfg.HasLLMWindowSteps = true
+	}
+	if value := obj.Get("recovery_llm_window_steps"); !cfg.HasLLMWindowSteps && !isEmptyJSValue(value) {
 		parsed, err := intFromJSValue(value)
 		if err != nil {
 			return cfg, fmt.Errorf("recovery_llm_window_steps 非法: %w", err)
 		}
-		cfg.RecoveryLLMWindowSteps = parsed
-		cfg.HasRecoveryLLMWindowSteps = true
+		cfg.LLMWindowSteps = parsed
+		cfg.HasLLMWindowSteps = true
 	}
-	if value := obj.Get("recoveryLlmWindowSteps"); !cfg.HasRecoveryLLMWindowSteps && !isEmptyJSValue(value) {
+	if value := obj.Get("llmWindowSteps"); !cfg.HasLLMWindowSteps && !isEmptyJSValue(value) {
+		parsed, err := intFromJSValue(value)
+		if err != nil {
+			return cfg, fmt.Errorf("llmWindowSteps 非法: %w", err)
+		}
+		cfg.LLMWindowSteps = parsed
+		cfg.HasLLMWindowSteps = true
+	}
+	if value := obj.Get("recoveryLlmWindowSteps"); !cfg.HasLLMWindowSteps && !isEmptyJSValue(value) {
 		parsed, err := intFromJSValue(value)
 		if err != nil {
 			return cfg, fmt.Errorf("recoveryLlmWindowSteps 非法: %w", err)
 		}
-		cfg.RecoveryLLMWindowSteps = parsed
-		cfg.HasRecoveryLLMWindowSteps = true
+		cfg.LLMWindowSteps = parsed
+		cfg.HasLLMWindowSteps = true
 	}
 	if value := obj.Get("recovery_two_state_loop_threshold"); !isEmptyJSValue(value) {
 		parsed, err := intFromJSValue(value)

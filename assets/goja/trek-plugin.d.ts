@@ -58,9 +58,7 @@ interface PageNode {
   enabled: boolean
   /** 是否可编辑输入 */
   editable: boolean
-  /** 节点在树中的路径（调试定位用） */
-  path: string
-  /** 节点的标准 XPath（优先用于跨模块定位） */
+  /** 节点的标准 XPath（用于跨模块定位和调试） */
   xpath?: string
 }
 
@@ -71,7 +69,7 @@ interface PageSnapshot {
    * 当 page_source_type="uia" 时，默认优先使用 `dumpsys activity top` 解析出的 Activity 名。
    * 插件可在 `transformPage` 中返回 `page_name` 进行覆盖。
    */
-  name: string
+  page_name: string
   /** 当前页面 XML（插件可在 transformPage 中返回 xml 覆盖） */
   xml: string
   /** 截图（需运行时开启截图采集） */
@@ -98,13 +96,8 @@ interface RuntimeContext {
   page_visit_count: Record<string, number>
   /** 动作执行计数：key 为动作类型 */
   action_count: Record<string, number>
-  /** 阻塞恢复请求上下文：仅在 monkey 识别阻塞后触发兜底决策时为 true */
-  block_recovery?: {
-    /** 当前是否处于阻塞恢复阶段 */
-    requested: boolean
-    /** 阻塞原因（可选） */
-    reason?: string
-  }
+  /** 阻塞恢复上下文：仅在 monkey 识别阻塞后触发兜底决策时存在。值为阻塞原因字符串，无原因时为 true */
+  block_recovery?: string | true
 }
 
 interface PluginContext {
@@ -121,7 +114,7 @@ interface PageInfo {
 
 interface Action {
   /** 动作类型 */
-  action: ActionType
+  type: ActionType
   /** 动作作用区域（点击/滑动等） */
   bounds?: Bounds
   /** 输入文本（点击输入场景） */
@@ -199,6 +192,14 @@ interface TrekPlugin {
    */
   onInit?(ctx: LifecycleContext): void
   /**
+   * 自定义页面名解析钩子。
+   * 在页面名策略解析阶段调用（早于 transformPage），返回自定义页面名。
+   * 适用于 image_fingerprint 策略或需要完全自定义页面名生成逻辑的场景。
+   * ctx.page.screenshot 包含截图数据（需开启截图采集）。
+   * 返回非空字符串覆盖页面名，返回 null/void 走默认策略。
+   */
+  resolvePageName?(ctx: PluginContext): string | null | void
+  /**
    * 页面改造钩子。
    * 引擎抓取页面源后调用，可修改页面名和 XML，结果进入后续整条决策链路。
    * 返回 { page_name?, xml? } 覆盖原值，返回 void 保持原值。
@@ -243,6 +244,7 @@ type PageNameStrategy =
   | "xml_fingerprint"
   | "structure_fingerprint"
   | "activity_only"
+  | "image_fingerprint"
 type AlgorithmType = "random" | "monkey" | "reuse" | "uct_bandit"
 type PocoEngine =
   | "COCOS_2DX_JS"
@@ -293,8 +295,15 @@ interface UCTBanditConfig {
 }
 
 interface TrekStaticConfig {
-  res_mapping?: Record<string, string>
-  black_rects?: Record<string, Bounds[]>
+  resource_mapping?: Record<string, string>
+  excluded_touch_areas?: Record<string, Bounds[]>
+  /**
+   * 是否跳过内置决策算法。
+   * - false（默认）：引擎先调用插件 beforeDecide，若插件未拦截，则走内置算法（Reuse/UctBandit/Random）产出动作。
+   * - true：内置算法完全不执行，引擎仅依赖插件 beforeDecide 提供动作；
+   *         若插件也未返回动作，则引擎输出 NOP（空操作）。
+   * 适用于插件全权控制决策的场景（如纯脚本策略、外部 LLM 驱动）。
+   */
   skip_all_actions_from_model?: boolean
   /** 遍历算法：random / monkey / reuse / uct_bandit。默认 "reuse" */
   algorithm?: AlgorithmType
@@ -317,11 +326,11 @@ interface TrekStaticConfig {
    */
   explore_ocr_timeout_ms?: number
   /**
-   * 恢复 LLM 超时（毫秒）。
+   * LLM 超时（毫秒）。
    * 当引擎检测到卡死（如两状态循环、高访问低收益）时进入恢复阶段，
    * 会将当前页面上下文发送给 LLM 请求恢复动作建议。此字段控制该 HTTP 请求的超时时间。默认 15000
    */
-  recovery_llm_timeout_ms?: number
+  llm_timeout_ms?: number
   /**
    * 恢复冷却步数。
    * 恢复动作成功脱困后，状态机进入冷却模式持续此步数，期间不会再触发恢复，
@@ -329,17 +338,17 @@ interface TrekStaticConfig {
    */
   recovery_cooldown_steps?: number
   /**
-   * 恢复 LLM 最大调用次数。
+   * LLM 最大调用次数。
    * 滑动窗口内允许的 LLM 调用上限（恢复阶段和候选增强共享此预算）。
    * 超出后 LLM 调用被拒绝，回退到纯算法候选。0 表示不限制。默认 0
    */
-  recovery_llm_max_calls?: number
+  llm_max_calls?: number
   /**
-   * 恢复 LLM 调用窗口步数。
-   * 配合 recovery_llm_max_calls 使用，控制滑动窗口大小（步数）。
+   * LLM 调用窗口步数。
+   * 配合 llm_max_calls 使用，控制滑动窗口大小（步数）。
    * 窗口外的历史调用不再计入配额。0 表示不使用滑动窗口（全局累计）。默认 0
    */
-  recovery_llm_window_steps?: number
+  llm_window_steps?: number
   /**
    * 两状态循环检测阈值。
    * 引擎跟踪页面签名跳转，当检测到连续 A→B→A→B 模式达到此次数时，
@@ -443,15 +452,11 @@ interface TrekActionAPI {
 }
 
 interface TrekPageAPI {
-  findByText(page: PageSnapshot, text: string): PageNode | null
-  findByResourceId(page: PageSnapshot, id: string): PageNode | null
-  findByContentDesc(page: PageSnapshot, desc: string): PageNode | null
-  findByClass(page: PageSnapshot, className: string): PageNode | null
-  findAll(page: PageSnapshot, predicate: (node: PageNode) => boolean): PageNode[]
-  removeByText(xml: string, text: string): string
-  removeByResourceId(xml: string, id: string): string
-  patchText(xml: string, from: string | RegExp, to: string): string
-  patchResourceId(xml: string, from: string | RegExp, to: string): string
+  findByXpath(page: PageSnapshot, xpath: string): PageNode | null
+  excludeByText(xml: string, text: string): string
+  excludeByResourceId(xml: string, id: string): string
+  replaceText(xml: string, from: string | RegExp, to: string): string
+  replaceResourceId(xml: string, from: string | RegExp, to: string): string
   hasScreenshot(page: PageSnapshot): boolean
   screenshotBytes(page: PageSnapshot): Uint8Array | null
   screenshotSize(page: PageSnapshot): number
@@ -460,7 +465,7 @@ interface TrekPageAPI {
 interface TrekStateAPI {
   get<T = unknown>(key: string): T | undefined
   set<T = unknown>(key: string, value: T): void
-  inc(key: string, delta?: number): number
+  increment(key: string, delta?: number): number
   delete(key: string): void
   clear(): void
 }

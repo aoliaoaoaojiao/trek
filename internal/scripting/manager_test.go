@@ -6,18 +6,18 @@ func TestManagerTransformBeforeAfterAndState(t *testing.T) {
 	manager, err := LoadScript(`const plugin = {
   transformPage(ctx) {
     return {
-      page_name: ctx.page.name + "_patched",
-      xml: trek.page.patchText(ctx.page.xml, "old", "new"),
+      page_name: ctx.page.page_name + "_patched",
+      xml: trek.page.replaceText(ctx.page.xml, "old", "new"),
     }
   },
   beforeDecide(ctx) {
-    if (trek.state.inc("decide_count") === 1) {
+    if (trek.state.increment("decide_count") === 1) {
       return trek.action.click([1, 2, 3, 4])
     }
     return null
   },
   afterDecide(ctx, action) {
-    if (action.action === "CLICK") {
+    if (action.type === "CLICK") {
       return trek.action.back()
     }
     return action
@@ -102,8 +102,8 @@ func TestManagerExposesScreenshotBytesToScript(t *testing.T) {
 func TestManagerOnStepResultSeesCrashANRAndBeforeAfterPages(t *testing.T) {
 	manager, err := LoadScript(`const plugin = {
   onStepResult(ctx) {
-    if (ctx.result.crash) trek.state.set("crash_page", ctx.result.before.name)
-    if (ctx.result.anr) trek.state.set("anr_page", ctx.result.after.name)
+    if (ctx.result.crash) trek.state.set("crash_page", ctx.result.before.page_name)
+    if (ctx.result.anr) trek.state.set("anr_page", ctx.result.after.page_name)
     trek.state.set("after_xml", ctx.result.after.xml)
   },
 }`)
@@ -245,10 +245,10 @@ func TestLoadStaticConfigReadsCamelCaseCaptureScreenshotAndKeepStepRecords(t *te
 func TestLoadStaticConfigReadsRecoveryAndCandidateTuningSettings(t *testing.T) {
 	cfg, err := LoadStaticConfig(`const config = {
   explore_ocr_timeout_ms: 12000,
-  recovery_llm_timeout_ms: 23000,
+  llm_timeout_ms: 23000,
   recovery_cooldown_steps: 3,
-  recovery_llm_max_calls: 5,
-  recovery_llm_window_steps: 40,
+  llm_max_calls: 5,
+  llm_window_steps: 40,
   recovery_two_state_loop_threshold: 4,
   recovery_high_visit_threshold: 9,
   recovery_low_reward_window: 7,
@@ -263,17 +263,17 @@ func TestLoadStaticConfigReadsRecoveryAndCandidateTuningSettings(t *testing.T) {
 	if !cfg.HasExploreOCRTimeout || cfg.ExploreOCRTimeoutMs != 12000 {
 		t.Fatalf("explore_ocr_timeout_ms 不符合预期: %+v", cfg)
 	}
-	if !cfg.HasRecoveryLLMTimeout || cfg.RecoveryLLMTimeoutMs != 23000 {
-		t.Fatalf("recovery_llm_timeout_ms 不符合预期: %+v", cfg)
+	if !cfg.HasLLMTimeout || cfg.LLMTimeoutMs != 23000 {
+		t.Fatalf("llm_timeout_ms 不符合预期: %+v", cfg)
 	}
 	if !cfg.HasRecoveryCooldownSteps || cfg.RecoveryCooldownSteps != 3 {
 		t.Fatalf("recovery_cooldown_steps 不符合预期: %+v", cfg)
 	}
-	if !cfg.HasRecoveryLLMMaxCalls || cfg.RecoveryLLMMaxCalls != 5 {
-		t.Fatalf("recovery_llm_max_calls 不符合预期: %+v", cfg)
+	if !cfg.HasLLMMaxCalls || cfg.LLMMaxCalls != 5 {
+		t.Fatalf("llm_max_calls 不符合预期: %+v", cfg)
 	}
-	if !cfg.HasRecoveryLLMWindowSteps || cfg.RecoveryLLMWindowSteps != 40 {
-		t.Fatalf("recovery_llm_window_steps 不符合预期: %+v", cfg)
+	if !cfg.HasLLMWindowSteps || cfg.LLMWindowSteps != 40 {
+		t.Fatalf("llm_window_steps 不符合预期: %+v", cfg)
 	}
 	if !cfg.HasRecoveryTwoStateLoopThreshold || cfg.RecoveryTwoStateLoopThreshold != 4 {
 		t.Fatalf("recovery_two_state_loop_threshold 不符合预期: %+v", cfg)

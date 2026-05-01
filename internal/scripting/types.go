@@ -46,7 +46,6 @@ type PageNode struct {
 	Clickable   bool
 	Enabled     bool
 	Editable    bool
-	Path        string
 	XPath       string
 }
 

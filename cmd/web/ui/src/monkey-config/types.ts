@@ -35,6 +35,7 @@ export type PageNameStrategy =
   | "xml_fingerprint"
   | "structure_fingerprint"
   | "activity_only"
+  | "image_fingerprint"
 
 export type DeviceOption = {
   serial: string

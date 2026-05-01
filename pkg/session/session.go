@@ -572,6 +572,15 @@ func (s *Session) NativeVersion() string {
 	return engineruntime.GetNativeVersion()
 }
 
+// ResolvePageNameWithInput 通过 Goja 插件的 resolvePageName 钩子解析自定义页面名。
+func (s *Session) ResolvePageNameWithInput(pageName string, input ActionInput) (string, error) {
+	name, err := engineruntime.ResolvePageNameWithInput(pageName, input.XMLDescOfGuiTree, input.Screenshot)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(name), nil
+}
+
 // TransformPageInfoWithInput 通过 Goja 插件转换页面信息
 func (s *Session) TransformPageInfoWithInput(pageName string, input ActionInput) (PageInfo, error) {
 	if strings.TrimSpace(pageName) == "" {

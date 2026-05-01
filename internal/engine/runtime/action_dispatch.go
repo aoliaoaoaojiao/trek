@@ -73,6 +73,12 @@ func TransformPageInfoWithInput(activity string, xmlDescOfGuiTree string, screen
 	return page.Name, page.XML, nil
 }
 
+// ResolvePageNameWithInput 调用插件的 resolvePageName 钩子，返回自定义页面名。
+func ResolvePageNameWithInput(activity string, xmlDescOfGuiTree string, screenshot []byte) (string, error) {
+	ctx := buildPluginContext(activity, xmlDescOfGuiTree, screenshot, ActionRequestOptions{})
+	return resolvePageNameFromPlugin(ctx)
+}
+
 func buildPluginContext(activity string, xmlDescOfGuiTree string, screenshot []byte, options ActionRequestOptions) engineplugin.PluginContext {
 	page := engineplugin.PageSnapshot{
 		Name: activity,

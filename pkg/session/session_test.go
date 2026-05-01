@@ -96,7 +96,7 @@ func TestSessionCheckPointInBlackRects(t *testing.T) {
 
 	configPath := filepath.Join(t.TempDir(), "mix.js")
 	configContent := `const config = {
-  black_rects: {
+  excluded_touch_areas: {
     LoginActivity: [[0, 0, 100, 100]]
   }
 };`
@@ -122,7 +122,7 @@ func TestSessionTransformPageInfoWithInput(t *testing.T) {
 	configContent := `const plugin = {
   transformPage(ctx) {
     return {
-      page_name: ctx.page.name + "_v2",
+      page_name: ctx.page.page_name + "_v2",
       xml: ctx.page.xml.replace("foo", "bar"),
     }
   }
@@ -229,7 +229,7 @@ func TestSessionNextBlockRecoveryActionUsesPluginBlockRecoveryContext(t *testing
 	configPath := filepath.Join(t.TempDir(), "plugin.js")
 	configContent := `const plugin = {
   beforeDecide(ctx) {
-    if (ctx.runtime.block_recovery && ctx.runtime.block_recovery.requested) {
+    if (ctx.runtime.block_recovery) {
       return trek.action.back()
     }
     return null
@@ -262,7 +262,7 @@ func TestSessionNextBlockRecoveryActionRejectsRestartActions(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "plugin.js")
 	configContent := `const plugin = {
   beforeDecide(ctx) {
-    if (ctx.runtime.block_recovery && ctx.runtime.block_recovery.requested) {
+    if (ctx.runtime.block_recovery) {
       return trek.action.restart()
     }
     return null
@@ -364,7 +364,7 @@ func TestSessionBuildHeuristicRecoveryCandidates(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "plugin.js")
 	configContent := `const plugin = {
   beforeDecide(ctx) {
-    if (ctx.runtime.block_recovery && ctx.runtime.block_recovery.requested) {
+    if (ctx.runtime.block_recovery) {
       return trek.action.back()
     }
     return null
@@ -406,7 +406,7 @@ func TestSessionBuildHeuristicRecoveryCandidatesRejectRestart(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "plugin.js")
 	configContent := `const plugin = {
   beforeDecide(ctx) {
-    if (ctx.runtime.block_recovery && ctx.runtime.block_recovery.requested) {
+    if (ctx.runtime.block_recovery) {
       return trek.action.restart()
     }
     return null

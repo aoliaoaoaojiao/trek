@@ -40,6 +40,13 @@ func (a *Adapter) TransformPage(ctx PluginContext) (PageSnapshot, error) {
 	return a.manager.TransformPage(ctx)
 }
 
+func (a *Adapter) ResolvePageName(ctx PluginContext) (string, error) {
+	if a == nil || a.manager == nil {
+		return "", nil
+	}
+	return a.manager.ResolvePageName(ctx)
+}
+
 func (a *Adapter) BeforeDecide(ctx PluginContext) (*types.ActionCommand, bool, error) {
 	if a == nil || a.manager == nil {
 		return nil, false, nil

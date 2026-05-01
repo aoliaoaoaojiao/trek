@@ -69,6 +69,17 @@ const (
 // PageNameResolver 从 XML 中提取页面名。
 type PageNameResolver func(xml string) string
 
+// PageNameResolverEx 扩展版页面名解析器，支持截图输入。
+// 实现此接口可完全自定义页面名生成逻辑（如基于图片指纹）。
+type PageNameResolverEx interface {
+	ResolvePageName(xml string, screenshot []byte) string
+}
+
+// GojaPageNameResolver 通过 Goja 插件的 resolvePageName 钩子解析页面名。
+type GojaPageNameResolver interface {
+	ResolvePageNameWithInput(pageName string, input session.ActionInput) (string, error)
+}
+
 // Config 是 Smart Monkey Runner 配置。
 type Config struct {
 	PackageName                       string
@@ -92,6 +103,7 @@ type Config struct {
 	StopOnANR                         bool
 	KeepStepRecords                   bool
 	PageNameResolver                  PageNameResolver
+	PageNameResolverEx                PageNameResolverEx
 	PageNameStrategy                  string
 	ForegroundMonitorInterval         time.Duration
 	HealthSignalMonitorInterval       time.Duration
@@ -99,8 +111,8 @@ type Config struct {
 	EnableBlockRecovery               *bool
 	BlockNoChangeThreshold            int
 	RecoveryCooldownSteps             int
-	RecoveryLLMBudgetMaxCalls         int
-	RecoveryLLMBudgetWindowStep       int
+	LLMBudgetMaxCalls         int
+	LLMBudgetWindowStep       int
 	EnableExploreLLMEnhancement       *bool
 	CandidateEnhancementMinStepGap    int
 	CandidateAmbiguityTopGapThreshold float64
@@ -110,6 +122,7 @@ type Config struct {
 	LowRewardWindow                   int
 	CandidateRiskDropThreshold        float64
 	CandidateMinFusionScore           float64
+	ImageSignatureFunc                func([]byte) string
 }
 
 type EffectiveTouchArea struct {
@@ -304,10 +317,10 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 
 	cfg = normalizeConfig(cfg)
 	var enhanceBudget recovery.LLMBudget
-	if cfg.RecoveryLLMBudgetMaxCalls > 0 {
+	if cfg.LLMBudgetMaxCalls > 0 {
 		enhanceBudget = recovery.NewSlidingWindowLLMBudget(
-			cfg.RecoveryLLMBudgetMaxCalls,
-			cfg.RecoveryLLMBudgetWindowStep,
+			cfg.LLMBudgetMaxCalls,
+			cfg.LLMBudgetWindowStep,
 		)
 	}
 	return &Runner{
@@ -315,7 +328,7 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 		driver:                 driver,
 		cfg:                    cfg,
 		rng:                    rand.New(rand.NewSource(time.Now().UnixNano())),
-		blockDetector:          newBlockDetector(cfg.BlockNoChangeThreshold, cfg.TwoStateLoopThreshold, cfg.HighVisitThreshold, cfg.LowRewardWindow),
+		blockDetector:          newBlockDetector(cfg.BlockNoChangeThreshold, cfg.TwoStateLoopThreshold, cfg.HighVisitThreshold, cfg.LowRewardWindow).withImageSignatureFunc(cfg.ImageSignatureFunc),
 		recoveryState:          newRecoveryStateMachineWithCooldown(cfg.RecoveryCooldownSteps),
 		candidateEnhanceBudget: enhanceBudget,
 		lastEnhancementStep:    -1,
@@ -576,13 +589,13 @@ func (r *Runner) capturePageSnapshot(ctx context.Context, pageSource common.IPag
 	if err != nil {
 		return nil
 	}
-	pageName := r.cfg.PageNameResolver(xml)
-	if strings.TrimSpace(pageName) == "" {
-		pageName = fallbackPageName
-	}
 	var screenshot []byte
 	if r.cfg.CaptureScreenshot {
 		screenshot, _ = r.driver.Screenshot(ctx)
+	}
+	pageName := r.resolvePageNameByExOrFallback(xml, screenshot)
+	if strings.TrimSpace(pageName) == "" {
+		pageName = fallbackPageName
 	}
 	nextPageName, nextXML := r.resolvePageInfo(ctx, xml, screenshot)
 	if strings.TrimSpace(nextPageName) == "" {
@@ -721,7 +734,17 @@ func (r *Runner) detectANRBySystem() bool {
 }
 
 func (r *Runner) resolvePageInfo(ctx context.Context, xml string, screenshot []byte) (string, string) {
-	pageName := r.resolveBasePageName(ctx, xml)
+	pageName := r.resolveBasePageName(ctx, xml, screenshot)
+	// Goja resolvePageName 钩子：允许插件自定义页面名生成
+	if resolver, ok := r.decider.(GojaPageNameResolver); ok && resolver != nil {
+		customName, err := resolver.ResolvePageNameWithInput(pageName, session.ActionInput{
+			XMLDescOfGuiTree: xml,
+			Screenshot:       screenshot,
+		})
+		if err == nil && customName != "" {
+			pageName = customName
+		}
+	}
 	transformer, ok := r.decider.(PageInfoTransformer)
 	if !ok || transformer == nil {
 		return pageName, xml
@@ -745,8 +768,19 @@ func (r *Runner) resolvePageInfo(ctx context.Context, xml string, screenshot []b
 	return nextPageName, nextXML
 }
 
-func (r *Runner) resolveBasePageName(ctx context.Context, xml string) string {
-	return resolveBasePageNameByStrategy(ctx, r, xml)
+func (r *Runner) resolveBasePageName(ctx context.Context, xml string, screenshot []byte) string {
+	return resolveBasePageNameByStrategy(ctx, r, xml, screenshot)
+}
+
+// resolvePageNameByExOrFallback 优先使用 PageNameResolverEx，否则 fallback 到 PageNameResolver。
+func (r *Runner) resolvePageNameByExOrFallback(xml string, screenshot []byte) string {
+	if r.cfg.PageNameResolverEx != nil {
+		return r.cfg.PageNameResolverEx.ResolvePageName(xml, screenshot)
+	}
+	if r.cfg.PageNameResolver != nil {
+		return r.cfg.PageNameResolver(xml)
+	}
+	return defaultPageNameResolver(xml)
 }
 
 func (r *Runner) currentHealthSignals() (crash bool, anr bool) {

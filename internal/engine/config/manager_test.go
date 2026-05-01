@@ -12,7 +12,7 @@ func TestLoadResourceMappingBlackRects(t *testing.T) {
 
 	p := filepath.Join(t.TempDir(), "mix.js")
 	content := `const config = {
-  black_rects: {
+  excluded_touch_areas: {
     LoginActivity: [[0, 0, 100, 100], [200, 200, 300, 300]]
   }
 };`
@@ -25,10 +25,10 @@ func TestLoadResourceMappingBlackRects(t *testing.T) {
 	}
 
 	if !m.CheckPointIsInBlackRects("LoginActivity", 50, 50) {
-		t.Fatalf("点位应命中 black_rects")
+		t.Fatalf("点位应命中 excluded_touch_areas")
 	}
 	if m.CheckPointIsInBlackRects("LoginActivity", 150, 150) {
-		t.Fatalf("点位不应命中 black_rects")
+		t.Fatalf("点位不应命中 excluded_touch_areas")
 	}
 }
 
@@ -38,7 +38,7 @@ func TestLoadResourceMappingRejectInvalidRect(t *testing.T) {
 
 	p := filepath.Join(t.TempDir(), "mix.js")
 	content := `const config = {
-  black_rects: {
+  excluded_touch_areas: {
     LoginActivity: [[0, 0, 100]]
   }
 };`
@@ -56,7 +56,7 @@ func TestLoadResourceMappingRejectNonJS(t *testing.T) {
 	m.blackRects = map[string][][4]int{}
 
 	p := filepath.Join(t.TempDir(), "mix.toml")
-	content := `black_rects = { LoginActivity = [[0,0,100,100]] }`
+	content := `excluded_touch_areas = { LoginActivity = [[0,0,100,100]] }`
 	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
 		t.Fatalf("写入测试文件失败: %v", err)
 	}

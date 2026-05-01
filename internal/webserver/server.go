@@ -448,7 +448,7 @@ func BuildConfigJS(cfg ConfigPayload) (string, error) {
 	pageNameStrategy := strings.ToLower(strings.TrimSpace(cfg.PageNameStrategy))
 	if pageNameStrategy != "" {
 		switch pageNameStrategy {
-		case "uia_activity_first", "xml_only", "xml_fingerprint", "structure_fingerprint", "activity_only":
+		case "uia_activity_first", "xml_only", "xml_fingerprint", "structure_fingerprint", "activity_only", "image_fingerprint":
 		default:
 			return "", fmt.Errorf("page_name_strategy 不合法: %s", pageNameStrategy)
 		}

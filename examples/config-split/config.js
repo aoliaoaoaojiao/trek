@@ -14,8 +14,8 @@ const config = {
 
   // 可选：恢复与候选调参统一放在配置文件中。
   recovery_cooldown_steps: 2,
-  recovery_llm_max_calls: 3,
-  recovery_llm_window_steps: 30,
+  llm_max_calls: 3,
+  llm_window_steps: 30,
   recovery_two_state_loop_threshold: 2,
   recovery_high_visit_threshold: 8,
   recovery_low_reward_window: 6,

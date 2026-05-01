@@ -108,9 +108,9 @@ func runMonkey(logLevelStr string, opts struct {
 	}
 	exploreOCRTimeout := 10 * time.Second
 	recoveryCooldownSteps := 2
-	recoveryLLMTimeout := 15 * time.Second
-	recoveryLLMMaxCalls := 0
-	recoveryLLMWindowSteps := 0
+	llmTimeout := 15 * time.Second
+	llmMaxCalls := 0
+	llmWindowSteps := 0
 	recoveryTwoStateLoopThreshold := 2
 	recoveryHighVisitThreshold := 8
 	recoveryLowRewardWindow := 6
@@ -124,14 +124,14 @@ func runMonkey(logLevelStr string, opts struct {
 	if staticCfg.HasRecoveryCooldownSteps {
 		recoveryCooldownSteps = staticCfg.RecoveryCooldownSteps
 	}
-	if staticCfg.HasRecoveryLLMTimeout {
-		recoveryLLMTimeout = time.Duration(staticCfg.RecoveryLLMTimeoutMs) * time.Millisecond
+	if staticCfg.HasLLMTimeout {
+		llmTimeout = time.Duration(staticCfg.LLMTimeoutMs) * time.Millisecond
 	}
-	if staticCfg.HasRecoveryLLMMaxCalls {
-		recoveryLLMMaxCalls = staticCfg.RecoveryLLMMaxCalls
+	if staticCfg.HasLLMMaxCalls {
+		llmMaxCalls = staticCfg.LLMMaxCalls
 	}
-	if staticCfg.HasRecoveryLLMWindowSteps {
-		recoveryLLMWindowSteps = staticCfg.RecoveryLLMWindowSteps
+	if staticCfg.HasLLMWindowSteps {
+		llmWindowSteps = staticCfg.LLMWindowSteps
 	}
 	if staticCfg.HasRecoveryTwoStateLoopThreshold {
 		recoveryTwoStateLoopThreshold = staticCfg.RecoveryTwoStateLoopThreshold
@@ -207,7 +207,7 @@ func runMonkey(logLevelStr string, opts struct {
 		PackageName:        packageName,
 		Algorithm:          algorithmType,
 		ExploreOCRTimeout:  exploreOCRTimeout,
-		RecoveryLLMTimeout: recoveryLLMTimeout,
+		RecoveryLLMTimeout: llmTimeout,
 	})
 	if err != nil {
 		return fmt.Errorf("创建会话失败: %w", err)
@@ -233,8 +233,8 @@ func runMonkey(logLevelStr string, opts struct {
 		StopOnANR:                         true,
 		EffectiveTouchArea:                buildEffectiveTouchAreaConfig(staticCfg, packageName, deviceSerial),
 		RecoveryCooldownSteps:             recoveryCooldownSteps,
-		RecoveryLLMBudgetMaxCalls:         recoveryLLMMaxCalls,
-		RecoveryLLMBudgetWindowStep:       recoveryLLMWindowSteps,
+		LLMBudgetMaxCalls:         llmMaxCalls,
+		LLMBudgetWindowStep:       llmWindowSteps,
 		TwoStateLoopThreshold:             recoveryTwoStateLoopThreshold,
 		HighVisitThreshold:                recoveryHighVisitThreshold,
 		LowRewardWindow:                   recoveryLowRewardWindow,

@@ -3,7 +3,7 @@
 const plugin = {
   beforeDecide(ctx) {
     // 示例：阻塞恢复阶段优先尝试返回，避免在弹窗/死路上反复点击。
-    if (ctx.runtime.block_recovery && ctx.runtime.block_recovery.requested) {
+    if (ctx.runtime.block_recovery) {
       return trek.action.back()
     }
   },

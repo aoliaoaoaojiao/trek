@@ -384,8 +384,8 @@ func TestRunnerRecoveryPlannerRespectsLLMBudgetConfig(t *testing.T) {
 		StepInterval:                0,
 		StopOnCrash:                 true,
 		StopOnANR:                   true,
-		RecoveryLLMBudgetMaxCalls:   1,
-		RecoveryLLMBudgetWindowStep: 100,
+		LLMBudgetMaxCalls:   1,
+		LLMBudgetWindowStep: 100,
 	})
 	if err != nil {
 		t.Fatalf("创建 runner 失败: %v", err)
@@ -444,7 +444,7 @@ func TestRunnerRecoveryPlannerPassesKnownActionsToLLMContext(t *testing.T) {
 		StepInterval:              0,
 		StopOnCrash:               true,
 		StopOnANR:                 true,
-		RecoveryLLMBudgetMaxCalls: 1,
+		LLMBudgetMaxCalls: 1,
 	})
 	if err != nil {
 		t.Fatalf("创建 runner 失败: %v", err)

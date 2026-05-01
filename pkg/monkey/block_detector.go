@@ -26,6 +26,7 @@ type blockDetector struct {
 	recentObservedSigs        []string // 骨架签名，用于高访问低收益检测
 	pageVisitCount            map[string]int
 	lastReason                string
+	imageSignatureFunc        func(screenshot []byte) string // 可选，XML 不可用时用图片签名替代
 }
 
 func newBlockDetector(noChangeThreshold int, twoStateLoopThreshold int, highVisitThreshold int, lowRewardWindow int) *blockDetector {
@@ -52,6 +53,25 @@ func newBlockDetector(noChangeThreshold int, twoStateLoopThreshold int, highVisi
 	}
 }
 
+func (d *blockDetector) withImageSignatureFunc(f func([]byte) string) *blockDetector {
+	d.imageSignatureFunc = f
+	return d
+}
+
+// resolveSkeleton 解析骨架签名：优先 XML 结构指纹，XML 不可用时降级到图片签名。
+func (d *blockDetector) resolveSkeleton(xml string, screenshot []byte) string {
+	sig := pageFingerprintName(xml)
+	if sig != "" && sig != "UnknownPage" {
+		return sig
+	}
+	if d != nil && d.imageSignatureFunc != nil && len(screenshot) > 0 {
+		if imgSig := d.imageSignatureFunc(screenshot); imgSig != "" {
+			return imgSig
+		}
+	}
+	return sig
+}
+
 func (d *blockDetector) Observe(cmd *types.ActionCommand, before session.PageSnapshot, after *session.PageSnapshot) bool {
 	if d == nil || cmd == nil || after == nil {
 		d.Reset()
@@ -64,8 +84,9 @@ func (d *blockDetector) Observe(cmd *types.ActionCommand, before session.PageSna
 	triggerHighVisitLowGain := false
 
 	// 骨架签名：仅基于 XML 结构，同一界面动态加载数据后不变
-	beforeSkeleton := pageFingerprintName(before.XML)
-	afterSkeleton := pageFingerprintName(after.XML)
+	// XML 不可用时降级到图片签名
+	beforeSkeleton := d.resolveSkeleton(before.XML, before.Screenshot)
+	afterSkeleton := d.resolveSkeleton(after.XML, after.Screenshot)
 	// 内容签名：基于页面名+XML 全文，用于检测内容是否有实质变化
 	afterContent := pageSignature(after.PageName, after.XML)
 

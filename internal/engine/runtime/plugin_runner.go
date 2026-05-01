@@ -9,6 +9,7 @@ import (
 
 type scriptPluginRunner interface {
 	TransformPage(ctx engineplugin.PluginContext) (engineplugin.PageSnapshot, error)
+	ResolvePageName(ctx engineplugin.PluginContext) (string, error)
 	BeforeDecide(ctx engineplugin.PluginContext) (*types.ActionCommand, bool, error)
 	AfterDecide(ctx engineplugin.PluginContext, cmd *types.ActionCommand) (*types.ActionCommand, bool, error)
 	OnStepResult(ctx engineplugin.StepResultContext) error
@@ -31,6 +32,22 @@ func newPluginChain(items []*engineplugin.Adapter) *pluginChain {
 		return nil
 	}
 	return &pluginChain{items: normalized}
+}
+
+func (c *pluginChain) ResolvePageName(ctx engineplugin.PluginContext) (string, error) {
+	if c == nil || len(c.items) == 0 {
+		return "", nil
+	}
+	for _, item := range c.items {
+		name, err := item.ResolvePageName(ctx)
+		if err != nil {
+			return "", err
+		}
+		if name != "" {
+			return name, nil
+		}
+	}
+	return "", nil
 }
 
 func (c *pluginChain) TransformPage(ctx engineplugin.PluginContext) (engineplugin.PageSnapshot, error) {
@@ -173,6 +190,16 @@ func transformPageForDecision(ctx engineplugin.PluginContext) (engineplugin.Page
 		return ctx.Page, nil
 	}
 	return p.TransformPage(ctx)
+}
+
+func resolvePageNameFromPlugin(ctx engineplugin.PluginContext) (string, error) {
+	mu.RLock()
+	p := scriptPlugin
+	mu.RUnlock()
+	if p == nil {
+		return "", nil
+	}
+	return p.ResolvePageName(ctx)
 }
 
 func beforeDecide(ctx engineplugin.PluginContext) (*types.ActionCommand, bool, error) {

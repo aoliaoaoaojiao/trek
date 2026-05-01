@@ -16,11 +16,18 @@ const (
 	PageNameStrategyXMLFingerprint = "xml_fingerprint"
 	// PageNameStrategyStructureFingerprint 显式使用页面树结构指纹解析页面名。
 	PageNameStrategyStructureFingerprint = "structure_fingerprint"
+	// PageNameStrategyImageFingerprint 基于截图生成页面指纹，适用于 XML dump 不可用的场景。
+	PageNameStrategyImageFingerprint = "image_fingerprint"
 )
 
-func resolveBasePageNameByStrategy(ctx context.Context, r *Runner, xml string) string {
+func resolveBasePageNameByStrategy(ctx context.Context, r *Runner, xml string, screenshot []byte) string {
 	strategy := normalizePageNameStrategy(r.cfg.PageNameStrategy, r.cfg.PageSourceType)
 	switch strategy {
+	case PageNameStrategyImageFingerprint:
+		if r.cfg.PageNameResolverEx != nil {
+			return r.cfg.PageNameResolverEx.ResolvePageName(xml, screenshot)
+		}
+		return resolveFallbackPageName(xml, r.cfg.PageNameResolver)
 	case PageNameStrategyXMLOnly, PageNameStrategyXMLFingerprint, PageNameStrategyStructureFingerprint:
 		return ResolvePageNameByStrategy(xml, r.cfg.PageNameResolver, strategy, r.cfg.PageSourceType, "")
 	case PageNameStrategyActivityOnly:
@@ -55,6 +62,9 @@ func ResolvePageNameByStrategy(xml string, resolver PageNameResolver, strategy s
 			return activity
 		}
 		return ResolvePageName(xml, resolver)
+	case PageNameStrategyImageFingerprint:
+		// image_fingerprint 需要截图，外部调用方无法提供，fallback 到 XML 解析。
+		return ResolvePageName(xml, resolver)
 	default:
 		return ResolvePageName(xml, resolver)
 	}
@@ -79,6 +89,8 @@ func normalizePageNameStrategy(strategy string, pageSourceType string) string {
 		return PageNameStrategyStructureFingerprint
 	case PageNameStrategyActivityOnly:
 		return PageNameStrategyActivityOnly
+	case PageNameStrategyImageFingerprint:
+		return PageNameStrategyImageFingerprint
 	default:
 		// 未知策略按 auto 处理，确保兼容。
 		if strings.EqualFold(strings.TrimSpace(pageSourceType), string(defaultPageSourceType)) {
@@ -102,4 +114,12 @@ func resolveCurrentActivityName(ctx context.Context, driver any) (string, bool) 
 		return "", false
 	}
 	return activity, true
+}
+
+// resolveFallbackPageName 在 PageNameResolverEx 不可用时 fallback 到 XML 解析。
+func resolveFallbackPageName(xml string, resolver PageNameResolver) string {
+	if resolver != nil {
+		return resolver(xml)
+	}
+	return defaultPageNameResolver(xml)
 }

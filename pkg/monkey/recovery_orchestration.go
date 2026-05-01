@@ -292,10 +292,10 @@ func (r *Runner) getRecoveryPlanner() recovery.RecoveryPlanner {
 	if provider, ok := r.decider.(RecoveryLLMProvider); ok && provider != nil {
 		config.LLM = recoveryProviderFunc(provider.BuildLLMRecoveryCandidates)
 	}
-	if r.cfg.RecoveryLLMBudgetMaxCalls > 0 {
+	if r.cfg.LLMBudgetMaxCalls > 0 {
 		config.LLMBudget = recovery.NewSlidingWindowLLMBudget(
-			r.cfg.RecoveryLLMBudgetMaxCalls,
-			r.cfg.RecoveryLLMBudgetWindowStep,
+			r.cfg.LLMBudgetMaxCalls,
+			r.cfg.LLMBudgetWindowStep,
 		)
 	}
 	config.OnLLMCall = func(ctx enginestate.TraversalContext) {

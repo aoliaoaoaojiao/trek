@@ -62,11 +62,11 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.RecoveryCooldownSteps <= 0 {
 		cfg.RecoveryCooldownSteps = defaultRecoveryCooldownSteps
 	}
-	if cfg.RecoveryLLMBudgetMaxCalls < 0 {
-		cfg.RecoveryLLMBudgetMaxCalls = 0
+	if cfg.LLMBudgetMaxCalls < 0 {
+		cfg.LLMBudgetMaxCalls = 0
 	}
-	if cfg.RecoveryLLMBudgetWindowStep < 0 {
-		cfg.RecoveryLLMBudgetWindowStep = 0
+	if cfg.LLMBudgetWindowStep < 0 {
+		cfg.LLMBudgetWindowStep = 0
 	}
 	if cfg.CandidateEnhancementMinStepGap <= 0 {
 		cfg.CandidateEnhancementMinStepGap = defaultCandidateEnhancementMinStepGap

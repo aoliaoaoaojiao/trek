@@ -17,33 +17,34 @@ type BlackRect struct {
 }
 
 type StaticConfig struct {
-	BlackRects                []BlackRect
-	SkipAll                   bool
-	PageSource                string
-	TouchMode                 string
-	PageNameStrategy          string
-	Algorithm                 string
-	Plugins                   []string
-	CaptureScreenshot         coretypes.Optional[bool]
-	KeepStepRecords           coretypes.Optional[bool]
-	ExploreOCRTimeoutMs       coretypes.Optional[int]
-	LLMTimeoutMs              coretypes.Optional[int]
-	RecoveryCooldownSteps     coretypes.Optional[int]
-	LLMMaxCalls               coretypes.Optional[int]
-	LLMWindowSteps            coretypes.Optional[int]
-	RecoveryTwoStateLoopThreshold  coretypes.Optional[int]
-	RecoveryHighVisitThreshold     coretypes.Optional[int]
-	RecoveryLowRewardWindow        coretypes.Optional[int]
+	BlackRects                        []BlackRect
+	SkipAll                           bool
+	PageSource                        string
+	TouchMode                         string
+	PageNameStrategy                  string
+	PageControlStrategy               string
+	Algorithm                         string
+	Plugins                           []string
+	CaptureScreenshot                 coretypes.Optional[bool]
+	KeepStepRecords                   coretypes.Optional[bool]
+	ExploreOCRTimeoutMs               coretypes.Optional[int]
+	LLMTimeoutMs                      coretypes.Optional[int]
+	RecoveryCooldownSteps             coretypes.Optional[int]
+	LLMMaxCalls                       coretypes.Optional[int]
+	LLMWindowSteps                    coretypes.Optional[int]
+	RecoveryTwoStateLoopThreshold     coretypes.Optional[int]
+	RecoveryHighVisitThreshold        coretypes.Optional[int]
+	RecoveryLowRewardWindow           coretypes.Optional[int]
 	CandidateAmbiguityTopGapThreshold coretypes.Optional[float64]
-	HighValuePageVisitLimit        coretypes.Optional[int]
-	CandidateRiskDropThreshold     coretypes.Optional[float64]
-	CandidateMinFusionScore        coretypes.Optional[float64]
-	ScrollInferThreshold     int
-	UIA                       StaticUIAConfig
-	Poco                      StaticPocoConfig
-	Log                       StaticLogConfig
-	EffectiveTouchArea        *StaticEffectiveTouchArea
-	UCTBandit                 StaticUCTBanditConfig
+	HighValuePageVisitLimit           coretypes.Optional[int]
+	CandidateRiskDropThreshold        coretypes.Optional[float64]
+	CandidateMinFusionScore           coretypes.Optional[float64]
+	ScrollInferThreshold              int
+	UIA                               StaticUIAConfig
+	Poco                              StaticPocoConfig
+	Log                               StaticLogConfig
+	EffectiveTouchArea                *StaticEffectiveTouchArea
+	UCTBandit                         StaticUCTBanditConfig
 }
 
 type StaticLogConfig struct {
@@ -115,12 +116,51 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 	if !isEmptyJSValue(blackRectsValue) {
 		arrObj := blackRectsValue.ToObject(vm)
 		for _, key := range arrObj.Keys() {
-			item := arrObj.Get(key).ToObject(vm)
-			pageName := strings.TrimSpace(item.Get("page_name").String())
-			if pageName == "" {
-				pageName = strings.TrimSpace(item.Get("pageName").String())
+			value := arrObj.Get(key)
+			item := value.ToObject(vm)
+			if item == nil {
+				continue
 			}
-			boundsObj := item.Get("bounds").ToObject(vm)
+			pageName := ""
+			if pageNameValue := item.Get("page_name"); !isEmptyJSValue(pageNameValue) {
+				pageName = strings.TrimSpace(pageNameValue.String())
+			}
+			if pageName == "" {
+				if pageNameValue := item.Get("pageName"); !isEmptyJSValue(pageNameValue) {
+					pageName = strings.TrimSpace(pageNameValue.String())
+				}
+			}
+			boundsValue := item.Get("bounds")
+			if isEmptyJSValue(boundsValue) && pageName == "" {
+				legacyBoundsObj := value.ToObject(vm)
+				for _, legacyKey := range legacyBoundsObj.Keys() {
+					boundsObj := legacyBoundsObj.Get(legacyKey).ToObject(vm)
+					boundsKeys := boundsObj.Keys()
+					if len(boundsKeys) == 0 {
+						continue
+					}
+					targetBounds := boundsObj
+					rectKeys := boundsKeys
+					if len(rectKeys) != 4 {
+						targetBounds = boundsObj.Get(boundsKeys[0]).ToObject(vm)
+						rectKeys = targetBounds.Keys()
+					}
+					if len(rectKeys) != 4 {
+						return cfg, fmt.Errorf("excluded_touch_areas[%s] bounds 长度必须为4", legacyKey)
+					}
+					var bounds [4]int
+					for i, bk := range rectKeys {
+						val, err := intFromJSValue(targetBounds.Get(bk))
+						if err != nil {
+							return cfg, fmt.Errorf("excluded_touch_areas[%s][%d] 非法: %w", legacyKey, i, err)
+						}
+						bounds[i] = val
+					}
+					cfg.BlackRects = append(cfg.BlackRects, BlackRect{PageName: legacyKey, Bounds: bounds})
+				}
+				continue
+			}
+			boundsObj := boundsValue.ToObject(vm)
 			boundsKeys := boundsObj.Keys()
 			if len(boundsKeys) != 4 {
 				return cfg, fmt.Errorf("excluded_touch_areas[%s].bounds 长度必须为4", key)
@@ -157,6 +197,12 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 	}
 	if strategyValue := obj.Get("pageNameStrategy"); cfg.PageNameStrategy == "" && !isEmptyJSValue(strategyValue) {
 		cfg.PageNameStrategy = strings.TrimSpace(strategyValue.String())
+	}
+	if strategyValue := obj.Get("page_control_strategy"); !isEmptyJSValue(strategyValue) {
+		cfg.PageControlStrategy = strings.TrimSpace(strategyValue.String())
+	}
+	if strategyValue := obj.Get("pageControlStrategy"); cfg.PageControlStrategy == "" && !isEmptyJSValue(strategyValue) {
+		cfg.PageControlStrategy = strings.TrimSpace(strategyValue.String())
 	}
 	if algorithmValue := obj.Get("algorithm"); !isEmptyJSValue(algorithmValue) {
 		cfg.Algorithm = strings.TrimSpace(algorithmValue.String())

@@ -272,19 +272,6 @@ func (r *Runner) getRecoveryPlanner() recovery.RecoveryPlanner {
 	if provider, ok := r.decider.(RecoveryCandidateProvider); ok && provider != nil {
 		config.Memory = recoveryProviderFunc(provider.BuildMemoryRecoveryCandidates)
 		config.Heuristic = recoveryProviderFunc(provider.BuildHeuristicRecoveryCandidates)
-		config.LLM = recoveryProviderFunc(provider.BuildLLMRecoveryCandidates)
-	}
-	if r.cfg.LLMBudgetMaxCalls > 0 {
-		config.LLMBudget = recovery.NewSlidingWindowLLMBudget(
-			r.cfg.LLMBudgetMaxCalls,
-			r.cfg.LLMBudgetWindowStep,
-		)
-	}
-	config.OnLLMCall = func(ctx enginestate.TraversalContext) {
-		r.recoveryLLMCallCount++
-	}
-	config.OnLLMBudgetDenied = func(ctx enginestate.TraversalContext) {
-		r.recoveryLLMDeniedCount++
 	}
 
 	if config.Memory == nil && config.Heuristic == nil && config.LLM == nil {

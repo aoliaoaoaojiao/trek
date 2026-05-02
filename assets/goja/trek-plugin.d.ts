@@ -249,6 +249,7 @@ declare namespace Trek {
   type LogLevel = "debug" | "info" | "warn" | "warning" | "error" | "fatal"
   type PageSourceType = "uia" | "poco"
   type TouchMode = "adb" | "motion" | "uia"
+  type PageControlStrategy = "raw" | "ocr" | "llm"
   type PageNameStrategy =
     | "uia_activity_first"
     | "xml_only"
@@ -334,7 +335,7 @@ declare namespace Trek {
      * - false（默认）：引擎先调用插件 beforeDecide，若插件未拦截，则走内置算法（Reuse/UctBandit/Random）产出动作。
      * - true：内置算法完全不执行，引擎仅依赖插件 beforeDecide 提供动作；
      *         若插件也未返回动作，则引擎输出 NOP（空操作）。
-     * 适用于插件全权控制决策的场景（如纯脚本策略、外部 LLM 驱动）。
+     * 适用于插件全权控制决策的场景（如纯脚本策略、外部策略引擎驱动）。
      */
     skip_all_actions_from_model?: boolean
     /** 遍历算法：random / reuse / uct_bandit。默认 "reuse" */
@@ -347,6 +348,14 @@ declare namespace Trek {
     touch_mode?: TouchMode
     /** 指定页面名生成策略（不填时按页面源自动选择：UIA 默认 uia_activity_first，Poco 默认 xml_only） */
     page_name_strategy?: PageNameStrategy
+    /**
+     * 页面控件信息获取策略。
+     * `raw` 直接使用 dump 原始 XML；
+     * `ocr` 基于截图 OCR 提取控件区域并生成伪控件树；
+     * `llm` 基于截图 LLM 推断控件区域并生成伪控件树。
+     * 当策略为 `ocr` 或 `llm` 时，运行期会自动启用截图采集。
+     */
+    page_control_strategy?: PageControlStrategy
     /** 是否采集截图给决策层。默认 false */
     capture_screenshot?: boolean
     /** 是否保留每步记录。默认 true */
@@ -359,8 +368,7 @@ declare namespace Trek {
     explore_ocr_timeout_ms?: number
     /**
      * LLM 超时（毫秒）。
-     * 当引擎检测到卡死（如两状态循环、高访问低收益）时进入恢复阶段，
-     * 会将当前页面上下文发送给 LLM 请求恢复动作建议。此字段控制该 HTTP 请求的超时时间。默认 15000
+     * 仅用于 `page_control_strategy="llm"` 时的页面控件检测请求超时控制。默认 15000
      */
     llm_timeout_ms?: number
     /**
@@ -370,15 +378,13 @@ declare namespace Trek {
      */
     recovery_cooldown_steps?: number
     /**
-     * LLM 最大调用次数。
-     * 滑动窗口内允许的 LLM 调用上限（恢复阶段和候选增强共享此预算）。
-     * 超出后 LLM 调用被拒绝，回退到纯算法候选。0 表示不限制。默认 0
+     * 兼容保留字段。
+     * 当前内置 LLM 已不再参与恢复决策或候选增强，因此该字段暂不生效。默认 0
      */
     llm_max_calls?: number
     /**
-     * LLM 调用窗口步数。
-     * 配合 llm_max_calls 使用，控制滑动窗口大小（步数）。
-     * 窗口外的历史调用不再计入配额。0 表示不使用滑动窗口（全局累计）。默认 0
+     * 兼容保留字段。
+     * 当前内置 LLM 已不再参与恢复决策或候选增强，因此该字段暂不生效。默认 0
      */
     llm_window_steps?: number
     /**
@@ -401,14 +407,12 @@ declare namespace Trek {
     recovery_low_reward_window?: number
     /**
      * 候选歧义顶部间距阈值。
-     * Explore 模式下，当权重最高的两个候选动作的权重差 <= 此值时，
-     * 认为候选"歧义"（难以区分），可能触发 LLM 增强来提供建议。默认 0.15
+     * 当前仅用于保留探索阶段的歧义度判定配置，不会再触发内置 LLM 增强。默认 0.15
      */
     candidate_ambiguity_top_gap_threshold?: number
     /**
      * 高价值页面访问上限。
-     * 页面访问次数在 1~此值范围内被视为"高价值页面"，会触发 LLM 候选增强。
-     * 超过此值后不再对该页面增强，保持保守策略。默认 2
+     * 当前仅用于保留探索阶段的页面价值判定配置，不会再触发内置 LLM 候选增强。默认 2
      */
     high_value_page_visit_limit?: number
     /**

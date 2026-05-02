@@ -118,6 +118,11 @@ func runMonkey(logLevelStr string, opts struct {
 	highValuePageVisitLimit := staticCfg.HighValuePageVisitLimit.OrDefault(2)
 	candidateRiskDropThreshold := staticCfg.CandidateRiskDropThreshold.OrDefault(2.1)
 	candidateMinFusionScore := staticCfg.CandidateMinFusionScore.OrDefault(-0.3)
+	pageControlStrategy := strings.TrimSpace(staticCfg.PageControlStrategy)
+
+	if normalizePageControlStrategy(pageControlStrategy) != pageControlStrategyRaw {
+		opts.captureScreenshot = true
+	}
 
 	pageSourceType, err := resolvePageSourceType(staticCfg)
 	if err != nil {
@@ -168,10 +173,11 @@ func runMonkey(logLevelStr string, opts struct {
 	}
 
 	sess, err := session.NewSession(session.Config{
-		PackageName:        packageName,
-		Algorithm:          algorithmType,
-		ExploreOCRTimeout:  exploreOCRTimeout,
-		RecoveryLLMTimeout: llmTimeout,
+		PackageName:         packageName,
+		Algorithm:           algorithmType,
+		ExploreOCRTimeout:   exploreOCRTimeout,
+		RecoveryLLMTimeout:  llmTimeout,
+		PageControlStrategy: pageControlStrategy,
 	})
 	if err != nil {
 		return fmt.Errorf("创建会话失败: %w", err)
@@ -191,14 +197,15 @@ func runMonkey(logLevelStr string, opts struct {
 		StepInterval:                      opts.stepInterval,
 		PageSourceType:                    pageSourceType,
 		PageNameStrategy:                  strings.TrimSpace(staticCfg.PageNameStrategy),
+		PageControlStrategy:               pageControlStrategy,
 		CaptureScreenshot:                 opts.captureScreenshot,
 		KeepStepRecords:                   opts.keepStepRecords,
 		StopOnCrash:                       true,
 		StopOnANR:                         true,
-		EffectiveTouchArea:                buildEffectiveTouchAreaConfig(staticCfg, packageName, deviceSerial),
+		EffectiveTouchAreas:               buildEffectiveTouchAreasConfig(staticCfg, packageName, deviceSerial),
 		RecoveryCooldownSteps:             recoveryCooldownSteps,
-		LLMBudgetMaxCalls:         llmMaxCalls,
-		LLMBudgetWindowStep:       llmWindowSteps,
+		LLMBudgetMaxCalls:                 llmMaxCalls,
+		LLMBudgetWindowStep:               llmWindowSteps,
 		TwoStateLoopThreshold:             recoveryTwoStateLoopThreshold,
 		HighVisitThreshold:                recoveryHighVisitThreshold,
 		LowRewardWindow:                   recoveryLowRewardWindow,
@@ -227,9 +234,28 @@ func runMonkey(logLevelStr string, opts struct {
 	fmt.Printf("页面统计: %+v\n", report.PageVisitCount)
 	fmt.Printf("恢复冷却统计: cooldown_enter=%d cooldown_step_hits=%d\n",
 		report.RecoveryCooldownEnterCount, report.RecoveryCooldownStepCount)
-	fmt.Printf("LLM 统计: recovery_calls=%d recovery_budget_denied=%d enhancement_calls=%d enhancement_hits=%d enhancement_budget_denied=%d\n",
+	fmt.Printf("LLM 决策统计（兼容字段，当前固定为 0）: recovery_calls=%d recovery_budget_denied=%d enhancement_calls=%d enhancement_hits=%d enhancement_budget_denied=%d\n",
 		report.RecoveryLLMCalls, report.RecoveryLLMBudgetDenied, report.CandidateEnhancementCalls, report.CandidateEnhancementSelects, report.EnhancementLLMBudgetDenied)
 	return nil
+}
+
+const (
+	pageControlStrategyRaw = "raw"
+	pageControlStrategyOCR = "ocr"
+	pageControlStrategyLLM = "llm"
+)
+
+func normalizePageControlStrategy(strategy string) string {
+	switch strings.ToLower(strings.TrimSpace(strategy)) {
+	case "", pageControlStrategyRaw:
+		return pageControlStrategyRaw
+	case pageControlStrategyOCR:
+		return pageControlStrategyOCR
+	case pageControlStrategyLLM:
+		return pageControlStrategyLLM
+	default:
+		return pageControlStrategyRaw
+	}
 }
 
 // probePageName 输出当前程序判定的页面名，便于调试页面识别逻辑。
@@ -354,12 +380,12 @@ func parsePocoEngine(text string) (poco.Engine, error) {
 }
 
 // buildEffectiveTouchAreaConfig 从静态配置构建有效触控区域配置。
-func buildEffectiveTouchAreaConfig(staticCfg scripting.StaticConfig, packageName string, deviceSerial string) *monkey.EffectiveTouchArea {
+func buildEffectiveTouchAreasConfig(staticCfg scripting.StaticConfig, packageName string, deviceSerial string) []monkey.EffectiveTouchArea {
 	if staticCfg.EffectiveTouchArea == nil {
 		return nil
 	}
 	rangeCfg := staticCfg.EffectiveTouchArea.Range
-	area := &monkey.EffectiveTouchArea{
+	area := monkey.EffectiveTouchArea{
 		Serial:      strings.TrimSpace(staticCfg.EffectiveTouchArea.Serial),
 		PackageName: strings.TrimSpace(staticCfg.EffectiveTouchArea.PackageName),
 		Range: monkey.EffectiveTouchRange{
@@ -375,5 +401,5 @@ func buildEffectiveTouchAreaConfig(staticCfg scripting.StaticConfig, packageName
 	if area.PackageName == "" {
 		area.PackageName = strings.TrimSpace(packageName)
 	}
-	return area
+	return []monkey.EffectiveTouchArea{area}
 }

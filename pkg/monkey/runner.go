@@ -95,6 +95,7 @@ type Config struct {
 	StepInterval                      time.Duration
 	MaxConsecutiveFailures            int
 	PageSourceType                    string
+	PageControlStrategy               string
 	CaptureScreenshot                 bool
 	LongClickDuration                 time.Duration
 	ScrollDuration                    time.Duration
@@ -113,8 +114,8 @@ type Config struct {
 	EnableBlockRecovery               *bool
 	BlockNoChangeThreshold            int
 	RecoveryCooldownSteps             int
-	LLMBudgetMaxCalls         int
-	LLMBudgetWindowStep       int
+	LLMBudgetMaxCalls                 int
+	LLMBudgetWindowStep               int
 	EnableExploreLLMEnhancement       *bool
 	CandidateEnhancementMinStepGap    int
 	CandidateAmbiguityTopGapThreshold float64
@@ -222,7 +223,8 @@ type ContextAwareBlockRecoveryDecider interface {
 	NextBlockRecoveryActionWithContext(ctx enginestate.TraversalContext, input session.ActionInput) (*types.ActionCommand, error)
 }
 
-// RecoveryCandidateProvider 聚合恢复阶段各来源候选：memory / heuristic / llm。
+// RecoveryCandidateProvider 聚合恢复阶段的候选来源。
+// 当前仅使用 memory / heuristic；LLM 决策接口仅为兼容保留，不再参与恢复决策。
 type RecoveryCandidateProvider interface {
 	BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
 	BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
@@ -250,7 +252,6 @@ type RecoveryActionHistoryProvider interface {
 	BuildKnownFailedRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error)
 	BuildKnownSuccessfulRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error)
 }
-
 
 type currentActivityProvider interface {
 	GetCurrentActivity(ctx context.Context) (string, error)
@@ -434,17 +435,37 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		}
 
 		xml, err := pageSource.DumpPageSource()
+		var screenshot []byte
 		if err != nil {
-			record.Err = err.Error()
-			r.markFailed(report, record, stepStart)
-			logger.Warnf("monkey step=%d dump page source failed: %v", step, err)
-			if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
-				report.StopReason = StopMaxConsecutiveFailures
-				return report, nil
+			if r.shouldUseImagePageControlFallback() {
+				screenshot, _ = r.driver.Screenshot(ctx)
+				if len(screenshot) > 0 {
+					logger.Warnf("monkey step=%d dump page source failed, fallback to screenshot strategy=%s: %v", step, r.cfg.PageControlStrategy, err)
+					xml = ""
+				} else {
+					record.Err = err.Error()
+					r.markFailed(report, record, stepStart)
+					logger.Warnf("monkey step=%d dump page source failed: %v", step, err)
+					if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
+						report.StopReason = StopMaxConsecutiveFailures
+						return report, nil
+					}
+					r.tryRecover(report.ConsecutiveFailures)
+					r.sleepStep(ctx, r.cfg.StepInterval)
+					continue
+				}
+			} else {
+				record.Err = err.Error()
+				r.markFailed(report, record, stepStart)
+				logger.Warnf("monkey step=%d dump page source failed: %v", step, err)
+				if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
+					report.StopReason = StopMaxConsecutiveFailures
+					return report, nil
+				}
+				r.tryRecover(report.ConsecutiveFailures)
+				r.sleepStep(ctx, r.cfg.StepInterval)
+				continue
 			}
-			r.tryRecover(report.ConsecutiveFailures)
-			r.sleepStep(ctx, r.cfg.StepInterval)
-			continue
 		}
 
 		cachedCrash, cachedANR, cachedReady := r.snapshotHealthSignals()
@@ -463,8 +484,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			return report, nil
 		}
 
-		var screenshot []byte
-		if r.cfg.CaptureScreenshot {
+		if r.cfg.CaptureScreenshot && len(screenshot) == 0 {
 			screenshot, _ = r.driver.Screenshot(ctx)
 		}
 		pageName, xml := r.resolvePageInfo(ctx, xml, screenshot)
@@ -660,8 +680,6 @@ func (r *Runner) deriveTraversalOutcome(
 	return traversal.OutcomeNewState
 }
 
-
-
 func (r *Runner) tryRecover(consecutiveFailures int) {
 	if !isFailureRecoveryEnabled(r.cfg) {
 		return
@@ -717,7 +735,6 @@ func (r *Runner) ensureTargetPackageForeground(step int) (bool, error) {
 	r.monitor.setCurrentPackage(targetPackage)
 	return true, nil
 }
-
 
 func (r *Runner) detectCrashBySystem() bool {
 	crash, err := r.driver.CheckCrash(r.cfg.PackageName)
@@ -796,4 +813,13 @@ func (r *Runner) currentHealthSignals() (crash bool, anr bool) {
 		anr = r.detectANRBySystem()
 	}
 	return crash, anr
+}
+
+func (r *Runner) shouldUseImagePageControlFallback() bool {
+	switch strings.ToLower(strings.TrimSpace(r.cfg.PageControlStrategy)) {
+	case "ocr", "llm":
+		return true
+	default:
+		return false
+	}
 }

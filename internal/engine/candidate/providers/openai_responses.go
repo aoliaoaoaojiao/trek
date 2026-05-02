@@ -91,6 +91,33 @@ func (p *OpenAIResponsesProvider) BuildCandidates(ctx enginestate.TraversalConte
 	return parseLLMCandidates(output), nil
 }
 
+// DetectPageControls 调用 OpenAI Responses API 输出页面控件区域。
+func (p *OpenAIResponsesProvider) DetectPageControls(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+	if p == nil {
+		return nil, nil
+	}
+	payload, err := p.buildPageControlRequestPayload(ctx)
+	if err != nil {
+		return nil, err
+	}
+	body, status, err := p.postWithRetry(payload)
+	if err != nil {
+		return nil, err
+	}
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("openai responses 请求失败: status=%d body=%s", status, truncateText(string(body), 512))
+	}
+	text, err := extractOutputText(body)
+	if err != nil {
+		return nil, err
+	}
+	var output pageControlResponse
+	if err := json.Unmarshal([]byte(text), &output); err != nil {
+		return nil, fmt.Errorf("解析 openai 控件检测输出失败: %w", err)
+	}
+	return parsePageControlCandidates(output), nil
+}
+
 // buildRequestPayload 构建多模态请求载荷。
 // 截图通过 input_image content block 传入，文本上下文通过 input_text 传入。
 func (p *OpenAIResponsesProvider) buildRequestPayload(ctx enginestate.TraversalContext) ([]byte, error) {
@@ -102,8 +129,8 @@ func (p *OpenAIResponsesProvider) buildRequestPayload(ctx enginestate.TraversalC
 	}
 	if len(prompt.Screenshot) > 0 {
 		userContent = append(userContent, map[string]any{
-			"type":       "input_image",
-			"image_url":  prompt.ScreenshotBase64(),
+			"type":      "input_image",
+			"image_url": prompt.ScreenshotBase64(),
 		})
 	}
 
@@ -125,6 +152,43 @@ func (p *OpenAIResponsesProvider) buildRequestPayload(ctx enginestate.TraversalC
 			"format": map[string]any{
 				"type":   "json_schema",
 				"name":   "trek_recovery_candidates",
+				"strict": true,
+				"schema": prompt.ResponseSchema,
+			},
+		},
+	}
+	return json.Marshal(payload)
+}
+
+func (p *OpenAIResponsesProvider) buildPageControlRequestPayload(ctx enginestate.TraversalContext) ([]byte, error) {
+	prompt := buildPageControlPrompt(ctx)
+	userContent := []map[string]any{
+		{"type": "input_text", "text": prompt.UserContent},
+	}
+	if len(prompt.Screenshot) > 0 {
+		userContent = append(userContent, map[string]any{
+			"type":      "input_image",
+			"image_url": prompt.ScreenshotBase64(),
+		})
+	}
+	payload := map[string]any{
+		"model": p.model,
+		"input": []map[string]any{
+			{
+				"role": "system",
+				"content": []map[string]any{
+					{"type": "input_text", "text": prompt.SystemContent + "\n\n必须输出 JSON，且仅返回符合 schema 的控件列表。"},
+				},
+			},
+			{
+				"role":    "user",
+				"content": userContent,
+			},
+		},
+		"text": map[string]any{
+			"format": map[string]any{
+				"type":   "json_schema",
+				"name":   "trek_page_controls",
 				"strict": true,
 				"schema": prompt.ResponseSchema,
 			},

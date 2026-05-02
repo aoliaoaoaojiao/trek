@@ -195,6 +195,18 @@ func TestLoadStaticConfigReadsPageNameStrategy(t *testing.T) {
 	}
 }
 
+func TestLoadStaticConfigReadsPageControlStrategy(t *testing.T) {
+	cfg, err := LoadStaticConfig(`const config = {
+  page_control_strategy: "ocr"
+}`)
+	if err != nil {
+		t.Fatalf("加载静态配置失败: %v", err)
+	}
+	if cfg.PageControlStrategy != "ocr" {
+		t.Fatalf("页面控件信息获取策略不符合预期: %q", cfg.PageControlStrategy)
+	}
+}
+
 func TestLoadStaticConfigReadsPlugins(t *testing.T) {
 	cfg, err := LoadStaticConfig(`const config = {
   plugins: ["./plugins/a.plugin.js", "./plugins/b.plugin.js", ""]

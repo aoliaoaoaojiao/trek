@@ -102,6 +102,38 @@ func (p *LLMHTTPProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]c
 	return parseLLMCandidates(output), nil
 }
 
+// DetectPageControls 调用 LLM 接口输出页面控件区域，而不是恢复动作。
+func (p *LLMHTTPProvider) DetectPageControls(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+	if p == nil {
+		return nil, nil
+	}
+	prompt := buildPageControlPrompt(ctx)
+	payload := llmRequest{
+		Model:            p.model,
+		Instruction:      prompt.SystemContent,
+		UserMessage:      prompt.UserContent,
+		ScreenshotBase64: prompt.ScreenshotBase64(),
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	body, status, err := p.postWithRetry(data)
+	if err != nil {
+		return nil, err
+	}
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("llm endpoint 响应异常: status=%d body=%s", status, truncateText(string(body), 512))
+	}
+
+	var output pageControlResponse
+	if err := json.Unmarshal(body, &output); err != nil {
+		return nil, fmt.Errorf("解析 llm 控件检测响应失败: %w", err)
+	}
+	return parsePageControlCandidates(output), nil
+}
+
 func (p *LLMHTTPProvider) postWithRetry(payload []byte) ([]byte, int, error) {
 	tryOnce := func() ([]byte, int, error) {
 		req, err := http.NewRequest(http.MethodPost, p.endpoint, bytes.NewReader(payload))

@@ -137,3 +137,46 @@ func TestNewOpenAIResponsesProviderValidateConfig(t *testing.T) {
 		t.Fatalf("未提供 api key 应报错")
 	}
 }
+
+func TestOpenAIResponsesProviderDetectPageControls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("解析请求失败: %v", err)
+		}
+		textCfg, ok := req["text"].(map[string]any)
+		if !ok {
+			t.Fatalf("应包含 text.format 配置")
+		}
+		format, ok := textCfg["format"].(map[string]any)
+		if !ok || format["name"] != "trek_page_controls" {
+			t.Fatalf("控件检测 schema 名称错误: %+v", textCfg)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"output_text": `{"controls":[{"control_type":"button","text":"确定","hint":"确认","clickable":true,"confidence":0.88,"bounds":{"left":0.2,"top":0.3,"right":0.5,"bottom":0.6}}]}`,
+		})
+	}))
+	defer server.Close()
+
+	provider, err := NewOpenAIResponsesProvider(OpenAIResponsesProviderConfig{
+		BaseURL: server.URL,
+		APIKey:  "sk-test",
+		Model:   "gpt-4.1-mini",
+	})
+	if err != nil {
+		t.Fatalf("创建 provider 失败: %v", err)
+	}
+	items, err := provider.DetectPageControls(enginestate.TraversalContext{
+		PageName:   "DialogPage",
+		Screenshot: []byte("fake-image"),
+	})
+	if err != nil {
+		t.Fatalf("控件检测失败: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("控件候选数量错误: %d", len(items))
+	}
+	if items[0].Metadata["llm_control_text"] != "确定" {
+		t.Fatalf("控件文本元数据错误: %+v", items[0].Metadata)
+	}
+}

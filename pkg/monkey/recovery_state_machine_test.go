@@ -374,16 +374,16 @@ func TestRunnerRecordRecoveryOutcomeSkipsWhenNoRecoveryAttempt(t *testing.T) {
 	}
 }
 
-func TestRunnerRecoveryPlannerRespectsLLMBudgetConfig(t *testing.T) {
+func TestRunnerRecoveryPlannerDoesNotUseLLMConfig(t *testing.T) {
 	decider := &plannerAwareRecoveryDecider{
 		llmCandidates: []candidate.Candidate{
 			candidate.NewCandidate(&types.ActionCommand{Act: types.BACK}, candidate.SourceLLM, "llm_back", nil),
 		},
 	}
 	runner, err := NewRunner(decider, &fakeDriver{}, Config{
-		StepInterval:                0,
-		StopOnCrash:                 true,
-		StopOnANR:                   true,
+		StepInterval:        0,
+		StopOnCrash:         true,
+		StopOnANR:           true,
 		LLMBudgetMaxCalls:   1,
 		LLMBudgetWindowStep: 100,
 	})
@@ -415,18 +415,15 @@ func TestRunnerRecoveryPlannerRespectsLLMBudgetConfig(t *testing.T) {
 		t.Fatalf("第二次构建恢复候选失败: %v", err)
 	}
 
-	if decider.llmCalls != 1 {
-		t.Fatalf("预算应限制 llm provider 只调用一次，实际: %d", decider.llmCalls)
+	if decider.llmCalls != 0 {
+		t.Fatalf("llm 不应再参与恢复决策，实际调用: %d", decider.llmCalls)
 	}
-	if runner.recoveryLLMCallCount != 1 {
-		t.Fatalf("runner 应记录 recovery llm 调用次数，实际: %d", runner.recoveryLLMCallCount)
-	}
-	if runner.recoveryLLMDeniedCount != 1 {
-		t.Fatalf("runner 应记录 recovery llm 预算拒绝次数，实际: %d", runner.recoveryLLMDeniedCount)
+	if runner.recoveryLLMCallCount != 0 || runner.recoveryLLMDeniedCount != 0 {
+		t.Fatalf("llm 恢复统计应为 0，实际 calls=%d denied=%d", runner.recoveryLLMCallCount, runner.recoveryLLMDeniedCount)
 	}
 }
 
-func TestRunnerRecoveryPlannerPassesKnownActionsToLLMContext(t *testing.T) {
+func TestRunnerRecoveryPlannerDoesNotPassKnownActionsToLLMContext(t *testing.T) {
 	successCmd := &types.ActionCommand{Act: types.BACK}
 	failedCmd := &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}
 	decider := &plannerAwareRecoveryDecider{
@@ -441,9 +438,9 @@ func TestRunnerRecoveryPlannerPassesKnownActionsToLLMContext(t *testing.T) {
 		},
 	}
 	runner, err := NewRunner(decider, &fakeDriver{}, Config{
-		StepInterval:              0,
-		StopOnCrash:               true,
-		StopOnANR:                 true,
+		StepInterval:      0,
+		StopOnCrash:       true,
+		StopOnANR:         true,
 		LLMBudgetMaxCalls: 1,
 	})
 	if err != nil {
@@ -458,11 +455,8 @@ func TestRunnerRecoveryPlannerPassesKnownActionsToLLMContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("恢复取动作失败: %v", err)
 	}
-	if len(decider.lastLLMContext.KnownFailedActions) == 0 {
-		t.Fatalf("预期 llm 上下文包含已知失败动作")
-	}
-	if len(decider.lastLLMContext.KnownSuccessActions) == 0 {
-		t.Fatalf("预期 llm 上下文包含已知成功动作")
+	if len(decider.lastLLMContext.KnownFailedActions) != 0 || len(decider.lastLLMContext.KnownSuccessActions) != 0 {
+		t.Fatalf("llm 不应再参与恢复决策上下文: %+v", decider.lastLLMContext)
 	}
 }
 

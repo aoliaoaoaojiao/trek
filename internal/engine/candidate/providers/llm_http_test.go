@@ -308,6 +308,57 @@ func TestLLMHTTPProviderRetriesOnTimeout(t *testing.T) {
 	}
 }
 
+func TestLLMHTTPProviderDetectPageControls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("解析请求失败: %v", err)
+		}
+		if _, ok := req["instruction"].(string); !ok {
+			t.Fatalf("请求应包含 instruction")
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"controls": []map[string]any{
+				{
+					"control_type": "button",
+					"text":         "登录",
+					"hint":         "主按钮",
+					"clickable":    true,
+					"confidence":   0.93,
+					"bounds": map[string]any{
+						"left":   0.1,
+						"top":    0.2,
+						"right":  0.3,
+						"bottom": 0.4,
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider, err := NewLLMHTTPProvider(LLMHTTPProviderConfig{Endpoint: server.URL})
+	if err != nil {
+		t.Fatalf("创建 provider 失败: %v", err)
+	}
+	items, err := provider.DetectPageControls(enginestate.TraversalContext{
+		PageName:   "LoginPage",
+		Screenshot: []byte("fake-png-data"),
+	})
+	if err != nil {
+		t.Fatalf("控件检测失败: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("控件候选数量错误: %d", len(items))
+	}
+	if items[0].Metadata["llm_control_text"] != "登录" {
+		t.Fatalf("应保留控件文本元数据: %+v", items[0].Metadata)
+	}
+	if items[0].Command == nil || items[0].Command.Pos.Left != 0.1 || items[0].Command.Pos.Bottom != 0.4 {
+		t.Fatalf("控件区域解析错误: %+v", items[0].Command)
+	}
+}
+
 type timeoutRetryTransport struct {
 	callCount int
 }

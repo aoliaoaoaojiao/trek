@@ -231,9 +231,13 @@ type fakePageSource struct {
 	xml  string
 	xmls []string
 	idx  int
+	err  error
 }
 
 func (f *fakePageSource) DumpPageSource() (string, error) {
+	if f.err != nil {
+		return "", f.err
+	}
 	if len(f.xmls) > 0 {
 		value := f.xmls[f.idx%len(f.xmls)]
 		f.idx++
@@ -244,32 +248,32 @@ func (f *fakePageSource) DumpPageSource() (string, error) {
 func (f *fakePageSource) Close() error { return nil }
 
 type fakeDriver struct {
-	pageSource       common.IPageSource
-	clickCount       int
-	lastClickPoint   types.Point
-	startCount       int
-	activateCount    int
-	activateErr      error
-	currentPkgErr    error
-	clearCnt         int
-	envCheckCnt      int
-	crash            bool
-	anr              bool
-	currentPackage   string
-	targetOnActivate string
-	currentPkgCalls  int
-	screenRotation   int
-	screenRotationErr error
+	pageSource          common.IPageSource
+	clickCount          int
+	lastClickPoint      types.Point
+	startCount          int
+	activateCount       int
+	activateErr         error
+	currentPkgErr       error
+	clearCnt            int
+	envCheckCnt         int
+	crash               bool
+	anr                 bool
+	currentPackage      string
+	targetOnActivate    string
+	currentPkgCalls     int
+	screenRotation      int
+	screenRotationErr   error
 	screenRotationCalls int
-	lastSwipeStart   types.Point
-	lastSwipeEnd     types.Point
-	backCount        int
-	envResult        *common.EnvironmentCheckResult
-	envErr           error
-	crashAfterClick  bool
-	anrAfterClick    bool
-	currentActivity  string
-	currentActErr    error
+	lastSwipeStart      types.Point
+	lastSwipeEnd        types.Point
+	backCount           int
+	envResult           *common.EnvironmentCheckResult
+	envErr              error
+	crashAfterClick     bool
+	anrAfterClick       bool
+	currentActivity     string
+	currentActErr       error
 }
 
 func (f *fakeDriver) Click(point types.Point) error {
@@ -294,7 +298,7 @@ func (f *fakeDriver) Pinch(centerPoint types.Point, startDistance float64, endDi
 }
 func (f *fakeDriver) TouchEvent(touchList ...common.TouchEvent) error { return nil }
 func (f *fakeDriver) Close() error                                    { return nil }
-func (f *fakeDriver) Screenshot(ctx context.Context) ([]byte, error)   { return []byte{1}, nil }
+func (f *fakeDriver) Screenshot(ctx context.Context) ([]byte, error)  { return []byte{1}, nil }
 func (f *fakeDriver) SaveScreenshot(path string) error                { return nil }
 func (f *fakeDriver) Record(path string) error                        { return nil }
 func (f *fakeDriver) StopRecording() error                            { return nil }
@@ -435,6 +439,49 @@ func TestRunnerReportsStepResultWithAfterPageCrashANRAndScreenshot(t *testing.T)
 	}
 	if len(result.Before.Screenshot) == 0 || len(result.After.Screenshot) == 0 {
 		t.Fatalf("预期包含执行前后截图: %+v", result)
+	}
+}
+
+func TestRunnerFallsBackToScreenshotWhenDumpUnavailableAndImageStrategyEnabled(t *testing.T) {
+	decider := &transformingDecider{
+		fakeDecider: fakeDecider{
+			commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}},
+		},
+		pageName: "VisualPage",
+		xml:      `<hierarchy><node class="android.widget.Button" bounds="[10,10][100,80]"/></hierarchy>`,
+	}
+	driver := &fakeDriver{
+		pageSource: &fakePageSource{err: errors.New("dump unavailable")},
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		MaxSteps:            1,
+		StepInterval:        0,
+		KeepStepRecords:     true,
+		StopOnCrash:         true,
+		StopOnANR:           true,
+		CaptureScreenshot:   true,
+		PageControlStrategy: "ocr",
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if !decider.sawScreenshot {
+		t.Fatalf("预期 dump 失败时将截图传给页面转换器")
+	}
+	if decider.lastXML != decider.xml {
+		t.Fatalf("预期使用转换后的伪 XML 参与决策，实际: %s", decider.lastXML)
+	}
+	if driver.clickCount != 1 {
+		t.Fatalf("预期截图回退后仍能执行动作，实际点击次数: %d", driver.clickCount)
 	}
 }
 
@@ -1257,13 +1304,13 @@ func TestRunnerSkipEffectiveTouchAreaWhenOrientationMismatch(t *testing.T) {
 	}
 
 	runner, err := NewRunner(decider, driver, Config{
-		PackageName:          "com.example.app",
-		DeviceSerial:         "serial-A",
-		MaxSteps:             1,
-		StepInterval:         0,
-		KeepStepRecords:      true,
-		StopOnCrash:          true,
-		StopOnANR:            true,
+		PackageName:     "com.example.app",
+		DeviceSerial:    "serial-A",
+		MaxSteps:        1,
+		StepInterval:    0,
+		KeepStepRecords: true,
+		StopOnCrash:     true,
+		StopOnANR:       true,
 		EffectiveTouchAreas: []EffectiveTouchArea{
 			{
 				Serial:       "serial-A",
@@ -1297,20 +1344,20 @@ func TestRunnerSkipEffectiveTouchAreaWhenOrientationMismatch(t *testing.T) {
 func TestRunnerApplyEffectiveTouchAreaUsesCachedOrientationMonitor(t *testing.T) {
 	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0.4, 0.4, 0.6, 0.6)}}}
 	driver := &fakeDriver{
-		pageSource:      &fakePageSource{xml: `<hierarchy rotation="1"><node class="MainActivity"/></hierarchy>`},
-		screenRotation:  0,
+		pageSource:        &fakePageSource{xml: `<hierarchy rotation="1"><node class="MainActivity"/></hierarchy>`},
+		screenRotation:    0,
 		screenRotationErr: errors.New("rotation unavailable during execute"),
 	}
 
 	runner, err := NewRunner(decider, driver, Config{
-		PackageName:                 "com.example.app",
-		DeviceSerial:                "serial-A",
-		MaxSteps:                    1,
-		StepInterval:                0,
-		KeepStepRecords:             true,
-		StopOnCrash:                 true,
-		StopOnANR:                   true,
-		OrientationMonitorInterval:  10 * time.Millisecond,
+		PackageName:                "com.example.app",
+		DeviceSerial:               "serial-A",
+		MaxSteps:                   1,
+		StepInterval:               0,
+		KeepStepRecords:            true,
+		StopOnCrash:                true,
+		StopOnANR:                  true,
+		OrientationMonitorInterval: 10 * time.Millisecond,
 		EffectiveTouchAreas: []EffectiveTouchArea{
 			{
 				Serial:       "serial-A",
@@ -1623,7 +1670,7 @@ func TestRunnerExploreUsesTraversalCandidatesBeforeEnhancement(t *testing.T) {
 	}
 }
 
-func TestRunnerExploreLLMEnhancementEnabled(t *testing.T) {
+func TestRunnerExploreLLMEnhancementDisabledEvenWhenEnabled(t *testing.T) {
 	enabled := true
 	decider := &plannerAwareRecoveryDecider{
 		contextAwareRecoveryDecider: contextAwareRecoveryDecider{
@@ -1671,26 +1718,14 @@ func TestRunnerExploreLLMEnhancementEnabled(t *testing.T) {
 	if report.StopReason != StopCompleted {
 		t.Fatalf("停止原因错误: %s", report.StopReason)
 	}
-	if decider.llmCalls == 0 {
-		t.Fatalf("预期启用后触发 llm 候选增强")
+	if decider.llmCalls != 0 || decider.selectCalls != 0 {
+		t.Fatalf("llm 不应再参与候选增强，llm=%d selector=%d", decider.llmCalls, decider.selectCalls)
 	}
-	if decider.selectCalls == 0 {
-		t.Fatalf("预期启用后调用 selector")
+	if driver.backCount != 0 {
+		t.Fatalf("llm 不应再改写探索决策，实际 back=%d", driver.backCount)
 	}
-	if driver.backCount == 0 {
-		t.Fatalf("预期增强后执行 BACK")
-	}
-	if report.CandidateEnhancementCalls <= 0 || report.CandidateEnhancementSelects <= 0 {
-		t.Fatalf("预期报告记录增强调用/命中次数，实际 calls=%d hits=%d", report.CandidateEnhancementCalls, report.CandidateEnhancementSelects)
-	}
-	if decider.enhancementOutcomeCalls == 0 {
-		t.Fatalf("预期写回候选增强结果")
-	}
-	if !decider.lastEnhancementImproved {
-		t.Fatalf("预期增强后 outcome 记为 improved=true")
-	}
-	if len(decider.lastLLMContext.LocalCandidates) == 0 {
-		t.Fatalf("预期增强 llm 上下文包含本地候选摘要")
+	if report.CandidateEnhancementCalls != 0 || report.CandidateEnhancementSelects != 0 {
+		t.Fatalf("增强统计应为 0，实际 calls=%d hits=%d", report.CandidateEnhancementCalls, report.CandidateEnhancementSelects)
 	}
 }
 

@@ -2,7 +2,7 @@
 
 Trek 是一个面向 Android 真机的 UI 自动化遍历引擎。
 
-它围绕“感知 -> 决策 -> 执行”闭环工作：抓取页面信息，生成候选动作，执行点击/返回/滚动，并在卡住时结合恢复策略、记忆层和可选的 OCR / LLM 能力继续推进遍历。
+它围绕“感知 -> 决策 -> 执行”闭环工作：抓取页面信息，生成候选动作，执行点击/返回/滚动，并在卡住时结合恢复策略、记忆层和可选的 OCR / 页面控件检测能力继续推进遍历。
 
 ## 能力概览
 
@@ -10,7 +10,7 @@ Trek 是一个面向 Android 真机的 UI 自动化遍历引擎。
 - 支持 `Reuse`、`UCTBandit` 等决策算法
 - 支持 Goja 插件扩展页面转换、动作拦截和步骤回调
 - 支持阻塞检测、恢复规划、经验记忆
-- 支持截图输入、OCR 候选增强、LLM 恢复候选
+- 支持截图输入、OCR 候选补充、基于 LLM 的页面控件检测
 - 提供 CLI 运行模式和 Web 配置界面
 
 ## 目录结构
@@ -63,12 +63,12 @@ PADDLEOCR_API_KEY=your_aistudio_token
 # 恢复经验库（可选）
 RECOVERY_MEMORY_FILE=.\data\recovery.sqlite
 
-# 恢复链路 LLM（HTTP Provider）
+# 页面控件检测 LLM（HTTP Provider）
 LLM_API_URL=https://your-llm-gateway/v1/chat/completions
-LLM_API_KEY=your_recovery_llm_key
+LLM_API_KEY=your_page_control_llm_key
 LLM_MODEL=your-model-name
 
-# OpenAI Responses Provider（可选）
+# OpenAI Responses Provider（页面控件检测，可选）
 OPENAI_API_URL=https://api.openai.com/v1/responses
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_MODEL=gpt-4.1-mini
@@ -106,13 +106,26 @@ const config = {
 
 这两个参数的优先级为：`CLI > JS 配置 > 默认值`。
 
-同样支持在 JS 中配置恢复与候选调参（示例）：
+同样支持配置“页面控件信息获取策略”：
+
+```js
+const config = {
+  // raw: 直接使用 dump 原始 XML
+  // ocr: 基于截图 OCR 提取控件区域并生成伪控件树
+  // llm: 基于截图 LLM 推断控件区域并生成伪控件树
+  page_control_strategy: "ocr",
+}
+```
+
+当 `page_control_strategy` 为 `ocr` 或 `llm` 时，Trek 会自动启用截图采集；如果当前步骤拿不到 dump，会继续尝试走“截图 -> 控件区域 -> 伪 XML”链路，而不是直接中断该步。
+
+其中 `llm` 现已使用专门的“控件检测 schema”，要求模型直接返回控件区域列表（`controls`），不再复用恢复动作建议的 `candidates` schema。
+
+同样支持在 JS 中配置恢复相关调参（示例）：
 
 ```js
 const config = {
   recovery_cooldown_steps: 2,
-  llm_max_calls: 3,
-  llm_window_steps: 30,
   recovery_two_state_loop_threshold: 2,
   recovery_high_visit_threshold: 8,
   recovery_low_reward_window: 6,
@@ -201,7 +214,7 @@ trek run --package com.example.app --capture-screenshot
 
 ## LLM 配置
 
-恢复链路支持两种方式：
+页面控件检测链路支持两种方式：
 
 - 通用 HTTP Provider
 - OpenAI Responses Provider
@@ -223,6 +236,7 @@ trek run --package com.example.app --capture-screenshot
 - OpenAI Responses Provider：至少配置 `OPENAI_MODEL` 和 `OPENAI_API_KEY`
 - 如果使用 OpenAI 兼容网关或代理，可额外配置 `OPENAI_API_URL`
 - 这些外部服务配置统一走环境变量，不再通过 `trek run` 传入
+- 当前内置 LLM 仅用于 `page_control_strategy=llm` 的页面控件检测，不再直接参与恢复决策或候选增强
 
 ## 配置优先级
 

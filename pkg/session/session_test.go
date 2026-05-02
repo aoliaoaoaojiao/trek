@@ -1,11 +1,16 @@
 package session
 
 import (
+	"bytes"
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 	"trek/internal/engine/candidate"
@@ -15,6 +20,17 @@ import (
 	enginestate "trek/internal/engine/state"
 	"trek/internal/engine/traversal"
 )
+
+func mustPNG(t *testing.T, width int, height int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	img.Set(0, 0, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("生成测试截图失败: %v", err)
+	}
+	return buf.Bytes()
+}
 
 func closeSessionMemoryStore(s *Session) {
 	if s == nil || s.memoryStore == nil {
@@ -36,6 +52,18 @@ type mockCandidateProvider struct {
 func (m *mockCandidateProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
 	if m != nil && m.buildFn != nil {
 		return m.buildFn(ctx)
+	}
+	return nil, nil
+}
+
+type mockPageControlProvider struct {
+	mockCandidateProvider
+	detectFn func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+}
+
+func (m *mockPageControlProvider) DetectPageControls(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+	if m != nil && m.detectFn != nil {
+		return m.detectFn(ctx)
 	}
 	return nil, nil
 }
@@ -96,9 +124,9 @@ func TestSessionCheckPointInBlackRects(t *testing.T) {
 
 	configPath := filepath.Join(t.TempDir(), "mix.js")
 	configContent := `const config = {
-  excluded_touch_areas: {
-    LoginActivity: [[0, 0, 100, 100]]
-  }
+  excluded_touch_areas: [
+    { page_name: "LoginActivity", bounds: [0, 0, 100, 100] }
+  ]
 };`
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("鍐欏叆娴嬭瘯鏂囦欢澶辫触: %v", err)
@@ -143,6 +171,75 @@ func TestSessionTransformPageInfoWithInput(t *testing.T) {
 	}
 	if info.XML != `<node text="bar"/>` {
 		t.Fatalf("xml 鏀归€犵粨鏋滀笉绗﹀悎棰勬湡: %s", info.XML)
+	}
+}
+
+func TestSessionTransformPageInfoWithOCRPageControlStrategy(t *testing.T) {
+	session, err := NewSession(Config{
+		PackageName:         "com.demo",
+		PageControlStrategy: "ocr",
+	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
+	session.ocrProvider = &mockCandidateProvider{
+		buildFn: func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+			item := candidate.NewCandidate(
+				&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.2, 0.3, 0.4)},
+				candidate.SourceOCR,
+				"ocr_click:登录",
+				map[string]string{"ocr_text": "登录"},
+			)
+			return []candidate.Candidate{item}, nil
+		},
+	}
+
+	info, err := session.TransformPageInfoWithInput("MainActivity", ActionInput{
+		XMLDescOfGuiTree: `<hierarchy><node class="android.widget.TextView"/></hierarchy>`,
+		Screenshot:       mustPNG(t, 200, 400),
+	})
+	if err != nil {
+		t.Fatalf("TransformPageInfoWithInput 失败: %v", err)
+	}
+	if !strings.Contains(info.XML, `resource-id="visual_1"`) {
+		t.Fatalf("预期生成伪控件节点，实际 XML: %s", info.XML)
+	}
+	if !strings.Contains(info.XML, `text="登录"`) {
+		t.Fatalf("预期生成 OCR 文本，实际 XML: %s", info.XML)
+	}
+	if !strings.Contains(info.XML, `bounds="[20,80][60,160]"`) {
+		t.Fatalf("预期归一化区域转为像素 bounds，实际 XML: %s", info.XML)
+	}
+}
+
+func TestSessionTransformPageInfoWithLLMPageControlStrategy(t *testing.T) {
+	session, err := NewSession(Config{
+		PackageName:         "com.demo",
+		PageControlStrategy: "llm",
+	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
+	session.llmProvider = &mockPageControlProvider{
+		detectFn: func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+			item := candidate.NewCandidate(
+				&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.25, 0.25, 0.5, 0.5)},
+				candidate.SourceLLM,
+				"点击确认",
+				map[string]string{"llm_control_text": "确认按钮", "llm_control_type": "dialog_action"},
+			)
+			return []candidate.Candidate{item}, nil
+		},
+	}
+
+	info, err := session.TransformPageInfoWithInput("DialogActivity", ActionInput{
+		Screenshot: mustPNG(t, 400, 400),
+	})
+	if err != nil {
+		t.Fatalf("TransformPageInfoWithInput 失败: %v", err)
+	}
+	if !strings.Contains(info.XML, `text="确认按钮"`) {
+		t.Fatalf("预期生成 LLM 控件提示，实际 XML: %s", info.XML)
 	}
 }
 
@@ -452,6 +549,14 @@ func TestSessionSelectRecoveryActionPrefersAlgorithmCandidate(t *testing.T) {
 			Command:    &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
 			Source:     candidate.SourceLLM,
 			Confidence: 0.9,
+		},
+	}
+	session.traversalAlgo = &mockTraversalAlgorithm{
+		selectFn: func(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types.ActionCommand, error) {
+			if len(candidates) == 0 {
+				return nil, nil
+			}
+			return candidates[0].Command, nil
 		},
 	}
 	cmd, err := session.SelectRecoveryAction(ctx, items)
@@ -800,14 +905,8 @@ func TestSessionBuildKnownSuccessfulRecoveryActions(t *testing.T) {
 	}
 }
 
-func TestSessionBuildLLMRecoveryCandidates(t *testing.T) {
+func TestSessionBuildLLMRecoveryCandidatesDisabled(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Fatalf("method 错误: %s", r.Method)
-		}
-		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
-			t.Fatalf("Authorization 错误: %s", got)
-		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"candidates": []map[string]any{
 				{
@@ -838,30 +937,15 @@ func TestSessionBuildLLMRecoveryCandidates(t *testing.T) {
 		BlockReason: "same_page_no_change",
 	})
 	if err != nil {
-		t.Fatalf("构建 llm 恢复候选失败: %v", err)
+		t.Fatalf("调用已禁用的 llm 恢复候选接口失败: %v", err)
 	}
-	if len(items) != 1 {
-		t.Fatalf("预期 1 条 llm 候选，实际: %d", len(items))
-	}
-	if items[0].Source != candidate.SourceLLM {
-		t.Fatalf("候选来源应为 llm，实际: %s", items[0].Source)
-	}
-	if items[0].Command == nil || items[0].Command.Act != types.BACK {
-		t.Fatalf("候选动作应为 BACK，实际: %+v", items[0].Command)
-	}
-	if items[0].Metadata["llm_reason"] == "" {
-		t.Fatalf("预期包含 llm_reason 元数据")
+	if len(items) != 0 {
+		t.Fatalf("llm 不应再直接参与决策，实际返回: %+v", items)
 	}
 }
 
-func TestSessionBuildLLMRecoveryCandidatesWithOpenAIResponsesProvider(t *testing.T) {
+func TestSessionBuildLLMRecoveryCandidatesWithOpenAIResponsesProviderDisabled(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Fatalf("method 错误: %s", r.Method)
-		}
-		if got := r.Header.Get("Authorization"); got != "Bearer sk-test" {
-			t.Fatalf("Authorization 错误: %s", got)
-		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"output_text": `{"candidates":[{"intent":"返回","action_type":"BACK","confidence":0.8}]}`,
 		})
@@ -885,21 +969,33 @@ func TestSessionBuildLLMRecoveryCandidatesWithOpenAIResponsesProvider(t *testing
 		BlockReason: "same_page_no_change",
 	})
 	if err != nil {
-		t.Fatalf("openai provider 构建候选失败: %v", err)
+		t.Fatalf("openai provider 调用已禁用接口失败: %v", err)
 	}
-	if len(items) != 1 || items[0].Command == nil || items[0].Command.Act != types.BACK {
-		t.Fatalf("openai provider 返回候选不符合预期: %+v", items)
+	if len(items) != 0 {
+		t.Fatalf("openai provider 不应再直接返回决策候选: %+v", items)
 	}
 }
 
-func TestSessionInitRecoveryLLMProviderFromEnv(t *testing.T) {
+func TestSessionInitLLMProviderFromEnvForPageControlOnly(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer env-key" {
 			t.Fatalf("Authorization 错误: %s", got)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"candidates": []map[string]any{
-				{"action_type": "BACK", "confidence": 0.9},
+			"controls": []map[string]any{
+				{
+					"control_type": "button",
+					"text":         "继续",
+					"hint":         "下一步",
+					"clickable":    true,
+					"confidence":   0.9,
+					"bounds": map[string]any{
+						"left":   0.1,
+						"top":    0.1,
+						"right":  0.3,
+						"bottom": 0.2,
+					},
+				},
 			},
 		})
 	}))
@@ -910,28 +1006,31 @@ func TestSessionInitRecoveryLLMProviderFromEnv(t *testing.T) {
 	t.Setenv("LLM_MODEL", "env-model")
 
 	session, err := NewSession(Config{
-		PackageName:        "com.demo",
-		RecoveryLLMTimeout: 2 * time.Second,
+		PackageName:         "com.demo",
+		PageControlStrategy: "llm",
+		RecoveryLLMTimeout:  2 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("创建会话失败: %v", err)
 	}
-	items, err := session.BuildLLMRecoveryCandidates(enginestate.TraversalContext{Mode: "Recover"})
+	info, err := session.TransformPageInfoWithInput("MainActivity", ActionInput{
+		Screenshot: mustPNG(t, 200, 200),
+	})
 	if err != nil {
-		t.Fatalf("环境变量 LLM provider 构建候选失败: %v", err)
+		t.Fatalf("环境变量 LLM provider 控件检测失败: %v", err)
 	}
-	if len(items) != 1 || items[0].Command == nil || items[0].Command.Act != types.BACK {
-		t.Fatalf("环境变量 LLM provider 返回候选不符合预期: %+v", items)
+	if !strings.Contains(info.XML, `text="继续"`) {
+		t.Fatalf("环境变量 LLM provider 应仅用于控件检测，实际 XML: %s", info.XML)
 	}
 }
 
-func TestSessionInitOpenAIRecoveryProviderFromEnv(t *testing.T) {
+func TestSessionInitOpenAIProviderFromEnvForPageControlOnly(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer sk-env" {
 			t.Fatalf("Authorization 错误: %s", got)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"output_text": `{"candidates":[{"intent":"返回","action_type":"BACK","confidence":0.8}]}`,
+			"output_text": `{"controls":[{"control_type":"button","text":"确认","hint":"主按钮","clickable":true,"confidence":0.8,"bounds":{"left":0.2,"top":0.2,"right":0.6,"bottom":0.6}}]}`,
 		})
 	}))
 	defer server.Close()
@@ -941,17 +1040,20 @@ func TestSessionInitOpenAIRecoveryProviderFromEnv(t *testing.T) {
 	t.Setenv("OPENAI_API_URL", server.URL)
 
 	session, err := NewSession(Config{
-		PackageName:        "com.demo",
-		RecoveryLLMTimeout: 2 * time.Second,
+		PackageName:         "com.demo",
+		PageControlStrategy: "llm",
+		RecoveryLLMTimeout:  2 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("创建会话失败: %v", err)
 	}
-	items, err := session.BuildLLMRecoveryCandidates(enginestate.TraversalContext{Mode: "Recover"})
+	info, err := session.TransformPageInfoWithInput("MainActivity", ActionInput{
+		Screenshot: mustPNG(t, 300, 300),
+	})
 	if err != nil {
-		t.Fatalf("环境变量 OpenAI provider 构建候选失败: %v", err)
+		t.Fatalf("环境变量 OpenAI provider 控件检测失败: %v", err)
 	}
-	if len(items) != 1 || items[0].Command == nil || items[0].Command.Act != types.BACK {
-		t.Fatalf("环境变量 OpenAI provider 返回候选不符合预期: %+v", items)
+	if !strings.Contains(info.XML, `text="确认"`) {
+		t.Fatalf("环境变量 OpenAI provider 应仅用于控件检测，实际 XML: %s", info.XML)
 	}
 }

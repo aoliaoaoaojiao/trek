@@ -315,3 +315,41 @@ func TestBuildRecoveryPrompt_EmptyContext(t *testing.T) {
 		t.Fatalf("空 ctx 的 known actions 应为 nil")
 	}
 }
+
+func TestBuildPageControlPrompt_SystemContentAndSchema(t *testing.T) {
+	prompt := buildPageControlPrompt(enginestate.TraversalContext{
+		PageName:   "DialogPage",
+		Screenshot: []byte("fake-image"),
+	})
+
+	if !strings.Contains(prompt.SystemContent, "视觉控件检测器") {
+		t.Fatalf("SystemContent 应包含控件检测角色: %s", prompt.SystemContent)
+	}
+	if prompt.ScreenshotMediaType != "image/png" {
+		t.Fatalf("ScreenshotMediaType 应为 image/png, 实际: %s", prompt.ScreenshotMediaType)
+	}
+	props, ok := prompt.ResponseSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("ResponseSchema properties 类型错误")
+	}
+	controls, ok := props["controls"].(map[string]any)
+	if !ok {
+		t.Fatalf("应存在 controls 字段")
+	}
+	items, ok := controls["items"].(map[string]any)
+	if !ok {
+		t.Fatalf("controls.items 类型错误")
+	}
+	itemProps, ok := items["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("controls.items.properties 类型错误")
+	}
+	bounds, ok := itemProps["bounds"].(map[string]any)
+	if !ok {
+		t.Fatalf("应存在 bounds 对象")
+	}
+	boundsProps, ok := bounds["properties"].(map[string]any)
+	if !ok || boundsProps["left"] == nil || boundsProps["bottom"] == nil {
+		t.Fatalf("bounds 字段定义不完整: %+v", bounds)
+	}
+}

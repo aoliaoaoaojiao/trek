@@ -2,6 +2,7 @@ const config = {
   page_source: "poco",
   scroll_infer_threshold: 5, 
   page_name_strategy: "structure_fingerprint",
+  page_control_strategy: "raw",
   touch_mode: "motion",
   poco: {
     engine: "UNITY_3D",

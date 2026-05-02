@@ -1,7 +1,12 @@
 package session
 
 import (
+	"bytes"
+	"encoding/xml"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"os"
 	"strings"
 	"time"
@@ -33,6 +38,7 @@ type Config struct {
 	RecoveryLLMOpenAIAPIKey  string
 	RecoveryLLMOpenAIBaseURL string
 	RecoveryLLMTimeout       time.Duration
+	PageControlStrategy      string
 }
 
 // ActionInput 动作输入，包含 XML 描述的 GUI 树和可选截图
@@ -74,7 +80,7 @@ type Session struct {
 	memoryStore    *memory.Store
 	memoryProvider *memory.Provider
 	ocrProvider    candidateProvider
-	llmProvider    recoveryLLMCandidateProvider
+	llmProvider    pageControlCandidateProvider
 	traversalAlgo  traversal.TraversalAlgorithm
 }
 
@@ -82,8 +88,8 @@ type candidateProvider interface {
 	BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
 }
 
-type recoveryLLMCandidateProvider interface {
-	BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+type pageControlCandidateProvider interface {
+	DetectPageControls(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
 }
 
 type stateReader interface {
@@ -102,7 +108,7 @@ func NewSession(config Config) (*Session, error) {
 	session := &Session{config: config}
 	session.initRecoveryMemoryProvider()
 	session.initExploreOCRProvider()
-	session.initRecoveryLLMProvider()
+	session.initPageControlLLMProvider()
 
 	// 在 Reset 之前设置生命周期上下文，供插件 onInit/onDestroy 使用
 	engineruntime.SetLifecycleContext(engineruntime.NewLifecycleContext(config.PackageName))
@@ -156,7 +162,7 @@ func (s *Session) initExploreOCRProvider() {
 	logger.Infof("session explore ocr provider 已启用: endpoint=%s", endpoint)
 }
 
-func (s *Session) initRecoveryLLMProvider() {
+func (s *Session) initPageControlLLMProvider() {
 	endpoint := strings.TrimSpace(s.config.RecoveryLLMEndpoint)
 	if endpoint == "" {
 		endpoint = strings.TrimSpace(os.Getenv("LLM_API_URL"))
@@ -179,11 +185,11 @@ func (s *Session) initRecoveryLLMProvider() {
 			Timeout:  s.config.RecoveryLLMTimeout,
 		})
 		if err != nil {
-			logger.Warnf("session 初始化 recovery llm provider 失败: endpoint=%s err=%v", endpoint, err)
+			logger.Warnf("session 初始化 page control llm provider 失败: endpoint=%s err=%v", endpoint, err)
 			return
 		}
 		s.llmProvider = provider
-		logger.Infof("session recovery llm provider 已启用: endpoint=%s", endpoint)
+		logger.Infof("session page control llm provider 已启用: endpoint=%s", endpoint)
 		return
 	}
 
@@ -209,11 +215,11 @@ func (s *Session) initRecoveryLLMProvider() {
 		Timeout: s.config.RecoveryLLMTimeout,
 	})
 	if err != nil {
-		logger.Warnf("session 初始化 openai recovery llm provider 失败: model=%s err=%v", openAIModel, err)
+		logger.Warnf("session 初始化 openai page control llm provider 失败: model=%s err=%v", openAIModel, err)
 		return
 	}
 	s.llmProvider = provider
-	logger.Infof("session openai recovery llm provider 已启用: model=%s", openAIModel)
+	logger.Infof("session openai page control llm provider 已启用: model=%s", openAIModel)
 }
 
 // Reset 重置引擎模型和脚本插件状态
@@ -305,6 +311,15 @@ func (s *Session) NextActionWithInput(pageName string, input ActionInput) (*type
 	if strings.TrimSpace(input.XMLDescOfGuiTree) == "" && len(input.Screenshot) == 0 {
 		return nil, fmt.Errorf("xmlDescOfGuiTree and screenshot are both empty")
 	}
+	if strings.TrimSpace(input.XMLDescOfGuiTree) == "" && len(input.Screenshot) > 0 {
+		pageInfo, err := s.buildPageInfoByStrategy(pageName, input, false)
+		if err != nil {
+			logger.Warnf("session 基于图片生成页面控件信息失败，继续使用空 XML: page=%s err=%v", pageName, err)
+		} else {
+			pageName = pageInfo.PageName
+			input.XMLDescOfGuiTree = pageInfo.XML
+		}
+	}
 
 	operate := engineruntime.GetActionOptWithInput(pageName, input.XMLDescOfGuiTree, input.Screenshot)
 	if operate == nil {
@@ -317,13 +332,22 @@ func (s *Session) NextActionWithInput(pageName string, input ActionInput) (*type
 }
 
 // NextBlockRecoveryAction 在 Runner 检测到阻塞后提供兜底动作。
-// 该链路会显式标记 block_recovery 上下文，便于插件触发 LLM 规划。
+// 该链路会显式标记 block_recovery 上下文，便于插件触发自定义恢复规划。
 func (s *Session) NextBlockRecoveryAction(pageName string, input ActionInput) (*types.ActionCommand, error) {
 	if strings.TrimSpace(pageName) == "" {
 		return nil, fmt.Errorf("pageName 不能为空")
 	}
 	if strings.TrimSpace(input.XMLDescOfGuiTree) == "" && len(input.Screenshot) == 0 {
 		return nil, fmt.Errorf("xmlDescOfGuiTree 和 screenshot 不能同时为空")
+	}
+	if strings.TrimSpace(input.XMLDescOfGuiTree) == "" && len(input.Screenshot) > 0 {
+		pageInfo, err := s.buildPageInfoByStrategy(pageName, input, false)
+		if err != nil {
+			logger.Warnf("session 阻塞恢复基于图片生成页面控件信息失败，继续使用空 XML: page=%s err=%v", pageName, err)
+		} else {
+			pageName = pageInfo.PageName
+			input.XMLDescOfGuiTree = pageInfo.XML
+		}
 	}
 
 	operate := engineruntime.GetBlockRecoveryActionOptWithInput(pageName, input.XMLDescOfGuiTree, input.Screenshot)
@@ -419,12 +443,11 @@ func (s *Session) BuildKnownRecoveryActions(ctx enginestate.TraversalContext) (f
 	return failed, success, nil
 }
 
-// BuildLLMRecoveryCandidates 调用外部 LLM 服务构建恢复候选。
+// BuildLLMRecoveryCandidates 已废弃。
+// LLM 不再直接参与动作决策，仅用于页面控件检测。
 func (s *Session) BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
-	if s == nil || s.llmProvider == nil {
-		return nil, nil
-	}
-	return s.llmProvider.BuildCandidates(ctx)
+	_ = ctx
+	return nil, nil
 }
 
 // BuildAlgorithmCandidates 将统一算法适配器产出的候选暴露给 Runner 的探索融合链路。
@@ -594,14 +617,74 @@ func (s *Session) TransformPageInfoWithInput(pageName string, input ActionInput)
 	if strings.TrimSpace(input.XMLDescOfGuiTree) == "" && len(input.Screenshot) == 0 {
 		return PageInfo{}, fmt.Errorf("xmlDescOfGuiTree and screenshot are both empty")
 	}
-	newPage, newXML, err := engineruntime.TransformPageInfoWithInput(pageName, input.XMLDescOfGuiTree, input.Screenshot)
+	return s.buildPageInfoByStrategy(pageName, input, true)
+}
+
+func (s *Session) buildPageInfoByStrategy(pageName string, input ActionInput, applyPluginTransform bool) (PageInfo, error) {
+	resolvedPageName := strings.TrimSpace(pageName)
+	resolvedXML := strings.TrimSpace(input.XMLDescOfGuiTree)
+
+	if applyPluginTransform {
+		newPage, newXML, err := engineruntime.TransformPageInfoWithInput(pageName, input.XMLDescOfGuiTree, input.Screenshot)
+		if err != nil {
+			return PageInfo{}, err
+		}
+		if strings.TrimSpace(newPage) != "" {
+			resolvedPageName = strings.TrimSpace(newPage)
+		}
+		resolvedXML = strings.TrimSpace(newXML)
+	}
+
+	info := PageInfo{
+		PageName: resolvedPageName,
+		XML:      resolvedXML,
+	}
+	if len(input.Screenshot) == 0 {
+		return info, nil
+	}
+
+	strategy := normalizePageControlStrategy(s.config.PageControlStrategy)
+	if strategy == pageControlStrategyRaw {
+		return info, nil
+	}
+
+	candidates, err := s.buildPageControlCandidates(strategy, enginestate.TraversalContext{
+		Mode:       "Explore",
+		PageName:   resolvedPageName,
+		XML:        resolvedXML,
+		Screenshot: input.Screenshot,
+	})
 	if err != nil {
+		if strings.TrimSpace(info.XML) != "" {
+			logger.Warnf("session 页面控件策略回退到 raw: strategy=%s page=%s err=%v", strategy, resolvedPageName, err)
+			return info, nil
+		}
 		return PageInfo{}, err
 	}
-	return PageInfo{
-		PageName: newPage,
-		XML:      newXML,
-	}, nil
+
+	syntheticXML := buildSyntheticXMLFromCandidates(candidates, input.Screenshot)
+	if strings.TrimSpace(syntheticXML) == "" {
+		return info, nil
+	}
+	info.XML = syntheticXML
+	return info, nil
+}
+
+func (s *Session) buildPageControlCandidates(strategy string, ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+	switch strategy {
+	case pageControlStrategyOCR:
+		if s == nil || s.ocrProvider == nil {
+			return nil, fmt.Errorf("ocr 页面控件策略未启用，请配置 OCR provider")
+		}
+		return s.ocrProvider.BuildCandidates(ctx)
+	case pageControlStrategyLLM:
+		if s == nil || s.llmProvider == nil {
+			return nil, fmt.Errorf("llm 页面控件策略未启用，请配置 LLM provider")
+		}
+		return s.llmProvider.DetectPageControls(ctx)
+	default:
+		return nil, nil
+	}
 }
 
 // OnStepResult 通过 Goja 插件通知步骤结果
@@ -632,6 +715,154 @@ func (s *Session) OnStepResult(input StepResultInput) error {
 
 func isAppRestartAction(act types.ActionType) bool {
 	return act == types.START || act == types.RESTART || act == types.CLEAN_RESTART
+}
+
+const (
+	pageControlStrategyRaw = "raw"
+	pageControlStrategyOCR = "ocr"
+	pageControlStrategyLLM = "llm"
+)
+
+func normalizePageControlStrategy(strategy string) string {
+	switch strings.ToLower(strings.TrimSpace(strategy)) {
+	case "", pageControlStrategyRaw:
+		return pageControlStrategyRaw
+	case pageControlStrategyOCR:
+		return pageControlStrategyOCR
+	case pageControlStrategyLLM:
+		return pageControlStrategyLLM
+	default:
+		return pageControlStrategyRaw
+	}
+}
+
+func buildSyntheticXMLFromCandidates(items []candidate.Candidate, screenshot []byte) string {
+	width, height := decodeScreenshotSize(screenshot)
+	if width <= 0 {
+		width = 1000
+	}
+	if height <= 0 {
+		height = 1000
+	}
+
+	type syntheticNode struct {
+		Text        string
+		Class       string
+		ContentDesc string
+		Bounds      string
+	}
+
+	nodes := make([]syntheticNode, 0, len(items))
+	for _, item := range items {
+		if item.Command == nil {
+			continue
+		}
+		if item.Command.Act != types.CLICK && item.Command.Act != types.LONG_CLICK && item.Command.Act != types.ACTIVATE {
+			continue
+		}
+		bounds, ok := toPixelBounds(item.Command.Pos, width, height)
+		if !ok {
+			continue
+		}
+		label := strings.TrimSpace(item.Metadata["ocr_text"])
+		if label == "" {
+			label = strings.TrimSpace(item.Metadata["llm_control_text"])
+		}
+		if label == "" {
+			label = strings.TrimSpace(item.Metadata["llm_target_hint"])
+		}
+		if label == "" {
+			label = strings.TrimSpace(item.Intent)
+		}
+		nodes = append(nodes, syntheticNode{
+			Text:        label,
+			Class:       resolveSyntheticWidgetClass(label, item.Command.Act),
+			ContentDesc: label,
+			Bounds:      fmt.Sprintf("[%d,%d][%d,%d]", bounds[0], bounds[1], bounds[2], bounds[3]),
+		})
+	}
+	if len(nodes) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString(`<hierarchy rotation="0">`)
+	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf(`  <node index="0" text="" resource-id="" class="android.widget.FrameLayout" content-desc="" clickable="false" enabled="true" bounds="[0,0][%d,%d]">`, width, height))
+	b.WriteString("\n")
+	for i, node := range nodes {
+		b.WriteString(fmt.Sprintf(`    <node index="%d" text="%s" resource-id="visual_%d" class="%s" content-desc="%s" clickable="true" long-clickable="false" enabled="true" bounds="%s"/>`,
+			i+1,
+			escapeXMLAttr(node.Text),
+			i+1,
+			node.Class,
+			escapeXMLAttr(node.ContentDesc),
+			node.Bounds,
+		))
+		b.WriteString("\n")
+	}
+	b.WriteString("  </node>\n</hierarchy>")
+	return b.String()
+}
+
+func decodeScreenshotSize(data []byte) (int, int) {
+	if len(data) == 0 {
+		return 0, 0
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return 0, 0
+	}
+	return cfg.Width, cfg.Height
+}
+
+func toPixelBounds(rect types.Rect, width int, height int) ([4]int, bool) {
+	var result [4]int
+	left := rect.Left
+	top := rect.Top
+	right := rect.Right
+	bottom := rect.Bottom
+	if right <= left || bottom <= top {
+		return result, false
+	}
+	if right <= 1 && bottom <= 1 {
+		left *= float64(width)
+		right *= float64(width)
+		top *= float64(height)
+		bottom *= float64(height)
+	}
+	result = [4]int{
+		int(left + 0.5),
+		int(top + 0.5),
+		int(right + 0.5),
+		int(bottom + 0.5),
+	}
+	if result[2] <= result[0] || result[3] <= result[1] {
+		return result, false
+	}
+	return result, true
+}
+
+func resolveSyntheticWidgetClass(label string, act types.ActionType) string {
+	if act == types.ACTIVATE {
+		return "android.widget.Button"
+	}
+	lower := strings.ToLower(strings.TrimSpace(label))
+	switch {
+	case strings.Contains(lower, "输入"), strings.Contains(lower, "搜索"), strings.Contains(lower, "search"), strings.Contains(lower, "input"):
+		return "android.widget.EditText"
+	default:
+		return "android.widget.Button"
+	}
+}
+
+func escapeXMLAttr(text string) string {
+	if text == "" {
+		return ""
+	}
+	var b bytes.Buffer
+	_ = xml.EscapeText(&b, []byte(text))
+	return strings.ReplaceAll(b.String(), `"`, "&quot;")
 }
 
 type sessionStateProvider struct {

@@ -38,76 +38,10 @@ func (r *Runner) tryEnhanceCandidates(step int, beforePage session.PageSnapshot,
 	if r == nil || baseCmd == nil {
 		return nil, nil
 	}
-	if !r.shouldEnableExploreLLMEnhancement() {
-		return nil, nil
-	}
-	ctx := r.buildTraversalContext(step, beforePage, nil, nil)
-	ctx.LocalCandidates = summarizeWeightedCandidates(weighted, baseCmd)
-	knownFailed, knownSuccess, err := r.collectBothKnownActions(ctx)
-	if err != nil {
-		return nil, err
-	}
-	ctx.KnownFailedActions = actionKeyList(knownFailed)
-	ctx.KnownSuccessActions = actionKeyList(knownSuccess)
-	if !r.shouldTriggerCandidateEnhancement(ctx, step, baseCmd, weighted) {
-		return nil, nil
-	}
-
-	llmProvider, ok := r.decider.(RecoveryCandidateProvider)
-	if !ok || llmProvider == nil {
-		return nil, nil
-	}
-	selector, ok := r.decider.(RecoveryCandidateSelector)
-	if !ok || selector == nil {
-		return nil, nil
-	}
-	if !r.allowCandidateEnhancementLLM(ctx) {
-		r.enhanceLLMDeniedCount++
-		return nil, nil
-	}
-
-	llmItems, err := llmProvider.BuildLLMRecoveryCandidates(ctx)
-	if err != nil {
-		return nil, err
-	}
-	r.enhancementCallCount++
-	r.recordCandidateEnhancementLLMCall(ctx, step)
-	if len(llmItems) == 0 {
-		return nil, nil
-	}
-
-	items := make([]candidate.Candidate, 0, len(llmItems)+1)
-	items = append(items, candidateFromCommand(baseCmd, candidate.SourceAlgorithm))
-	items = append(items, llmItems...)
-	fused := candidate.FuseCandidates(items, candidate.FusionOptions{
-		KnownFailedActions:   knownFailed,
-		RiskDropThreshold:    r.cfg.CandidateRiskDropThreshold,
-		EnableMinScoreFilter: true,
-		MinScoreThreshold:    r.cfg.CandidateMinFusionScore,
-		KeepTopOnFiltered:    true,
-	})
-	selected, err := selector.SelectRecoveryAction(ctx, fused)
-	if err != nil {
-		return nil, err
-	}
-	if selected == nil {
-		return nil, nil
-	}
-	if selected.Equal(baseCmd) {
-		return nil, nil
-	}
-	if chosen := findCandidateByCommand(fused, selected); chosen != nil {
-		r.lastEnhancementAttempt = &enhancementAttempt{ctx: ctx, candidate: *chosen, step: step}
-	} else {
-		r.lastEnhancementAttempt = &enhancementAttempt{
-			ctx:       ctx,
-			candidate: candidateFromCommand(selected, candidate.SourceLLM),
-			step:      step,
-		}
-	}
-	r.enhancementHitCount++
-	logger.Infof("candidate enhancement selected action: base=%s enhanced=%s", baseCmd.DetailLogString(), selected.DetailLogString())
-	return selected, nil
+	_ = step
+	_ = beforePage
+	_ = weighted
+	return nil, nil
 }
 
 func findCandidateByCommand(items []candidate.Candidate, cmd *types.ActionCommand) *candidate.Candidate {

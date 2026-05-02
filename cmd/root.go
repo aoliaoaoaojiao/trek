@@ -39,14 +39,14 @@ func Execute() {
 // 优先级从低到高（后者覆盖前者，但 godotenv.Load 不覆盖已有值，所以先加载高优先级）：
 //
 //	.env.local              — 本地覆盖，不提交（gitignore）
-//	.env.development        — 开发环境覆盖
+//	.env.development.local  — 开发环境本地覆盖，不提交（gitignore）
 //	.env                    — 全局默认值，提交到仓库
 //
 // 外部显式注入的环境变量（如 CI/CD、容器）始终优先于任何 .env 文件。
 func loadDotEnvFiles() {
 	// 按优先级从高到低加载，godotenv.Load 仅补充未设置的变量。
 	_ = godotenv.Load(".env.local")
-	_ = godotenv.Load(".env.development")
+	_ = godotenv.Load(".env.development.local")
 	_ = godotenv.Load(".env")
 }
 

@@ -34,7 +34,6 @@ docs/                   设计与实现文档
 如果 `adb` 不在系统 `PATH` 中，可以通过环境变量指定：
 
 - `ADB_PATH`
-- `TREK_ADB_HOME`
 - `ANDROID_HOME`
 - `ANDROID_SDK_ROOT`
 
@@ -49,7 +48,7 @@ go mod download
 Trek 启动时会自动加载项目根目录下的：
 
 - `.env`
-- `.env.development`
+- `.env.development.local`
 - `.env.local`
 
 推荐将密钥写入 `.env.local`，不要直接写进代码。

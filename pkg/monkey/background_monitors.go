@@ -23,6 +23,10 @@ type foregroundPackageMonitor struct {
 	updated  bool
 }
 
+type screenOrientationProvider interface {
+	GetScreenRotation() (int, error)
+}
+
 type healthSignalMonitor struct {
 	driver      common.IDriver
 	packageName string
@@ -35,6 +39,17 @@ type healthSignalMonitor struct {
 	updated     bool
 }
 
+type screenOrientationMonitor struct {
+	provider    screenOrientationProvider
+	interval    time.Duration
+	stopCh      chan struct{}
+	doneCh      chan struct{}
+	mu          sync.RWMutex
+	orientation ScreenOrientation
+	err         error
+	updated     bool
+}
+
 func newHealthSignalMonitor(driver common.IDriver, packageName string, interval time.Duration) *healthSignalMonitor {
 	return &healthSignalMonitor{
 		driver:      driver,
@@ -42,6 +57,15 @@ func newHealthSignalMonitor(driver common.IDriver, packageName string, interval 
 		interval:    interval,
 		stopCh:      make(chan struct{}),
 		doneCh:      make(chan struct{}),
+	}
+}
+
+func newScreenOrientationMonitor(provider screenOrientationProvider, interval time.Duration) *screenOrientationMonitor {
+	return &screenOrientationMonitor{
+		provider: provider,
+		interval: interval,
+		stopCh:   make(chan struct{}),
+		doneCh:   make(chan struct{}),
 	}
 }
 
@@ -98,6 +122,51 @@ func (m *healthSignalMonitor) snapshot() (crash bool, anr bool, updated bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.crash, m.anr, m.updated
+}
+
+func (m *screenOrientationMonitor) start() {
+	m.refresh()
+	go func() {
+		ticker := time.NewTicker(m.interval)
+		defer func() {
+			ticker.Stop()
+			close(m.doneCh)
+		}()
+		for {
+			select {
+			case <-m.stopCh:
+				return
+			case <-ticker.C:
+				m.refresh()
+			}
+		}
+	}()
+}
+
+func (m *screenOrientationMonitor) stop() {
+	close(m.stopCh)
+	<-m.doneCh
+}
+
+func (m *screenOrientationMonitor) refresh() {
+	rotation, err := m.provider.GetScreenRotation()
+	orientation := ScreenOrientation("")
+	if err == nil {
+		orientation = screenOrientationFromRotation(rotation)
+	}
+	m.mu.Lock()
+	if err == nil {
+		m.orientation = orientation
+	}
+	m.err = err
+	m.updated = true
+	m.mu.Unlock()
+}
+
+func (m *screenOrientationMonitor) snapshot() (ScreenOrientation, error, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.orientation, m.err, m.updated
 }
 
 func newForegroundPackageMonitor(provider currentPackageProvider, interval time.Duration) *foregroundPackageMonitor {
@@ -201,4 +270,37 @@ func (r *Runner) snapshotHealthSignals() (crash bool, anr bool, ready bool) {
 		return false, false, false
 	}
 	return r.healthMonitor.snapshot()
+}
+
+func (r *Runner) startOrientationMonitor() {
+	if len(r.cfg.EffectiveTouchAreas) == 0 {
+		return
+	}
+	if r.orientationMonitor != nil {
+		return
+	}
+	provider, ok := r.driver.(screenOrientationProvider)
+	if !ok || provider == nil {
+		return
+	}
+	monitor := newScreenOrientationMonitor(provider, r.cfg.OrientationMonitorInterval)
+	monitor.start()
+	r.orientationMonitor = monitor
+}
+
+func (r *Runner) stopOrientationMonitor() {
+	if r.orientationMonitor == nil {
+		return
+	}
+	if r.orientationMonitor.stopCh != nil && r.orientationMonitor.doneCh != nil {
+		r.orientationMonitor.stop()
+	}
+	r.orientationMonitor = nil
+}
+
+func (r *Runner) snapshotScreenOrientation() (ScreenOrientation, error, bool) {
+	if r.orientationMonitor == nil {
+		return "", nil, false
+	}
+	return r.orientationMonitor.snapshot()
 }

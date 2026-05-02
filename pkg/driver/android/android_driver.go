@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,12 @@ var (
 	_ common.IAppControl  = (*AndroidDriver)(nil)
 	_ common.ITextInput   = (*AndroidDriver)(nil)
 	_ common.IHealthCheck = (*AndroidDriver)(nil)
+	_ common.IDeviceState = (*AndroidDriver)(nil)
+
+	surfaceOrientationRegex     = regexp.MustCompile(`(?m)SurfaceOrientation:\s*(\d+)`)
+	displayOrientationRegex     = regexp.MustCompile(`(?m)orientation=(\d+)`)
+	currentRotationNumberRegex  = regexp.MustCompile(`(?m)mCurrentRotation=(\d+)`)
+	currentRotationEnumRegex    = regexp.MustCompile(`(?m)mCurrentRotation=ROTATION_(\d+)`)
 )
 
 type TouchType string
@@ -260,6 +267,73 @@ func (a *AndroidDriver) ClearLogcat() error {
 	}
 	_, err := a.device.RunShellCommand(context.Background(), "logcat", "-c")
 	return err
+}
+
+// GetScreenRotation 通过 ADB 读取设备当前实际屏幕朝向。
+func (a *AndroidDriver) GetScreenRotation() (int, error) {
+	if a.device == nil {
+		return 0, fmt.Errorf("device is nil")
+	}
+
+	inputOutput, inputErr := a.device.RunShellCommand(context.Background(), "dumpsys", "input")
+	displayOutput, displayErr := a.device.RunShellCommand(context.Background(), "dumpsys", "display")
+	windowOutput, windowErr := a.device.RunShellCommand(context.Background(), "dumpsys", "window")
+
+	rotation, source, err := parseScreenRotation(inputOutput, displayOutput, windowOutput)
+	if err == nil {
+		logger.Debugf("GetScreenRotation success: serial=%s rotation=%d source=%s", a.Name(), rotation, source)
+		return rotation, nil
+	}
+
+	errParts := make([]string, 0, 4)
+	if inputErr != nil {
+		errParts = append(errParts, fmt.Sprintf("dumpsys input: %v", inputErr))
+	}
+	if displayErr != nil {
+		errParts = append(errParts, fmt.Sprintf("dumpsys display: %v", displayErr))
+	}
+	if windowErr != nil {
+		errParts = append(errParts, fmt.Sprintf("dumpsys window: %v", windowErr))
+	}
+	errParts = append(errParts, err.Error())
+	return 0, fmt.Errorf("获取屏幕朝向失败: %s", strings.Join(errParts, "; "))
+}
+
+func parseScreenRotation(inputOutput string, displayOutput string, windowOutput string) (int, string, error) {
+	if rotation, ok := parseRotationWithRegex(inputOutput, surfaceOrientationRegex); ok {
+		return rotation, "input", nil
+	}
+	if rotation, ok := parseRotationWithRegex(displayOutput, displayOrientationRegex); ok {
+		return rotation, "display", nil
+	}
+	if rotation, ok := parseRotationWithRegex(displayOutput, currentRotationNumberRegex); ok {
+		return rotation, "display", nil
+	}
+	if rotation, ok := parseRotationWithRegex(displayOutput, currentRotationEnumRegex); ok {
+		return rotation, "display", nil
+	}
+	if rotation, ok := parseRotationWithRegex(windowOutput, currentRotationNumberRegex); ok {
+		return rotation, "window", nil
+	}
+	if rotation, ok := parseRotationWithRegex(windowOutput, currentRotationEnumRegex); ok {
+		return rotation, "window", nil
+	}
+	return 0, "", fmt.Errorf("未在 dumpsys input/display/window 中找到可用朝向信号")
+}
+
+func parseRotationWithRegex(output string, pattern *regexp.Regexp) (int, bool) {
+	match := pattern.FindStringSubmatch(output)
+	if len(match) != 2 {
+		return 0, false
+	}
+	rotation, err := strconv.Atoi(strings.TrimSpace(match[1]))
+	if err != nil {
+		return 0, false
+	}
+	if rotation < 0 || rotation > 3 {
+		return 0, false
+	}
+	return rotation, true
 }
 
 // CheckCrash 通过系统日志检测是否出现 crash。

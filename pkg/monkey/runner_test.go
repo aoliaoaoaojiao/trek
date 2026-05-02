@@ -258,6 +258,9 @@ type fakeDriver struct {
 	currentPackage   string
 	targetOnActivate string
 	currentPkgCalls  int
+	screenRotation   int
+	screenRotationErr error
+	screenRotationCalls int
 	lastSwipeStart   types.Point
 	lastSwipeEnd     types.Point
 	backCount        int
@@ -339,6 +342,13 @@ func (f *fakeDriver) CheckANR(packageName string) (bool, error)   { return f.anr
 func (f *fakeDriver) ClearLogcat() error {
 	f.clearCnt++
 	return nil
+}
+func (f *fakeDriver) GetScreenRotation() (int, error) {
+	f.screenRotationCalls++
+	if f.screenRotationErr != nil {
+		return 0, f.screenRotationErr
+	}
+	return f.screenRotation, nil
 }
 func (f *fakeDriver) CheckEnvironment(pageSourceType string) (*common.EnvironmentCheckResult, error) {
 	f.envCheckCnt++
@@ -1157,7 +1167,7 @@ func TestNormalizePocoScrollCommandSupportsXPathLocator(t *testing.T) {
 
 func TestRunnerApplyEffectiveTouchAreaToClick(t *testing.T) {
 	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0.4, 0.4, 0.6, 0.6)}}}
-	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}
+	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<hierarchy rotation="0"><node class="MainActivity"/></hierarchy>`}}
 
 	runner, err := NewRunner(decider, driver, Config{
 		PackageName:     "com.example.app",
@@ -1167,11 +1177,14 @@ func TestRunnerApplyEffectiveTouchAreaToClick(t *testing.T) {
 		KeepStepRecords: true,
 		StopOnCrash:     true,
 		StopOnANR:       true,
-		EffectiveTouchArea: &EffectiveTouchArea{
-			Serial:      "192.168.2.198:5555",
-			PackageName: "com.example.app",
-			Range: EffectiveTouchRange{
-				Left: 0.04, Top: 0, Right: 1, Bottom: 1,
+		EffectiveTouchAreas: []EffectiveTouchArea{
+			{
+				Serial:       "192.168.2.198:5555",
+				PackageName:  "com.example.app",
+				Orientations: []ScreenOrientation{ScreenOrientationPortrait},
+				Range: EffectiveTouchRange{
+					Left: 0.04, Top: 0, Right: 1, Bottom: 1,
+				},
 			},
 		},
 	})
@@ -1196,7 +1209,7 @@ func TestRunnerApplyEffectiveTouchAreaToClick(t *testing.T) {
 
 func TestRunnerSkipEffectiveTouchAreaWhenSerialMismatch(t *testing.T) {
 	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0.4, 0.4, 0.6, 0.6)}}}
-	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}
+	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<hierarchy rotation="0"><node class="MainActivity"/></hierarchy>`}}
 
 	runner, err := NewRunner(decider, driver, Config{
 		PackageName:     "com.example.app",
@@ -1206,11 +1219,14 @@ func TestRunnerSkipEffectiveTouchAreaWhenSerialMismatch(t *testing.T) {
 		KeepStepRecords: true,
 		StopOnCrash:     true,
 		StopOnANR:       true,
-		EffectiveTouchArea: &EffectiveTouchArea{
-			Serial:      "serial-B",
-			PackageName: "com.example.app",
-			Range: EffectiveTouchRange{
-				Left: 0.04, Top: 0, Right: 1, Bottom: 1,
+		EffectiveTouchAreas: []EffectiveTouchArea{
+			{
+				Serial:       "serial-B",
+				PackageName:  "com.example.app",
+				Orientations: []ScreenOrientation{ScreenOrientationPortrait},
+				Range: EffectiveTouchRange{
+					Left: 0.04, Top: 0, Right: 1, Bottom: 1,
+				},
 			},
 		},
 	})
@@ -1230,6 +1246,103 @@ func TestRunnerSkipEffectiveTouchAreaWhenSerialMismatch(t *testing.T) {
 	const expectY = 0.5
 	if abs(driver.lastClickPoint.X-expectX) > 1e-6 || abs(driver.lastClickPoint.Y-expectY) > 1e-6 {
 		t.Fatalf("序列号不匹配时不应映射: got=(%.6f, %.6f) expect=(%.6f, %.6f)", driver.lastClickPoint.X, driver.lastClickPoint.Y, expectX, expectY)
+	}
+}
+
+func TestRunnerSkipEffectiveTouchAreaWhenOrientationMismatch(t *testing.T) {
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0.4, 0.4, 0.6, 0.6)}}}
+	driver := &fakeDriver{
+		pageSource:     &fakePageSource{xml: `<hierarchy rotation="1"><node class="MainActivity"/></hierarchy>`},
+		screenRotation: 1,
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		PackageName:          "com.example.app",
+		DeviceSerial:         "serial-A",
+		MaxSteps:             1,
+		StepInterval:         0,
+		KeepStepRecords:      true,
+		StopOnCrash:          true,
+		StopOnANR:            true,
+		EffectiveTouchAreas: []EffectiveTouchArea{
+			{
+				Serial:       "serial-A",
+				PackageName:  "com.example.app",
+				Orientations: []ScreenOrientation{ScreenOrientationPortrait},
+				Range: EffectiveTouchRange{
+					Left: 0.04, Top: 0, Right: 1, Bottom: 1,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+
+	const expectX = 0.5
+	const expectY = 0.5
+	if abs(driver.lastClickPoint.X-expectX) > 1e-6 || abs(driver.lastClickPoint.Y-expectY) > 1e-6 {
+		t.Fatalf("朝向不匹配时不应映射: got=(%.6f, %.6f) expect=(%.6f, %.6f)", driver.lastClickPoint.X, driver.lastClickPoint.Y, expectX, expectY)
+	}
+}
+
+func TestRunnerApplyEffectiveTouchAreaUsesCachedOrientationMonitor(t *testing.T) {
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0.4, 0.4, 0.6, 0.6)}}}
+	driver := &fakeDriver{
+		pageSource:      &fakePageSource{xml: `<hierarchy rotation="1"><node class="MainActivity"/></hierarchy>`},
+		screenRotation:  0,
+		screenRotationErr: errors.New("rotation unavailable during execute"),
+	}
+
+	runner, err := NewRunner(decider, driver, Config{
+		PackageName:                 "com.example.app",
+		DeviceSerial:                "serial-A",
+		MaxSteps:                    1,
+		StepInterval:                0,
+		KeepStepRecords:             true,
+		StopOnCrash:                 true,
+		StopOnANR:                   true,
+		OrientationMonitorInterval:  10 * time.Millisecond,
+		EffectiveTouchAreas: []EffectiveTouchArea{
+			{
+				Serial:       "serial-A",
+				PackageName:  "com.example.app",
+				Orientations: []ScreenOrientation{ScreenOrientationPortrait},
+				Range: EffectiveTouchRange{
+					Left: 0.04, Top: 0, Right: 1, Bottom: 1,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	runner.orientationMonitor = &screenOrientationMonitor{
+		orientation: ScreenOrientationPortrait,
+		updated:     true,
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+
+	const expectX = 0.52
+	const expectY = 0.5
+	if abs(driver.lastClickPoint.X-expectX) > 1e-6 || abs(driver.lastClickPoint.Y-expectY) > 1e-6 {
+		t.Fatalf("预期命中缓存朝向并完成映射: got=(%.6f, %.6f) expect=(%.6f, %.6f)", driver.lastClickPoint.X, driver.lastClickPoint.Y, expectX, expectY)
 	}
 }
 

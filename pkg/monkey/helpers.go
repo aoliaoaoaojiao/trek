@@ -52,6 +52,9 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.HealthSignalMonitorInterval <= 0 {
 		cfg.HealthSignalMonitorInterval = defaultHealthSignalMonitorInterval
 	}
+	if cfg.OrientationMonitorInterval <= 0 {
+		cfg.OrientationMonitorInterval = defaultOrientationMonitorInterval
+	}
 	if !cfg.StopOnCrash && !cfg.StopOnANR {
 		cfg.StopOnCrash = true
 		cfg.StopOnANR = true
@@ -92,13 +95,20 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.CandidateMinFusionScore == 0 {
 		cfg.CandidateMinFusionScore = defaultCandidateMinFusionScore
 	}
-	if cfg.EffectiveTouchArea != nil {
-		cfg.EffectiveTouchArea.Serial = strings.TrimSpace(cfg.EffectiveTouchArea.Serial)
-		cfg.EffectiveTouchArea.PackageName = strings.TrimSpace(cfg.EffectiveTouchArea.PackageName)
-		if cfg.EffectiveTouchArea.Range.Right <= cfg.EffectiveTouchArea.Range.Left ||
-			cfg.EffectiveTouchArea.Range.Bottom <= cfg.EffectiveTouchArea.Range.Top {
-			cfg.EffectiveTouchArea = nil
+	if len(cfg.EffectiveTouchAreas) > 0 {
+		filtered := make([]EffectiveTouchArea, 0, len(cfg.EffectiveTouchAreas))
+		for _, area := range cfg.EffectiveTouchAreas {
+			area.Serial = strings.TrimSpace(area.Serial)
+			area.PackageName = strings.TrimSpace(area.PackageName)
+			if area.Range.Right <= area.Range.Left || area.Range.Bottom <= area.Range.Top {
+				continue
+			}
+			if len(area.Orientations) == 0 {
+				continue
+			}
+			filtered = append(filtered, area)
 		}
+		cfg.EffectiveTouchAreas = filtered
 	}
 	return cfg
 }
@@ -225,10 +235,7 @@ func pointByRatio(rect types.Rect, rx, ry float64) types.Point {
 	}
 }
 
-func matchesEffectiveTouchScope(area *EffectiveTouchArea, serial string, packageName string) bool {
-	if area == nil {
-		return false
-	}
+func matchesEffectiveTouchScope(area EffectiveTouchArea, serial string, packageName string, orientation ScreenOrientation) bool {
 	areaSerial := strings.TrimSpace(area.Serial)
 	if areaSerial != "" && !strings.EqualFold(areaSerial, strings.TrimSpace(serial)) {
 		return false
@@ -237,7 +244,24 @@ func matchesEffectiveTouchScope(area *EffectiveTouchArea, serial string, package
 	if areaPackage != "" && !strings.EqualFold(areaPackage, strings.TrimSpace(packageName)) {
 		return false
 	}
-	return true
+	for _, allowed := range area.Orientations {
+		if allowed == orientation {
+			return true
+		}
+	}
+	return false
+}
+
+func matchEffectiveTouchArea(areas []EffectiveTouchArea, serial string, packageName string, orientation ScreenOrientation) *EffectiveTouchArea {
+	if len(areas) == 0 || orientation == "" {
+		return nil
+	}
+	for idx := range areas {
+		if matchesEffectiveTouchScope(areas[idx], serial, packageName, orientation) {
+			return &areas[idx]
+		}
+	}
+	return nil
 }
 
 func isNormalizedRect(rect types.Rect) bool {

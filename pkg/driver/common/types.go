@@ -61,6 +61,10 @@ type IHealthCheck interface {
 	ClearLogcat() error
 }
 
+type IDeviceState interface {
+	GetScreenRotation() (int, error)
+}
+
 type EnvironmentCheckResult struct {
 	ADBReady        bool
 	DeviceReady     bool
@@ -77,6 +81,7 @@ type IDriver interface {
 	IAppControl
 	ITextInput
 	IHealthCheck
+	IDeviceState
 
 	GetPageSource(pageSourceType string) IPageSource
 	Name() string

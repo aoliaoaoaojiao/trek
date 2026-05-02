@@ -29,6 +29,7 @@ const (
 	defaultPageSourceType                          = "uia"
 	defaultForegroundMonitorInterval               = 300 * time.Millisecond
 	defaultHealthSignalMonitorInterval             = 500 * time.Millisecond
+	defaultOrientationMonitorInterval              = 300 * time.Millisecond
 	defaultBlockNoChangeThreshold                  = 3
 	defaultRecoveryCooldownSteps                   = 2
 	defaultTwoStateLoopThreshold                   = 2
@@ -107,7 +108,8 @@ type Config struct {
 	PageNameStrategy                  string
 	ForegroundMonitorInterval         time.Duration
 	HealthSignalMonitorInterval       time.Duration
-	EffectiveTouchArea                *EffectiveTouchArea
+	OrientationMonitorInterval        time.Duration
+	EffectiveTouchAreas               []EffectiveTouchArea
 	EnableBlockRecovery               *bool
 	BlockNoChangeThreshold            int
 	RecoveryCooldownSteps             int
@@ -126,9 +128,10 @@ type Config struct {
 }
 
 type EffectiveTouchArea struct {
-	Serial      string
-	PackageName string
-	Range       EffectiveTouchRange
+	Serial       string
+	PackageName  string
+	Orientations []ScreenOrientation
+	Range        EffectiveTouchRange
 }
 
 type EffectiveTouchRange struct {
@@ -137,6 +140,15 @@ type EffectiveTouchRange struct {
 	Right  float64
 	Bottom float64
 }
+
+type ScreenOrientation string
+
+const (
+	ScreenOrientationPortrait        ScreenOrientation = "portrait"
+	ScreenOrientationLandscapeLeft   ScreenOrientation = "landscape_left"
+	ScreenOrientationPortraitReverse ScreenOrientation = "portrait_reverse"
+	ScreenOrientationLandscapeRight  ScreenOrientation = "landscape_right"
+)
 
 // StepRecord 是每一步执行记录。
 type StepRecord struct {
@@ -252,6 +264,7 @@ type Runner struct {
 	rng                    *rand.Rand
 	monitor                *foregroundPackageMonitor
 	healthMonitor          *healthSignalMonitor
+	orientationMonitor     *screenOrientationMonitor
 	blockDetector          *blockDetector
 	recoveryState          *recoveryStateMachine
 	recoveryPlanner        recovery.RecoveryPlanner
@@ -380,6 +393,8 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	defer r.stopForegroundPackageMonitor()
 	r.startHealthSignalMonitor()
 	defer r.stopHealthSignalMonitor()
+	r.startOrientationMonitor()
+	defer r.stopOrientationMonitor()
 	deadline := report.StartedAt.Add(r.cfg.MaxDuration)
 
 	for step := 1; step <= r.cfg.MaxSteps; step++ {
@@ -495,7 +510,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			continue
 		}
 		r.normalizePocoScrollCommand(step, cmd, xml)
-		r.applyEffectiveTouchArea(step, cmd)
+		r.applyEffectiveTouchArea(step, cmd, xml)
 
 		record.Action = cmd.Act.String()
 		report.ActionCount[record.Action]++

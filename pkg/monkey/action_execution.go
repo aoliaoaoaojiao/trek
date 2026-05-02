@@ -89,11 +89,17 @@ func (r *Runner) normalizePocoScrollCommand(step int, cmd *types.ActionCommand, 
 	}
 }
 
-func (r *Runner) applyEffectiveTouchArea(step int, cmd *types.ActionCommand) {
-	if cmd == nil || r.cfg.EffectiveTouchArea == nil {
+func (r *Runner) applyEffectiveTouchArea(step int, cmd *types.ActionCommand, xml string) {
+	if cmd == nil || len(r.cfg.EffectiveTouchAreas) == 0 {
 		return
 	}
-	if !matchesEffectiveTouchScope(r.cfg.EffectiveTouchArea, r.cfg.DeviceSerial, r.cfg.PackageName) {
+	orientation := r.resolveScreenOrientation()
+	if orientation == "" {
+		logger.Debugf("monkey step=%d skip effective_touch_area: 无法从设备层获取实际朝向", step)
+		return
+	}
+	area := matchEffectiveTouchArea(r.cfg.EffectiveTouchAreas, r.cfg.DeviceSerial, r.cfg.PackageName, orientation)
+	if area == nil {
 		return
 	}
 	switch cmd.Act {
@@ -108,19 +114,52 @@ func (r *Runner) applyEffectiveTouchArea(step int, cmd *types.ActionCommand) {
 		return
 	}
 	oldRect := cmd.Pos
-	mapped, ok := mapRectToEffectiveRange(cmd.Pos, r.cfg.EffectiveTouchArea.Range)
+	mapped, ok := mapRectToEffectiveRange(cmd.Pos, area.Range)
 	if !ok {
 		return
 	}
 	cmd.Pos = mapped
 	logger.Debugf(
-		"monkey step=%d apply effective_touch_area scope=%s::%s from=%s to=%s",
+		"monkey step=%d apply effective_touch_area scope=%s::%s orientation=%s from=%s to=%s",
 		step,
-		strings.TrimSpace(r.cfg.EffectiveTouchArea.Serial),
-		strings.TrimSpace(r.cfg.EffectiveTouchArea.PackageName),
+		strings.TrimSpace(area.Serial),
+		strings.TrimSpace(area.PackageName),
+		orientation,
 		oldRect.String(),
 		cmd.Pos.String(),
 	)
+}
+
+func (r *Runner) resolveScreenOrientation() ScreenOrientation {
+	if orientation, err, updated := r.snapshotScreenOrientation(); updated {
+		if err == nil {
+			return orientation
+		}
+		logger.Debugf("monkey 获取缓存朝向失败: %v", err)
+	}
+	if r.driver != nil {
+		rotation, err := r.driver.GetScreenRotation()
+		if err == nil {
+			return screenOrientationFromRotation(rotation)
+		}
+		logger.Debugf("monkey 获取设备实际朝向失败: %v", err)
+	}
+	return ""
+}
+
+func screenOrientationFromRotation(rotation int) ScreenOrientation {
+	switch rotation {
+	case 0:
+		return ScreenOrientationPortrait
+	case 1:
+		return ScreenOrientationLandscapeLeft
+	case 2:
+		return ScreenOrientationPortraitReverse
+	case 3:
+		return ScreenOrientationLandscapeRight
+	default:
+		return ""
+	}
 }
 
 func resolvePocoScrollRectFromWidgetPath(widgetInfo string, xml string) (*types.Rect, bool) {

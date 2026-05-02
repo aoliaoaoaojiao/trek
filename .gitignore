@@ -9,3 +9,7 @@
 .claude/
 AGENTS.md
 CLAUDE.md
+
+# dotenv 本地覆盖文件（不提交）
+.env.local
+.env.*.local

@@ -35,10 +35,26 @@ func Execute() {
 	}
 }
 
+// loadDotEnvFiles 按 bkeepers/dotenv 规范加载 .env 文件。
+// 优先级从低到高（后者覆盖前者，但 godotenv.Load 不覆盖已有值，所以先加载高优先级）：
+//
+//	.env                    — 全局默认值，提交到仓库
+//	.env.local              — 本地覆盖，不提交（gitignore）
+//	.env.$TREK_ENV          — 环境专属配置（如 .env.production）
+//	.env.$TREK_ENV.local    — 环境专属本地覆盖，不提交
+//
+// 外部显式注入的环境变量（如 CI/CD、容器）始终优先于任何 .env 文件。
 func loadDotEnvFiles() {
-	// 仅补充未设置的环境变量，不覆盖外部显式注入的值。
-	_ = godotenv.Load(".env")
+	env := os.Getenv("TREK_ENV")
+	if env == "" {
+		env = "development"
+	}
+
+	// 按优先级从高到低加载，godotenv.Load 仅补充未设置的变量。
+	_ = godotenv.Load(".env." + env + ".local")
+	_ = godotenv.Load(".env." + env)
 	_ = godotenv.Load(".env.local")
+	_ = godotenv.Load(".env")
 }
 
 func init() {

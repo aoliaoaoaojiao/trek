@@ -24,6 +24,9 @@ func resolveBasePageNameByStrategy(ctx context.Context, r *Runner, xml string, s
 	strategy := normalizePageNameStrategy(r.cfg.PageNameStrategy, r.cfg.PageSourceType)
 	switch strategy {
 	case PageNameStrategyImageFingerprint:
+		if pageName := resolveImageFingerprintPageName(screenshot, r.cfg.ImageSignatureFunc); pageName != "" {
+			return pageName
+		}
 		if r.cfg.PageNameResolverEx != nil {
 			return r.cfg.PageNameResolverEx.ResolvePageName(xml, screenshot)
 		}

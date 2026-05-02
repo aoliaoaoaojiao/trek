@@ -49,6 +49,7 @@ go mod download
 Trek 启动时会自动加载项目根目录下的：
 
 - `.env`
+- `.env.development`
 - `.env.local`
 
 推荐将密钥写入 `.env.local`，不要直接写进代码。
@@ -75,6 +76,13 @@ OPENAI_MODEL=gpt-4.1-mini
 
 # ADB（可选）
 # ADB_PATH=C:\Android\platform-tools\adb.exe
+
+# OpenCV / gocv（image_fingerprint 可选）
+# OPENCV_DIR=C:\opencv\build
+# OPENCV_BIN=C:\opencv\build\x64\vc16\bin
+# OPENCV_INCLUDE=C:\opencv\build\include
+# OPENCV_LIB=C:\opencv\build\x64\vc16\lib
+# OPENCV_LIB_NAME=opencv_world4100
 ```
 
 ### 4. 运行遍历
@@ -182,6 +190,47 @@ trek run --package com.example.app --probe-page-name
 ```bash
 trek web
 ```
+
+## GoCV / OpenCV 配置
+
+`image_fingerprint` 的 `gocv` 实现依赖 OpenCV，本质上分两层：
+
+- 编译期：需要头文件和 `.lib`
+- 运行期：需要 `opencv_world*.dll`
+
+推荐通过环境变量统一指定：
+
+- `OPENCV_DIR`：OpenCV 安装根目录或 `build` 目录
+- `OPENCV_BIN`：运行时库目录，Windows 常用 DLL 目录
+- `OPENCV_INCLUDE`：头文件目录
+- `OPENCV_LIB`：编译期 `.lib` 目录；Linux/macOS 也可作为运行时共享库目录
+- `OPENCV_LIB_NAME`：链接库名，不带 `.lib`，如 `opencv_world4100`
+
+如果只设置 `OPENCV_DIR`，脚本会默认尝试：
+
+- `include = <OPENCV_DIR>\include`
+- `lib = <OPENCV_DIR>\lib`
+- `bin = <OPENCV_DIR>\bin`
+
+Windows 下可直接用仓库脚本构建：
+
+```powershell
+.\scripts\go_with_gocv.ps1 test -tags gocv ./pkg/monkey
+.\scripts\go_with_gocv.ps1 build -tags gocv ./cmd/...
+```
+
+运行期如果设置了 OpenCV 目录，Trek 会按平台自动注入动态库搜索路径：
+
+- Windows：把目录加入 `PATH`
+- Linux：把目录加入 `LD_LIBRARY_PATH`
+- macOS：把目录加入 `DYLD_LIBRARY_PATH`
+
+运行时目录解析顺序为：
+
+1. `OPENCV_BIN`
+2. `OPENCV_LIB`
+3. `OPENCV_DIR/lib`
+4. `OPENCV_DIR/bin`
 
 ## OCR 配置
 

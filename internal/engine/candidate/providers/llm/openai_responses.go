@@ -1,4 +1,4 @@
-package providers
+package llm
 
 import (
 	"bytes"
@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"time"
 	"trek/internal/engine/candidate"
@@ -48,19 +49,39 @@ func NewOpenAIResponsesProvider(cfg OpenAIResponsesProviderConfig) (*OpenAIRespo
 	if baseURL == "" {
 		baseURL = defaultOpenAIResponsesURL
 	}
-	if _, err := url.ParseRequestURI(baseURL); err != nil {
-		return nil, fmt.Errorf("openai base url 非法: %w", err)
+	normalizedBaseURL, err := normalizeOpenAIResponsesURL(baseURL)
+	if err != nil {
+		return nil, err
 	}
 	timeout := cfg.Timeout
 	if timeout <= 0 {
 		timeout = defaultOpenAITimeout
 	}
 	return &OpenAIResponsesProvider{
-		baseURL: baseURL,
+		baseURL: normalizedBaseURL,
 		apiKey:  apiKey,
 		model:   model,
 		client:  &http.Client{Timeout: timeout},
 	}, nil
+}
+
+func normalizeOpenAIResponsesURL(rawURL string) (string, error) {
+	parsed, err := url.ParseRequestURI(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("openai base url 非法: %w", err)
+	}
+	cleanPath := strings.TrimSpace(parsed.Path)
+	switch {
+	case cleanPath == "":
+		parsed.Path = "/v1/responses"
+	case strings.HasSuffix(cleanPath, "/responses"):
+		parsed.Path = cleanPath
+	case cleanPath == "/v1" || cleanPath == "/v1/":
+		parsed.Path = "/v1/responses"
+	default:
+		parsed.Path = path.Join(cleanPath, "responses")
+	}
+	return parsed.String(), nil
 }
 
 // BuildCandidates 调用 OpenAI Responses API 构建恢复候选。
@@ -75,6 +96,9 @@ func (p *OpenAIResponsesProvider) BuildCandidates(ctx enginestate.TraversalConte
 	body, status, err := p.postWithRetry(payload)
 	if err != nil {
 		return nil, err
+	}
+	if status == http.StatusNotFound {
+		return p.buildCandidatesWithChatFallback(ctx)
 	}
 	if status < 200 || status >= 300 {
 		return nil, fmt.Errorf("openai responses 请求失败: status=%d body=%s", status, truncateText(string(body), 512))
@@ -103,6 +127,9 @@ func (p *OpenAIResponsesProvider) DetectPageControls(ctx enginestate.TraversalCo
 	body, status, err := p.postWithRetry(payload)
 	if err != nil {
 		return nil, err
+	}
+	if status == http.StatusNotFound {
+		return p.detectPageControlsWithChatFallback(ctx)
 	}
 	if status < 200 || status >= 300 {
 		return nil, fmt.Errorf("openai responses 请求失败: status=%d body=%s", status, truncateText(string(body), 512))
@@ -232,6 +259,56 @@ func (p *OpenAIResponsesProvider) postWithRetry(payload []byte) ([]byte, int, er
 		return tryOnce()
 	}
 	return body, status, nil
+}
+
+func (p *OpenAIResponsesProvider) buildCandidatesWithChatFallback(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+	chatProvider, err := p.newChatFallbackProvider()
+	if err != nil {
+		return nil, err
+	}
+	return chatProvider.BuildCandidates(ctx)
+}
+
+func (p *OpenAIResponsesProvider) detectPageControlsWithChatFallback(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+	chatProvider, err := p.newChatFallbackProvider()
+	if err != nil {
+		return nil, err
+	}
+	return chatProvider.DetectPageControls(ctx)
+}
+
+func (p *OpenAIResponsesProvider) newChatFallbackProvider() (*OpenAIChatProvider, error) {
+	chatURL, err := normalizeOpenAIChatURLFromResponsesURL(p.baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("openai responses 404 后构建 chat 回退 provider 失败: %w", err)
+	}
+	return NewOpenAIChatProvider(OpenAIChatProviderConfig{
+		BaseURL: chatURL,
+		APIKey:  p.apiKey,
+		Model:   p.model,
+		Timeout: p.client.Timeout,
+	})
+}
+
+func normalizeOpenAIChatURLFromResponsesURL(rawURL string) (string, error) {
+	parsed, err := url.ParseRequestURI(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("openai chat base url 非法: %w", err)
+	}
+	cleanPath := strings.TrimSpace(parsed.Path)
+	switch {
+	case cleanPath == "":
+		parsed.Path = "/v1/chat/completions"
+	case cleanPath == "/" || cleanPath == "/v1" || cleanPath == "/v1/":
+		parsed.Path = "/v1/chat/completions"
+	case strings.HasSuffix(cleanPath, "/responses"):
+		parsed.Path = strings.TrimSuffix(cleanPath, "/responses") + "/chat/completions"
+	case strings.HasSuffix(cleanPath, "/chat/completions"):
+		parsed.Path = cleanPath
+	default:
+		parsed.Path = path.Join(cleanPath, "chat/completions")
+	}
+	return parsed.String(), nil
 }
 
 func extractOutputText(body []byte) (string, error) {

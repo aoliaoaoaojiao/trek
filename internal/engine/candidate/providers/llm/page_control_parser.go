@@ -1,6 +1,8 @@
-package providers
+package llm
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
@@ -24,6 +26,36 @@ type llmBounds struct {
 	Top    float64 `json:"top"`
 	Right  float64 `json:"right"`
 	Bottom float64 `json:"bottom"`
+}
+
+// UnmarshalJSON 兼容两类 bounds 输出：
+// 1. 对象格式：{"left":...,"top":...,"right":...,"bottom":...}
+// 2. 数组格式：[left, top, right, bottom]
+func (b *llmBounds) UnmarshalJSON(data []byte) error {
+	if b == nil {
+		return fmt.Errorf("llmBounds 不能为空")
+	}
+
+	type boundsObject llmBounds
+	var obj boundsObject
+	if err := json.Unmarshal(data, &obj); err == nil {
+		*b = llmBounds(obj)
+		return nil
+	}
+
+	var arr []float64
+	if err := json.Unmarshal(data, &arr); err == nil {
+		if len(arr) != 4 {
+			return fmt.Errorf("bounds 数组长度错误: %d", len(arr))
+		}
+		b.Left = arr[0]
+		b.Top = arr[1]
+		b.Right = arr[2]
+		b.Bottom = arr[3]
+		return nil
+	}
+
+	return fmt.Errorf("bounds 格式非法: %s", string(data))
 }
 
 func parsePageControlCandidates(output pageControlResponse) []candidate.Candidate {

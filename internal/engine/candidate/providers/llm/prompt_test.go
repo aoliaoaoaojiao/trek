@@ -1,4 +1,4 @@
-package providers
+package llm
 
 import (
 	"strings"
@@ -325,6 +325,9 @@ func TestBuildPageControlPrompt_SystemContentAndSchema(t *testing.T) {
 	if !strings.Contains(prompt.SystemContent, "视觉控件检测器") {
 		t.Fatalf("SystemContent 应包含控件检测角色: %s", prompt.SystemContent)
 	}
+	if !strings.Contains(prompt.SystemContent, "四元数组") {
+		t.Fatalf("SystemContent 应说明 bounds 支持四元数组: %s", prompt.SystemContent)
+	}
 	if prompt.ScreenshotMediaType != "image/png" {
 		t.Fatalf("ScreenshotMediaType 应为 image/png, 实际: %s", prompt.ScreenshotMediaType)
 	}
@@ -346,10 +349,19 @@ func TestBuildPageControlPrompt_SystemContentAndSchema(t *testing.T) {
 	}
 	bounds, ok := itemProps["bounds"].(map[string]any)
 	if !ok {
-		t.Fatalf("应存在 bounds 对象")
+		t.Fatalf("应存在 bounds 字段")
 	}
-	boundsProps, ok := bounds["properties"].(map[string]any)
+	oneOf, ok := bounds["oneOf"].([]map[string]any)
+	if !ok || len(oneOf) != 2 {
+		t.Fatalf("bounds.oneOf 定义错误: %+v", bounds)
+	}
+	objectSchema := oneOf[0]
+	boundsProps, ok := objectSchema["properties"].(map[string]any)
 	if !ok || boundsProps["left"] == nil || boundsProps["bottom"] == nil {
-		t.Fatalf("bounds 字段定义不完整: %+v", bounds)
+		t.Fatalf("bounds 对象格式定义不完整: %+v", objectSchema)
+	}
+	arraySchema := oneOf[1]
+	if arraySchema["type"] != "array" || arraySchema["minItems"] != 4 || arraySchema["maxItems"] != 4 {
+		t.Fatalf("bounds 数组格式定义错误: %+v", arraySchema)
 	}
 }

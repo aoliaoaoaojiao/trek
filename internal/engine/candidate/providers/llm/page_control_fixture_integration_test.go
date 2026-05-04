@@ -1,6 +1,6 @@
 //go:build integration
 
-package providers
+package llm
 
 import (
 	"bytes"
@@ -143,6 +143,23 @@ func TestLLMIntegration_GameNavigationFixtureAccurateControlBounds(t *testing.T)
 		require.NoError(t, err, "OpenAI 控件检测失败")
 		require.NotEmpty(t, items, "OpenAI 应返回至少一个控件")
 		logOverlayArtifact(t, "openai_game_navigation_overlay.png", items)
+
+		assertCandidatesHitExpectedControls(t, items, gameNavigationExpectedControls, extractLLMCandidateText)
+	})
+
+	t.Run("anthropic_messages", func(t *testing.T) {
+		baseURL, apiKey, model := testutil.RequireAnthropicEnv(t)
+		provider, err := NewAnthropicMessagesProvider(AnthropicMessagesProviderConfig{
+			BaseURL: baseURL,
+			APIKey:  apiKey,
+			Model:   model,
+		})
+		require.NoError(t, err, "创建 Anthropic Messages provider 失败")
+
+		items, err := provider.DetectPageControls(ctx)
+		require.NoError(t, err, "Anthropic 控件检测失败")
+		require.NotEmpty(t, items, "Anthropic 应返回至少一个控件")
+		logOverlayArtifact(t, "anthropic_game_navigation_overlay.png", items)
 
 		assertCandidatesHitExpectedControls(t, items, gameNavigationExpectedControls, extractLLMCandidateText)
 	})

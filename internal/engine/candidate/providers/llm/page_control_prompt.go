@@ -1,4 +1,4 @@
-package providers
+package llm
 
 import (
 	"encoding/base64"
@@ -30,7 +30,7 @@ func buildPageControlPrompt(ctx enginestate.TraversalContext) PageControlPrompt 
 
 关键规则：
 1. 只返回当前截图中真正可操作或高价值的控件区域，不要输出整页背景
-2. bounds 必须使用归一化坐标，left/top/right/bottom 取值范围 [0,1]
+2. bounds 必须使用归一化坐标，取值范围 [0,1]；优先返回对象格式 {"left","top","right","bottom"}，也可返回四元数组 [left, top, right, bottom]
 3. 优先识别按钮、输入框、标签页、列表项、关闭按钮、返回按钮、弹窗主按钮等关键控件
 4. 若控件文字可见，请尽量填写 text；若无法确认文字，可填写 hint
 5. 输出必须是 JSON，且仅返回符合 schema 的 controls 数组`
@@ -89,14 +89,26 @@ func pageControlSchema() map[string]any {
 						"clickable":  map[string]any{"type": "boolean"},
 						"confidence": map[string]any{"type": "number"},
 						"bounds": map[string]any{
-							"type": "object",
-							"properties": map[string]any{
-								"left":   map[string]any{"type": "number"},
-								"top":    map[string]any{"type": "number"},
-								"right":  map[string]any{"type": "number"},
-								"bottom": map[string]any{"type": "number"},
+							"oneOf": []map[string]any{
+								{
+									"type": "object",
+									"properties": map[string]any{
+										"left":   map[string]any{"type": "number"},
+										"top":    map[string]any{"type": "number"},
+										"right":  map[string]any{"type": "number"},
+										"bottom": map[string]any{"type": "number"},
+									},
+									"required": []string{"left", "top", "right", "bottom"},
+								},
+								{
+									"type": "array",
+									"items": map[string]any{
+										"type": "number",
+									},
+									"minItems": 4,
+									"maxItems": 4,
+								},
 							},
-							"required": []string{"left", "top", "right", "bottom"},
 						},
 					},
 					"required": []string{"bounds", "confidence"},

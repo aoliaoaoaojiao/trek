@@ -1,6 +1,6 @@
 //go:build integration
 
-package providers
+package llm
 
 import (
 	"testing"

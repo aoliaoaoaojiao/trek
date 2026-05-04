@@ -10,7 +10,7 @@
 - `ocr`：基于截图 OCR 提取文本区域，生成伪控件树。
 - `llm`：基于截图由 LLM 推断控件区域，生成伪控件树。
 
-其中 `llm` 走的是独立的控件检测 schema，要求模型返回 `controls` 数组，而不是恢复动作 `candidates`。同时，LLM 不再直接参与 Trek 内置决策链路，只负责页面控件检测。
+其中 `llm` 走的是独立的控件检测 schema，要求模型返回 `controls` 数组，而不是恢复动作 `candidates`。控件 `bounds` 优先返回对象格式 `{left,top,right,bottom}`，同时兼容四元数组 `[left, top, right, bottom]`。同时，LLM 不再直接参与 Trek 内置决策链路，只负责页面控件检测。
 
 ## 推荐用法
 

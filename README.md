@@ -20,6 +20,8 @@ cmd/                    CLI 与 Web 入口
 pkg/monkey/             遍历编排与执行
 pkg/session/            稳定决策会话入口
 internal/engine/        决策、恢复、候选、记忆、运行时
+internal/engine/candidate/providers/     Provider 对外入口与 OCR 等非 LLM provider
+internal/engine/candidate/providers/llm/ LLM 页面控件检测相关实现与提示词
 docs/                   设计与实现文档
 ```
 
@@ -72,6 +74,11 @@ LLM_MODEL=your-model-name
 OPENAI_API_URL=https://api.openai.com/v1/responses
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_MODEL=gpt-4.1-mini
+
+# Anthropic Messages Provider（页面控件检测，可选）
+ANTHROPIC_API_URL=https://api.xiaomimimo.com/anthropic
+ANTHROPIC_API_KEY=your_anthropic_api_key
+ANTHROPIC_MODEL=mimo-v2.5
 
 # ADB（可选）
 # ADB_PATH=C:\Android\platform-tools\adb.exe
@@ -126,7 +133,7 @@ const config = {
 
 当 `page_control_strategy` 为 `ocr` 或 `llm` 时，Trek 会自动启用截图采集；如果当前步骤拿不到 dump，会继续尝试走“截图 -> 控件区域 -> 伪 XML”链路，而不是直接中断该步。
 
-其中 `llm` 现已使用专门的“控件检测 schema”，要求模型直接返回控件区域列表（`controls`），不再复用恢复动作建议的 `candidates` schema。
+其中 `llm` 现已使用专门的“控件检测 schema”，要求模型直接返回控件区域列表（`controls`），不再复用恢复动作建议的 `candidates` schema。控件 `bounds` 优先使用对象格式 `{left,top,right,bottom}`，同时兼容四元数组 `[left, top, right, bottom]`。
 
 同样支持在 JS 中配置恢复相关调参（示例）：
 
@@ -266,6 +273,7 @@ trek run --package com.example.app --capture-screenshot
 
 - 通用 HTTP Provider
 - OpenAI Responses Provider
+- Anthropic Messages Provider
 
 常用环境变量：
 
@@ -276,13 +284,19 @@ trek run --package com.example.app --capture-screenshot
 - `OPENAI_API_URL`
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
+- `ANTHROPIC_API_URL`
+- `ANTHROPIC_API_KEY`
+- `ANTHROPIC_MODEL`
 
 使用建议：
 
 - 恢复经验库可通过 `RECOVERY_MEMORY_FILE` 指定本地持久化路径
 - 通用 HTTP Provider：至少配置 `LLM_API_URL`、`LLM_MODEL` 和 `LLM_API_KEY`
 - OpenAI Responses Provider：至少配置 `OPENAI_MODEL` 和 `OPENAI_API_KEY`
+- Anthropic Messages Provider：至少配置 `ANTHROPIC_MODEL` 和 `ANTHROPIC_API_KEY`
 - 如果使用 OpenAI 兼容网关或代理，可额外配置 `OPENAI_API_URL`
+- 如果使用 Anthropic 兼容网关或米莫 Anthropic 接口，可额外配置 `ANTHROPIC_API_URL`
+- 当前带截图的页面控件检测属于多模态请求；以米莫兼容接口为例，只有 `mimo-v2.5` 与 `mimo-v2-omni` 支持图片输入，更适合这条链路
 - 这些外部服务配置统一走环境变量，不再通过 `trek run` 传入
 - 当前内置 LLM 仅用于 `page_control_strategy=llm` 的页面控件检测，不再直接参与恢复决策或候选增强
 
@@ -312,6 +326,7 @@ trek run --package com.example.app --capture-screenshot
 - CLI 入口：[root.go](/h:/CodeProject/GoProject/trek-dev/cmd/root.go)
 - 运行命令：[run.go](/h:/CodeProject/GoProject/trek-dev/cmd/run.go)
 - 会话装配：[session.go](/h:/CodeProject/GoProject/trek-dev/pkg/session/session.go)
+- LLM Provider 入口：[llm.go](/h:/CodeProject/GoProject/Trek/internal/engine/candidate/providers/llm.go)
 - OCR Provider：[ocr_http.go](/h:/CodeProject/GoProject/trek-dev/internal/engine/candidate/providers/ocr_http.go)
 
 ## 开发说明

@@ -678,6 +678,16 @@ func clamp01(value float64) float64 {
 	return value
 }
 
+func truncateText(text string, max int) string {
+	if max <= 0 || len(text) <= max {
+		return text
+	}
+	if max <= 3 {
+		return text[:max]
+	}
+	return text[:max-3] + "..."
+}
+
 type ocrRequest struct {
 	PageName         string `json:"page_name,omitempty"`
 	ScreenshotBase64 string `json:"screenshot_base64"`

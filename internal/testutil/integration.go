@@ -73,6 +73,18 @@ func RequireOpenAIEnv(t *testing.T) (baseURL, apiKey, model string) {
 	return baseURL, apiKey, model
 }
 
+// RequireAnthropicEnv 检查 Anthropic 兼容接口环境变量是否配置，未配置时跳过测试。
+func RequireAnthropicEnv(t *testing.T) (baseURL, apiKey, model string) {
+	t.Helper()
+	apiKey = strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
+	model = strings.TrimSpace(os.Getenv("ANTHROPIC_MODEL"))
+	baseURL = strings.TrimSpace(os.Getenv("ANTHROPIC_API_URL"))
+	if apiKey == "" || model == "" {
+		t.Skip("跳过 Anthropic 集成测试：未设置 ANTHROPIC_API_KEY 或 ANTHROPIC_MODEL")
+	}
+	return baseURL, apiKey, model
+}
+
 // DetectForegroundPackage 自动检测设备前台应用包名。
 // 优先使用 TREK_TEST_PACKAGE 环境变量，否则从设备获取。
 func DetectForegroundPackage(t *testing.T, driver *android.AndroidDriver) string {

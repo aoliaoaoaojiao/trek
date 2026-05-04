@@ -757,7 +757,7 @@ func buildSyntheticXMLFromCandidates(items []perception.Candidate, screenshot []
 		if item.Command == nil {
 			continue
 		}
-		if item.Command.Act != types.CLICK && item.Command.Act != types.LONG_CLICK && item.Command.Act != types.ACTIVATE {
+		if item.Command.Act != types.CLICK && item.Command.Act != types.LONG_CLICK && item.Command.Act != types.INPUT {
 			continue
 		}
 		bounds, ok := toPixelBounds(item.Command.Pos, width, height)
@@ -844,8 +844,8 @@ func toPixelBounds(rect types.Rect, width int, height int) ([4]int, bool) {
 }
 
 func resolveSyntheticWidgetClass(label string, act types.ActionType) string {
-	if act == types.ACTIVATE {
-		return "android.widget.Button"
+	if act == types.INPUT {
+		return "android.widget.EditText"
 	}
 	lower := strings.ToLower(strings.TrimSpace(label))
 	switch {

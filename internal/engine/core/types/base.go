@@ -19,6 +19,7 @@ const (
 	FEED
 	CLICK
 	LONG_CLICK
+	INPUT
 	SCROLL_TOP_DOWN
 	SCROLL_BOTTOM_UP
 	SCROLL_LEFT_RIGHT
@@ -26,7 +27,7 @@ const (
 	SCROLL_BOTTOM_UP_N
 	SHELL_EVENT
 	Hover
-	ActTypeSize // 18
+	ActTypeSize // 19
 )
 
 func (t ActionType) String() string {
@@ -46,6 +47,7 @@ var actName = map[ActionType]string{
 	FEED:               "FEED",
 	CLICK:              "CLICK",
 	LONG_CLICK:         "LONG_CLICK",
+	INPUT:              "INPUT",
 	SCROLL_TOP_DOWN:    "SCROLL_TOP_DOWN",
 	SCROLL_BOTTOM_UP:   "SCROLL_BOTTOM_UP",
 	SCROLL_LEFT_RIGHT:  "SCROLL_LEFT_RIGHT",

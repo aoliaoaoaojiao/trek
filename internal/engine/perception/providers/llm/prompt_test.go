@@ -362,6 +362,14 @@ func TestBuildPageControlPrompt_SystemContentAndSchema(t *testing.T) {
 	if enumVals[0] != "click" {
 		t.Fatalf("action_type 第一项应为 click，实际: %+v", enumVals)
 	}
+	dragTarget, ok := itemProps["drag_target"].(map[string]any)
+	if !ok {
+		t.Fatalf("应存在 drag_target 字段")
+	}
+	dragProps, ok := dragTarget["properties"].(map[string]any)
+	if !ok || dragProps["x"] == nil || dragProps["y"] == nil {
+		t.Fatalf("drag_target 定义错误: %+v", dragTarget)
+	}
 	bounds, ok := itemProps["bounds"].(map[string]any)
 	if !ok {
 		t.Fatalf("应存在 bounds 字段")

@@ -276,6 +276,8 @@ func parseActionType(text string) (types.ActionType, bool) {
 		return types.SCROLL_RIGHT_LEFT, true
 	case "SCROLL_BOTTOM_UP_N":
 		return types.SCROLL_BOTTOM_UP_N, true
+	case "INPUT":
+		return types.INPUT, true
 	case "ACTIVATE":
 		return types.ACTIVATE, true
 	default:

@@ -23,8 +23,8 @@ func TestParseCandidatesMapsBasicActionTypes(t *testing.T) {
 	if items[0].Command == nil || items[0].Command.Act != types.CLICK {
 		t.Fatalf("click 应映射为 CLICK，实际: %+v", items[0].Command)
 	}
-	if items[1].Command == nil || items[1].Command.Act != types.ACTIVATE {
-		t.Fatalf("input 应映射为 ACTIVATE，实际: %+v", items[1].Command)
+	if items[1].Command == nil || items[1].Command.Act != types.INPUT {
+		t.Fatalf("input 应映射为 INPUT，实际: %+v", items[1].Command)
 	}
 	if items[2].Command == nil || items[2].Command.Act != types.SCROLL_BOTTOM_UP {
 		t.Fatalf("swipe_up 应映射为 SCROLL_BOTTOM_UP，实际: %+v", items[2].Command)
@@ -46,7 +46,7 @@ func TestParseCandidatesInfersLegacyActionType(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("候选数量错误: %d", len(items))
 	}
-	if items[0].Metadata["llm_action_type"] != "input" || items[0].Command.Act != types.ACTIVATE {
+	if items[0].Metadata["llm_action_type"] != "input" || items[0].Command.Act != types.INPUT {
 		t.Fatalf("legacy input 推断错误: metadata=%+v command=%+v", items[0].Metadata, items[0].Command)
 	}
 	if items[1].Metadata["llm_action_type"] != "click" || items[1].Command.Act != types.CLICK {
@@ -57,7 +57,13 @@ func TestParseCandidatesInfersLegacyActionType(t *testing.T) {
 func TestParseCandidatesMapsDragToScrollableAction(t *testing.T) {
 	output := Response{
 		Controls: []Control{
-			{ActionType: "drag", Hint: "向右拖动滑块", Confidence: 0.8, Bounds: Bounds{Left: 0.2, Top: 0.2, Right: 0.8, Bottom: 0.4}},
+			{
+				ActionType: "drag",
+				Hint:       "向右拖动滑块",
+				Confidence: 0.8,
+				Bounds:     Bounds{Left: 0.2, Top: 0.2, Right: 0.4, Bottom: 0.4},
+				DragTarget: types.NewPoint(0.9, 0.3),
+			},
 		},
 	}
 
@@ -67,5 +73,21 @@ func TestParseCandidatesMapsDragToScrollableAction(t *testing.T) {
 	}
 	if items[0].Command == nil || items[0].Command.Act != types.SCROLL_LEFT_RIGHT {
 		t.Fatalf("drag 应先按方向提示映射到现有滚动动作，实际: %+v", items[0].Command)
+	}
+	if items[0].Command.DragTo == nil || items[0].Command.DragTo.X != 0.9 || items[0].Command.DragTo.Y != 0.3 {
+		t.Fatalf("drag_target 应保留到动作命令，实际: %+v", items[0].Command)
+	}
+}
+
+func TestParseCandidatesRejectsDragWithoutTarget(t *testing.T) {
+	output := Response{
+		Controls: []Control{
+			{ActionType: "drag", Hint: "拖动滑块", Confidence: 0.8, Bounds: Bounds{Left: 0.2, Top: 0.2, Right: 0.4, Bottom: 0.4}},
+		},
+	}
+
+	items := ParseCandidates(output)
+	if len(items) != 0 {
+		t.Fatalf("缺少 drag_target 的 drag 不应进入候选，实际: %+v", items)
 	}
 }

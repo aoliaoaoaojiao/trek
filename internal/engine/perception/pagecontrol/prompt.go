@@ -88,6 +88,14 @@ func schema() map[string]any {
 						"hint":       map[string]any{"type": "string"},
 						"clickable":  map[string]any{"type": "boolean"},
 						"confidence": map[string]any{"type": "number"},
+						"drag_target": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"x": map[string]any{"type": "number"},
+								"y": map[string]any{"type": "number"},
+							},
+							"required": []string{"x", "y"},
+						},
 						"bounds": map[string]any{
 							"oneOf": []map[string]any{
 								{

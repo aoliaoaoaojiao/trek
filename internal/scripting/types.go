@@ -8,6 +8,7 @@ const (
 	ActionBack            ActionType = "BACK"
 	ActionClick           ActionType = "CLICK"
 	ActionLongClick       ActionType = "LONG_CLICK"
+	ActionInput           ActionType = "INPUT"
 	ActionScrollTopDown   ActionType = "SCROLL_TOP_DOWN"
 	ActionScrollBottomUp  ActionType = "SCROLL_BOTTOM_UP"
 	ActionScrollLeftRight ActionType = "SCROLL_LEFT_RIGHT"

@@ -10,6 +10,7 @@ import (
 type ActionCommand struct {
 	Act          ActionType `json:"act"`
 	Pos          Rect       `json:"pos"`
+	DragTo       *Point     `json:"drag_to,omitempty"`
 	Sid          string     `json:"sid"`
 	Aid          string     `json:"aid"`
 	Throttle     float32    `json:"throttle"`
@@ -31,6 +32,7 @@ func NewActionCommand() *ActionCommand {
 	return &ActionCommand{
 		Act:          NOP,
 		Pos:          *NewRect(0, 0, 0, 0),
+		DragTo:       nil,
 		Sid:          "",
 		Aid:          "",
 		Throttle:     0,
@@ -65,6 +67,7 @@ func NewActionCommandCopy(opt *ActionCommand) *ActionCommand {
 	return &ActionCommand{
 		Act:          opt.Act,
 		Pos:          opt.Pos,
+		DragTo:       clonePoint(opt.DragTo),
 		Sid:          opt.Sid,
 		Aid:          opt.Aid,
 		Throttle:     opt.Throttle,
@@ -92,8 +95,12 @@ func (cmd *ActionCommand) GetText() string {
 }
 
 func (cmd *ActionCommand) String() string {
-	return fmt.Sprintf("ActionCommand{act:%s, pos:%s, sid:%s, aid:%s, throttle:%.2f, waitTime:%d, editable:%t, allowFuzzing:%t, clear:%t, adbInput:%t, name:%s, text:%s}",
-		cmd.Act.String(), cmd.Pos.String(), cmd.Sid, cmd.Aid, cmd.Throttle, cmd.WaitTime, cmd.Editable, cmd.AllowFuzzing, cmd.Clear, cmd.AdbInput, cmd.Name, cmd.Text)
+	dragTo := "nil"
+	if cmd.DragTo != nil {
+		dragTo = cmd.DragTo.String()
+	}
+	return fmt.Sprintf("ActionCommand{act:%s, pos:%s, drag_to:%s, sid:%s, aid:%s, throttle:%.2f, waitTime:%d, editable:%t, allowFuzzing:%t, clear:%t, adbInput:%t, name:%s, text:%s}",
+		cmd.Act.String(), cmd.Pos.String(), dragTo, cmd.Sid, cmd.Aid, cmd.Throttle, cmd.WaitTime, cmd.Editable, cmd.AllowFuzzing, cmd.Clear, cmd.AdbInput, cmd.Name, cmd.Text)
 }
 
 // DetailLogString 返回适合日志排障的动作详情。
@@ -106,8 +113,12 @@ func (cmd *ActionCommand) DetailLogString() string {
 		widgetInfo = "n/a"
 	}
 	text := truncateLogText(cmd.Text, 80)
-	return fmt.Sprintf("act=%s pos=%s sid=%s aid=%s name=%s editable=%t text=%q wait_time=%d throttle=%.2f clear=%t adb_input=%t allow_fuzzing=%t raw_input=%t widget=%s",
-		cmd.Act.String(), cmd.Pos.String(), cmd.Sid, cmd.Aid, cmd.Name, cmd.Editable, text, cmd.WaitTime, cmd.Throttle, cmd.Clear, cmd.AdbInput, cmd.AllowFuzzing, cmd.RawInput, widgetInfo)
+	dragTo := "n/a"
+	if cmd.DragTo != nil {
+		dragTo = cmd.DragTo.String()
+	}
+	return fmt.Sprintf("act=%s pos=%s drag_to=%s sid=%s aid=%s name=%s editable=%t text=%q wait_time=%d throttle=%.2f clear=%t adb_input=%t allow_fuzzing=%t raw_input=%t widget=%s",
+		cmd.Act.String(), cmd.Pos.String(), dragTo, cmd.Sid, cmd.Aid, cmd.Name, cmd.Editable, text, cmd.WaitTime, cmd.Throttle, cmd.Clear, cmd.AdbInput, cmd.AllowFuzzing, cmd.RawInput, widgetInfo)
 }
 
 func (cmd *ActionCommand) ToJSON() string {
@@ -129,6 +140,7 @@ func (cmd *ActionCommand) Equal(other *ActionCommand) bool {
 
 	return cmd.Act == other.Act &&
 		cmd.Pos.Equal(&other.Pos) &&
+		equalPoint(cmd.DragTo, other.DragTo) &&
 		cmd.Sid == other.Sid &&
 		cmd.Aid == other.Aid &&
 		cmd.Throttle == other.Throttle &&
@@ -150,6 +162,7 @@ func (cmd *ActionCommand) Clone() *ActionCommand {
 func (cmd *ActionCommand) Reset() {
 	cmd.Act = NOP
 	cmd.Pos = *NewRect(0, 0, 0, 0)
+	cmd.DragTo = nil
 	cmd.Sid = ""
 	cmd.Aid = ""
 	cmd.Throttle = 0
@@ -194,6 +207,20 @@ func truncateLogText(text string, max int) string {
 		return text[:max]
 	}
 	return text[:max-3] + "..."
+}
+
+func clonePoint(src *Point) *Point {
+	if src == nil {
+		return nil
+	}
+	return NewPoint(src.X, src.Y)
+}
+
+func equalPoint(left *Point, right *Point) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return left.Equal(right)
 }
 
 func (cmd *ActionCommand) IsTextInput() bool {

@@ -15,6 +15,7 @@ type StatefulActionSet = coretypes.StatefulActionSet
 var (
 	NOPAction      = coretypes.NOPAction
 	ACTIVATEAction = coretypes.ACTIVATEAction
+	INPUTAction    = coretypes.INPUTAction
 	RESTARTAction  = coretypes.RESTARTAction
 )
 

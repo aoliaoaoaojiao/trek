@@ -17,7 +17,7 @@ func (f *ActionFilterValidDatePriority) Include(action *types.StatefulAction) bo
 	switch action.GetActionType() {
 	case types.START, types.RESTART, types.CLEAN_RESTART, types.NOP, types.ACTIVATE, types.BACK:
 		return true
-	case types.CLICK, types.LONG_CLICK, types.SCROLL_BOTTOM_UP, types.SCROLL_TOP_DOWN, types.SCROLL_LEFT_RIGHT, types.SCROLL_RIGHT_LEFT, types.SCROLL_BOTTOM_UP_N:
+	case types.CLICK, types.LONG_CLICK, types.INPUT, types.SCROLL_BOTTOM_UP, types.SCROLL_TOP_DOWN, types.SCROLL_LEFT_RIGHT, types.SCROLL_RIGHT_LEFT, types.SCROLL_BOTTOM_UP_N:
 		return action.GetEnabled() && action.IsValid() && !action.IsEmpty()
 	default:
 		return false
@@ -30,4 +30,3 @@ func (f *ActionFilterValidDatePriority) GetPriority(action *types.StatefulAction
 	}
 	return action.GetPriority()
 }
-

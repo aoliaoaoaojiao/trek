@@ -40,7 +40,19 @@ func (r *Runner) execute(cmd *types.ActionCommand) error {
 			return err
 		}
 		return r.tryInputText(cmd)
+	case types.INPUT:
+		pt, err := centerPoint(cmd.Pos)
+		if err != nil {
+			return err
+		}
+		if err = r.driver.Click(pt); err != nil {
+			return err
+		}
+		return r.tryInputText(cmd)
 	case types.SCROLL_BOTTOM_UP, types.SCROLL_TOP_DOWN, types.SCROLL_LEFT_RIGHT, types.SCROLL_RIGHT_LEFT:
+		if cmd.DragTo != nil {
+			return r.dragByTarget(cmd)
+		}
 		return r.swipeByAction(cmd.Pos, cmd.Act)
 	case types.SCROLL_BOTTOM_UP_N:
 		repeat := r.cfg.ScrollRepeat
@@ -294,6 +306,17 @@ func (r *Runner) swipeByAction(rect types.Rect, act types.ActionType) error {
 		return err
 	}
 	return r.driver.Swipe(start, end, r.cfg.ScrollSteps, r.cfg.ScrollDuration.Milliseconds())
+}
+
+func (r *Runner) dragByTarget(cmd *types.ActionCommand) error {
+	if cmd == nil || cmd.DragTo == nil {
+		return fmt.Errorf("拖拽终点为空")
+	}
+	start, err := centerPoint(cmd.Pos)
+	if err != nil {
+		return err
+	}
+	return r.driver.Swipe(start, *cmd.DragTo, r.cfg.ScrollSteps, r.cfg.ScrollDuration.Milliseconds())
 }
 
 func resolveSwipePoints(rect types.Rect, act types.ActionType) (types.Point, types.Point, error) {

@@ -3,6 +3,7 @@ package monkey
 import (
 	"context"
 	"errors"
+	"math"
 	"math/rand"
 	"strings"
 	"testing"
@@ -353,6 +354,32 @@ func (f *fakeDriver) GetScreenRotation() (int, error) {
 		return 0, f.screenRotationErr
 	}
 	return f.screenRotation, nil
+}
+
+func TestRunnerExecuteUsesExplicitDragTarget(t *testing.T) {
+	driver := &fakeDriver{}
+	runner := &Runner{
+		driver: driver,
+		cfg: Config{
+			ScrollSteps:    10,
+			ScrollDuration: 200 * time.Millisecond,
+		},
+	}
+	cmd := &types.ActionCommand{
+		Act:    types.SCROLL_LEFT_RIGHT,
+		Pos:    *types.NewRect(0.2, 0.2, 0.4, 0.4),
+		DragTo: types.NewPoint(0.9, 0.3),
+	}
+
+	if err := runner.execute(cmd); err != nil {
+		t.Fatalf("执行带 drag_target 的拖拽失败: %v", err)
+	}
+	if math.Abs(driver.lastSwipeStart.X-0.3) > 1e-9 || math.Abs(driver.lastSwipeStart.Y-0.3) > 1e-9 {
+		t.Fatalf("拖拽起点应为控件中心，实际: %+v", driver.lastSwipeStart)
+	}
+	if math.Abs(driver.lastSwipeEnd.X-0.9) > 1e-9 || math.Abs(driver.lastSwipeEnd.Y-0.3) > 1e-9 {
+		t.Fatalf("拖拽终点应为显式 drag_target，实际: %+v", driver.lastSwipeEnd)
+	}
 }
 func (f *fakeDriver) CheckEnvironment(pageSourceType string) (*common.EnvironmentCheckResult, error) {
 	f.envCheckCnt++

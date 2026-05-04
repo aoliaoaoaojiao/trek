@@ -43,6 +43,8 @@ func (a *Action) GetPriorityByActionType() int32 {
 	switch a.ActionType {
 	case CLICK:
 		return 4
+	case INPUT:
+		return 4
 	case LONG_CLICK, SCROLL_TOP_DOWN, SCROLL_BOTTOM_UP, SCROLL_LEFT_RIGHT, SCROLL_RIGHT_LEFT:
 		return 2
 	default:
@@ -117,6 +119,7 @@ func (a *Action) String() string {
 var (
 	NOPAction      = NewAction(NOP)
 	ACTIVATEAction = NewAction(ACTIVATE)
+	INPUTAction    = NewAction(INPUT)
 	RESTARTAction  = NewAction(RESTART)
 )
 

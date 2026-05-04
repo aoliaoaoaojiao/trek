@@ -13,6 +13,7 @@ func TestActionCommandCompatibility(t *testing.T) {
 
 	cmd.Act = CLICK
 	cmd.Pos = *NewRect(1, 2, 3, 4)
+	cmd.DragTo = NewPoint(5, 6)
 	cmd.Text = "hello"
 
 	jsonText := cmd.ToJSON()
@@ -48,12 +49,14 @@ func TestActionCommandDetailLogString(t *testing.T) {
 	cmd.AdbInput = true
 	cmd.AllowFuzzing = false
 	cmd.RawInput = true
+	cmd.DragTo = NewPoint(5, 6)
 	cmd.WidgetInfo = "Widget{text:登录, bounds:[1,2,3,4], enabled:true}"
 
 	detail := cmd.DetailLogString()
 	expectedParts := []string{
 		"act=CLICK",
 		"pos=[1.000,2.000,3.000,4.000]",
+		"drag_to=(5,6)",
 		"sid=state-1",
 		"aid=action-2",
 		"name=login_btn",

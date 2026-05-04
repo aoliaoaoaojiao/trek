@@ -144,6 +144,8 @@ func toEngineActionType(actionType scripting.ActionType) (types.ActionType, bool
 		return types.CLICK, true
 	case scripting.ActionLongClick:
 		return types.LONG_CLICK, true
+	case scripting.ActionInput:
+		return types.INPUT, true
 	case scripting.ActionScrollTopDown:
 		return types.SCROLL_TOP_DOWN, true
 	case scripting.ActionScrollBottomUp:
@@ -175,6 +177,8 @@ func fromEngineActionType(actionType types.ActionType) scripting.ActionType {
 		return scripting.ActionClick
 	case types.LONG_CLICK:
 		return scripting.ActionLongClick
+	case types.INPUT:
+		return scripting.ActionInput
 	case types.SCROLL_TOP_DOWN:
 		return scripting.ActionScrollTopDown
 	case types.SCROLL_BOTTOM_UP:

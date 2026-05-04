@@ -27,6 +27,7 @@ const (
 	FEED               = coretypes.FEED
 	CLICK              = coretypes.CLICK
 	LONG_CLICK         = coretypes.LONG_CLICK
+	INPUT              = coretypes.INPUT
 	SCROLL_TOP_DOWN    = coretypes.SCROLL_TOP_DOWN
 	SCROLL_BOTTOM_UP   = coretypes.SCROLL_BOTTOM_UP
 	SCROLL_LEFT_RIGHT  = coretypes.SCROLL_LEFT_RIGHT
@@ -63,6 +64,8 @@ const (
 
 var RectZero = coretypes.RectZero
 
-func NewPoint(x, y float64) *Point               { return coretypes.NewPoint(x, y) }
-func NewRect(left, top, right, bottom float64) *Rect { return coretypes.NewRect(left, top, right, bottom) }
-func StringToScrollType(str string) ScrollType     { return coretypes.StringToScrollType(str) }
+func NewPoint(x, y float64) *Point { return coretypes.NewPoint(x, y) }
+func NewRect(left, top, right, bottom float64) *Rect {
+	return coretypes.NewRect(left, top, right, bottom)
+}
+func StringToScrollType(str string) ScrollType { return coretypes.StringToScrollType(str) }

@@ -170,7 +170,7 @@ func (m *Manager) installTrekAPI(vm *goja.Runtime) error {
 			return actionObject(ActionLongClick, bounds)
 		},
 		"input": func(bounds []float64, text string, options map[string]any) map[string]any {
-			action := actionObject(ActionClick, bounds)
+			action := actionObject(ActionInput, bounds)
 			action["text"] = text
 			action["clear"] = boolOption(options, "clear")
 			action["adb_input"] = boolOption(options, "adb_input")
@@ -274,7 +274,7 @@ func (m *Manager) installTrekAPI(vm *goja.Runtime) error {
 	return vm.Set("trek", map[string]any{
 		"action": actionAPI,
 		"page":   pageAPI,
-		"store": stateAPI,
+		"store":  stateAPI,
 		"log":    logAPI,
 	})
 }
@@ -343,8 +343,8 @@ func stepResultCtxToMap(ctx StepResultContext) map[string]any {
 func pageToMap(page PageSnapshot) map[string]any {
 	result := map[string]any{
 		"page_name": page.Name,
-		"xml":   page.XML,
-		"nodes": nodesToMaps(page.Nodes),
+		"xml":       page.XML,
+		"nodes":     nodesToMaps(page.Nodes),
 	}
 	if page.Screenshot != nil {
 		result["screenshot"] = map[string]any{

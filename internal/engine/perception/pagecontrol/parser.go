@@ -3,6 +3,7 @@ package pagecontrol
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"trek/internal/engine/decision/shared/types"
 	"trek/internal/engine/perception"
@@ -15,13 +16,14 @@ type Response struct {
 
 // Control 是单个控件输出。
 type Control struct {
-	ActionType  string  `json:"action_type"`
-	ControlType string  `json:"control_type"`
-	Text        string  `json:"text"`
-	Hint        string  `json:"hint"`
-	Clickable   *bool   `json:"clickable,omitempty"`
-	Confidence  float64 `json:"confidence"`
-	Bounds      Bounds  `json:"bounds"`
+	ActionType  string       `json:"action_type"`
+	ControlType string       `json:"control_type"`
+	Text        string       `json:"text"`
+	Hint        string       `json:"hint"`
+	Clickable   *bool        `json:"clickable,omitempty"`
+	Confidence  float64      `json:"confidence"`
+	DragTarget  *types.Point `json:"drag_target,omitempty"`
+	Bounds      Bounds       `json:"bounds"`
 }
 
 // Bounds 是控件区域边界。
@@ -107,6 +109,9 @@ func toCommand(raw Control) (*types.ActionCommand, bool) {
 	cmd := types.NewActionCommand()
 	cmd.Act = act
 	cmd.Pos = *types.NewRect(raw.Bounds.Left, raw.Bounds.Top, raw.Bounds.Right, raw.Bounds.Bottom)
+	if normalizeActionType(raw) == "drag" && raw.DragTarget != nil {
+		cmd.DragTo = types.NewPoint(raw.DragTarget.X, raw.DragTarget.Y)
+	}
 	return cmd, true
 }
 
@@ -115,7 +120,7 @@ func toActionType(raw Control) (types.ActionType, bool) {
 	case "click":
 		return types.CLICK, true
 	case "input":
-		return types.ACTIVATE, true
+		return types.INPUT, true
 	case "swipe_up":
 		return types.SCROLL_BOTTOM_UP, true
 	case "swipe_down":
@@ -125,7 +130,7 @@ func toActionType(raw Control) (types.ActionType, bool) {
 	case "swipe_right":
 		return types.SCROLL_LEFT_RIGHT, true
 	case "drag":
-		return inferDragAction(raw), true
+		return inferDragAction(raw)
 	default:
 		return types.NOP, false
 	}
@@ -144,16 +149,25 @@ func normalizeActionType(raw Control) string {
 	}
 }
 
-func inferDragAction(raw Control) types.ActionType {
-	label := strings.ToLower(strings.TrimSpace(raw.Text + " " + raw.Hint))
-	switch {
-	case strings.Contains(label, "左"), strings.Contains(label, "left"):
-		return types.SCROLL_RIGHT_LEFT
-	case strings.Contains(label, "右"), strings.Contains(label, "right"):
-		return types.SCROLL_LEFT_RIGHT
-	case strings.Contains(label, "下"), strings.Contains(label, "down"):
-		return types.SCROLL_TOP_DOWN
-	default:
-		return types.SCROLL_BOTTOM_UP
+func inferDragAction(raw Control) (types.ActionType, bool) {
+	if raw.DragTarget == nil {
+		return types.NOP, false
 	}
+	centerX := (raw.Bounds.Left + raw.Bounds.Right) / 2
+	centerY := (raw.Bounds.Top + raw.Bounds.Bottom) / 2
+	deltaX := raw.DragTarget.X - centerX
+	deltaY := raw.DragTarget.Y - centerY
+	if deltaX == 0 && deltaY == 0 {
+		return types.NOP, false
+	}
+	if math.Abs(deltaX) >= math.Abs(deltaY) {
+		if deltaX >= 0 {
+			return types.SCROLL_LEFT_RIGHT, true
+		}
+		return types.SCROLL_RIGHT_LEFT, true
+	}
+	if deltaY >= 0 {
+		return types.SCROLL_TOP_DOWN, true
+	}
+	return types.SCROLL_BOTTOM_UP, true
 }

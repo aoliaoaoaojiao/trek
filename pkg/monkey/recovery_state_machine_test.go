@@ -3,8 +3,8 @@ package monkey
 import (
 	"context"
 	"testing"
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 	"trek/pkg/session"
 )
@@ -239,9 +239,9 @@ func TestRunnerPrefersContextAwareBlockRecoveryDecider(t *testing.T) {
 }
 
 func TestRunnerPrefersPlannerCandidateAndSkipsLLMOnHighConfidenceMemory(t *testing.T) {
-	memoryCandidate := candidate.NewCandidate(
+	memoryCandidate := perception.NewCandidate(
 		&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.2, 0.2, 0.4, 0.4)},
-		candidate.SourceMemory,
+		perception.SourceMemory,
 		"点击主按钮",
 		nil,
 	)
@@ -258,10 +258,10 @@ func TestRunnerPrefersPlannerCandidateAndSkipsLLMOnHighConfidenceMemory(t *testi
 				recoveryAction: &types.ActionCommand{Act: types.BACK},
 			},
 		},
-		memoryCandidates:    []candidate.Candidate{memoryCandidate},
+		memoryCandidates:    []perception.Candidate{memoryCandidate},
 		heuristicCandidates: nil,
-		llmCandidates: []candidate.Candidate{
-			candidate.NewCandidate(&types.ActionCommand{Act: types.BACK}, candidate.SourceLLM, "llm back", nil),
+		llmCandidates: []perception.Candidate{
+			perception.NewCandidate(&types.ActionCommand{Act: types.BACK}, perception.SourceLLM, "llm back", nil),
 		},
 	}
 	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}
@@ -303,14 +303,14 @@ func TestRunnerPrefersPlannerCandidateAndSkipsLLMOnHighConfidenceMemory(t *testi
 }
 
 func TestRunnerRecordsRecoveryOutcomeAfterPlannerSelection(t *testing.T) {
-	memoryCandidate := candidate.NewCandidate(
+	memoryCandidate := perception.NewCandidate(
 		&types.ActionCommand{Act: types.BACK},
-		candidate.SourceMemory,
+		perception.SourceMemory,
 		"memory_back",
 		map[string]string{"memory_key": "k1"},
 	)
 	decider := &plannerAwareRecoveryDecider{
-		memoryCandidates: []candidate.Candidate{memoryCandidate},
+		memoryCandidates: []perception.Candidate{memoryCandidate},
 	}
 	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}
 
@@ -351,7 +351,7 @@ func TestRunnerRecordsRecoveryOutcomeAfterPlannerSelection(t *testing.T) {
 	if decider.lastOutcomeContext.BlockReason != "same_page_no_change" {
 		t.Fatalf("写回上下文 block reason 错误: %s", decider.lastOutcomeContext.BlockReason)
 	}
-	if decider.lastOutcomeItem.Source != candidate.SourceMemory {
+	if decider.lastOutcomeItem.Source != perception.SourceMemory {
 		t.Fatalf("写回候选来源错误: %s", decider.lastOutcomeItem.Source)
 	}
 }
@@ -376,8 +376,8 @@ func TestRunnerRecordRecoveryOutcomeSkipsWhenNoRecoveryAttempt(t *testing.T) {
 
 func TestRunnerRecoveryPlannerDoesNotUseLLMConfig(t *testing.T) {
 	decider := &plannerAwareRecoveryDecider{
-		llmCandidates: []candidate.Candidate{
-			candidate.NewCandidate(&types.ActionCommand{Act: types.BACK}, candidate.SourceLLM, "llm_back", nil),
+		llmCandidates: []perception.Candidate{
+			perception.NewCandidate(&types.ActionCommand{Act: types.BACK}, perception.SourceLLM, "llm_back", nil),
 		},
 	}
 	runner, err := NewRunner(decider, &fakeDriver{}, Config{
@@ -427,8 +427,8 @@ func TestRunnerRecoveryPlannerDoesNotPassKnownActionsToLLMContext(t *testing.T) 
 	successCmd := &types.ActionCommand{Act: types.BACK}
 	failedCmd := &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}
 	decider := &plannerAwareRecoveryDecider{
-		llmCandidates: []candidate.Candidate{
-			candidate.NewCandidate(successCmd, candidate.SourceLLM, "llm_back", nil),
+		llmCandidates: []perception.Candidate{
+			perception.NewCandidate(successCmd, perception.SourceLLM, "llm_back", nil),
 		},
 		persistedFailed: map[string]bool{
 			failedCmd.ToJSON(): true,
@@ -461,16 +461,16 @@ func TestRunnerRecoveryPlannerDoesNotPassKnownActionsToLLMContext(t *testing.T) 
 }
 
 func TestRunnerRecoveryPlannerUsesFusedCandidateRanking(t *testing.T) {
-	lowMemory := candidate.NewCandidate(
+	lowMemory := perception.NewCandidate(
 		&types.ActionCommand{Act: types.BACK},
-		candidate.SourceMemory,
+		perception.SourceMemory,
 		"memory_back",
 		nil,
 	)
 	lowMemory.Confidence = 0.1
-	highHeuristic := candidate.NewCandidate(
+	highHeuristic := perception.NewCandidate(
 		&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.2, 0.2, 0.4, 0.4)},
-		candidate.SourceHeuristic,
+		perception.SourceHeuristic,
 		"heuristic_click",
 		nil,
 	)
@@ -487,8 +487,8 @@ func TestRunnerRecoveryPlannerUsesFusedCandidateRanking(t *testing.T) {
 				},
 			},
 		},
-		memoryCandidates:    []candidate.Candidate{lowMemory},
-		heuristicCandidates: []candidate.Candidate{highHeuristic},
+		memoryCandidates:    []perception.Candidate{lowMemory},
+		heuristicCandidates: []perception.Candidate{highHeuristic},
 	}
 	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}
 
@@ -520,17 +520,17 @@ func TestRunnerRecoveryPlannerUsesFusedCandidateRanking(t *testing.T) {
 }
 
 func TestRunnerRecoveryPlannerPenalizesKnownFailedAction(t *testing.T) {
-	backCandidate := candidate.NewCandidate(
+	backCandidate := perception.NewCandidate(
 		&types.ActionCommand{Act: types.BACK},
-		candidate.SourceMemory,
+		perception.SourceMemory,
 		"memory_back",
 		nil,
 	)
 	backCandidate.Confidence = 0.95
 
-	clickCandidate := candidate.NewCandidate(
+	clickCandidate := perception.NewCandidate(
 		&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.2, 0.2, 0.4, 0.4)},
-		candidate.SourceHeuristic,
+		perception.SourceHeuristic,
 		"heuristic_click",
 		nil,
 	)
@@ -538,8 +538,8 @@ func TestRunnerRecoveryPlannerPenalizesKnownFailedAction(t *testing.T) {
 	clickCandidate.EscapeScore = 0.2
 
 	decider := &plannerAwareRecoveryDecider{
-		memoryCandidates:    []candidate.Candidate{backCandidate},
-		heuristicCandidates: []candidate.Candidate{clickCandidate},
+		memoryCandidates:    []perception.Candidate{backCandidate},
+		heuristicCandidates: []perception.Candidate{clickCandidate},
 	}
 	runner, err := NewRunner(decider, &fakeDriver{}, Config{
 		StepInterval: 0,
@@ -579,17 +579,17 @@ func TestRunnerRecoveryPlannerPenalizesKnownFailedAction(t *testing.T) {
 }
 
 func TestRunnerRecoveryPlannerPenalizesPersistedFailedAction(t *testing.T) {
-	backCandidate := candidate.NewCandidate(
+	backCandidate := perception.NewCandidate(
 		&types.ActionCommand{Act: types.BACK},
-		candidate.SourceMemory,
+		perception.SourceMemory,
 		"memory_back",
 		nil,
 	)
 	backCandidate.Confidence = 0.95
 
-	clickCandidate := candidate.NewCandidate(
+	clickCandidate := perception.NewCandidate(
 		&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.2, 0.2, 0.4, 0.4)},
-		candidate.SourceHeuristic,
+		perception.SourceHeuristic,
 		"heuristic_click",
 		nil,
 	)
@@ -597,8 +597,8 @@ func TestRunnerRecoveryPlannerPenalizesPersistedFailedAction(t *testing.T) {
 	clickCandidate.EscapeScore = 0.2
 
 	decider := &plannerAwareRecoveryDecider{
-		memoryCandidates:    []candidate.Candidate{backCandidate},
-		heuristicCandidates: []candidate.Candidate{clickCandidate},
+		memoryCandidates:    []perception.Candidate{backCandidate},
+		heuristicCandidates: []perception.Candidate{clickCandidate},
 		persistedFailed: map[string]bool{
 			(&types.ActionCommand{Act: types.BACK}).ToJSON(): true,
 		},

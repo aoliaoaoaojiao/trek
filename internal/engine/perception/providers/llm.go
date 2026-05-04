@@ -1,6 +1,6 @@
 package providers
 
-import candidatellm "trek/internal/engine/candidate/providers/llm"
+import candidatellm "trek/internal/engine/perception/providers/llm"
 
 // LLMHTTPProviderConfig 是通用 HTTP LLM provider 的对外配置入口。
 type LLMHTTPProviderConfig = candidatellm.LLMHTTPProviderConfig

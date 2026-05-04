@@ -2,19 +2,19 @@ package recovery
 
 import (
 	"testing"
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 )
 
 type stubProvider struct {
-	candidates []candidate.Candidate
+	candidates []perception.Candidate
 	calls      int
 	err        error
 	lastCtx    enginestate.TraversalContext
 }
 
-func (s *stubProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (s *stubProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	s.calls++
 	s.lastCtx = ctx
 	return s.candidates, s.err
@@ -42,18 +42,18 @@ func TestPlannerBuildRecoveryCandidatesAggregatesProvidersInOrder(t *testing.T) 
 		BlockReason: "scroll_no_change",
 	})
 	memory := &stubProvider{
-		candidates: []candidate.Candidate{
-			candidate.NewCandidate(&types.ActionCommand{Act: types.BACK}, candidate.SourceMemory, "返回上一层", nil),
+		candidates: []perception.Candidate{
+			perception.NewCandidate(&types.ActionCommand{Act: types.BACK}, perception.SourceMemory, "返回上一层", nil),
 		},
 	}
 	heuristic := &stubProvider{
-		candidates: []candidate.Candidate{
-			candidate.NewCandidate(&types.ActionCommand{Act: types.CLICK}, candidate.SourceHeuristic, "点击主按钮", nil),
+		candidates: []perception.Candidate{
+			perception.NewCandidate(&types.ActionCommand{Act: types.CLICK}, perception.SourceHeuristic, "点击主按钮", nil),
 		},
 	}
 	llm := &stubProvider{
-		candidates: []candidate.Candidate{
-			candidate.NewCandidate(&types.ActionCommand{Act: types.LONG_CLICK}, candidate.SourceLLM, "长按试探", nil),
+		candidates: []perception.Candidate{
+			perception.NewCandidate(&types.ActionCommand{Act: types.LONG_CLICK}, perception.SourceLLM, "长按试探", nil),
 		},
 	}
 
@@ -70,7 +70,7 @@ func TestPlannerBuildRecoveryCandidatesAggregatesProvidersInOrder(t *testing.T) 
 	if len(items) != 3 {
 		t.Fatalf("恢复候选数量错误: %d", len(items))
 	}
-	if items[0].Source != candidate.SourceMemory || items[1].Source != candidate.SourceHeuristic || items[2].Source != candidate.SourceLLM {
+	if items[0].Source != perception.SourceMemory || items[1].Source != perception.SourceHeuristic || items[2].Source != perception.SourceLLM {
 		t.Fatalf("恢复候选顺序错误: %#v", []string{items[0].Source, items[1].Source, items[2].Source})
 	}
 	if memory.calls != 1 || heuristic.calls != 1 || llm.calls != 1 {
@@ -84,18 +84,18 @@ func TestPlannerSkipsLLMWhenMemoryHasHighConfidenceCandidate(t *testing.T) {
 		PageName:    "MainActivity",
 		BlockReason: "two_state_ping_pong",
 	})
-	memoryCandidate := candidate.NewCandidate(&types.ActionCommand{Act: types.BACK}, candidate.SourceMemory, "返回上一层", nil)
+	memoryCandidate := perception.NewCandidate(&types.ActionCommand{Act: types.BACK}, perception.SourceMemory, "返回上一层", nil)
 	memoryCandidate.Confidence = 0.95
 
-	memory := &stubProvider{candidates: []candidate.Candidate{memoryCandidate}}
+	memory := &stubProvider{candidates: []perception.Candidate{memoryCandidate}}
 	heuristic := &stubProvider{
-		candidates: []candidate.Candidate{
-			candidate.NewCandidate(&types.ActionCommand{Act: types.CLICK}, candidate.SourceHeuristic, "点击主按钮", nil),
+		candidates: []perception.Candidate{
+			perception.NewCandidate(&types.ActionCommand{Act: types.CLICK}, perception.SourceHeuristic, "点击主按钮", nil),
 		},
 	}
 	llm := &stubProvider{
-		candidates: []candidate.Candidate{
-			candidate.NewCandidate(&types.ActionCommand{Act: types.LONG_CLICK}, candidate.SourceLLM, "长按试探", nil),
+		candidates: []perception.Candidate{
+			perception.NewCandidate(&types.ActionCommand{Act: types.LONG_CLICK}, perception.SourceLLM, "长按试探", nil),
 		},
 	}
 
@@ -128,8 +128,8 @@ func TestPlannerSkipsLLMWhenBudgetDenied(t *testing.T) {
 	memory := &stubProvider{}
 	heuristic := &stubProvider{}
 	llm := &stubProvider{
-		candidates: []candidate.Candidate{
-			candidate.NewCandidate(&types.ActionCommand{Act: types.BACK}, candidate.SourceLLM, "llm back", nil),
+		candidates: []perception.Candidate{
+			perception.NewCandidate(&types.ActionCommand{Act: types.BACK}, perception.SourceLLM, "llm back", nil),
 		},
 	}
 	budget := &stubBudget{allow: false}
@@ -166,13 +166,13 @@ func TestPlannerPassesLocalCandidateSummaryToLLMContext(t *testing.T) {
 		BlockReason: "same_page_no_change",
 	})
 	memory := &stubProvider{
-		candidates: []candidate.Candidate{
-			candidate.NewCandidate(&types.ActionCommand{Act: types.BACK}, candidate.SourceMemory, "返回", nil),
+		candidates: []perception.Candidate{
+			perception.NewCandidate(&types.ActionCommand{Act: types.BACK}, perception.SourceMemory, "返回", nil),
 		},
 	}
 	heuristic := &stubProvider{
-		candidates: []candidate.Candidate{
-			candidate.NewCandidate(&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}, candidate.SourceHeuristic, "点击", nil),
+		candidates: []perception.Candidate{
+			perception.NewCandidate(&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}, perception.SourceHeuristic, "点击", nil),
 		},
 	}
 	llm := &stubProvider{}
@@ -202,8 +202,8 @@ func TestPlannerRecordsLLMCallbacks(t *testing.T) {
 		BlockReason: "same_page_no_change",
 	})
 	llm := &stubProvider{
-		candidates: []candidate.Candidate{
-			candidate.NewCandidate(&types.ActionCommand{Act: types.BACK}, candidate.SourceLLM, "llm", nil),
+		candidates: []perception.Candidate{
+			perception.NewCandidate(&types.ActionCommand{Act: types.BACK}, perception.SourceLLM, "llm", nil),
 		},
 	}
 	llmCalls := 0

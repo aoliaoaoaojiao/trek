@@ -3,8 +3,8 @@ package traversal_test
 import (
 	"testing"
 
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	"trek/internal/engine/traversal"
 )
 
@@ -42,7 +42,7 @@ func TestReuseAdapterSelectActionWithNoCandidates(t *testing.T) {
 func TestReuseAdapterSelectActionEmptySlice(t *testing.T) {
 	adapter := traversal.NewReuseAdapter(nil, nil)
 	ctx := testTraversalContext()
-	cmd, err := adapter.SelectAction(ctx, []candidate.Candidate{})
+	cmd, err := adapter.SelectAction(ctx, []perception.Candidate{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -74,12 +74,12 @@ func TestReuseAdapterObserveOutcomeAffectsSelection(t *testing.T) {
 		t.Fatalf("observe outcome 失败: %v", err)
 	}
 
-	backCandidate := candidate.NewCandidate(backCmd, candidate.SourceMemory, "back", nil)
+	backCandidate := perception.NewCandidate(backCmd, perception.SourceMemory, "back", nil)
 	backCandidate.Confidence = 0.5
-	clickCandidate := candidate.NewCandidate(clickCmd, candidate.SourceMemory, "click", nil)
+	clickCandidate := perception.NewCandidate(clickCmd, perception.SourceMemory, "click", nil)
 	clickCandidate.Confidence = 0.5
 
-	cmd, err := adapter.SelectAction(ctx, []candidate.Candidate{backCandidate, clickCandidate})
+	cmd, err := adapter.SelectAction(ctx, []perception.Candidate{backCandidate, clickCandidate})
 	if err != nil {
 		t.Fatalf("select action 失败: %v", err)
 	}
@@ -99,10 +99,10 @@ func TestReuseAdapterSelectActionPrefersAlgorithmCandidates(t *testing.T) {
 	backCmd := types.NewActionCommand()
 	backCmd.Act = types.BACK
 
-	candidates := []candidate.Candidate{
-		candidate.NewCandidate(backCmd, candidate.SourceMemory, "go_back", nil),
-		candidate.NewCandidate(clickCmd, candidate.SourceAlgorithm, "click_search", nil),
-		candidate.NewCandidate(backCmd, candidate.SourceHeuristic, "escape_back", nil),
+	candidates := []perception.Candidate{
+		perception.NewCandidate(backCmd, perception.SourceMemory, "go_back", nil),
+		perception.NewCandidate(clickCmd, perception.SourceAlgorithm, "click_search", nil),
+		perception.NewCandidate(backCmd, perception.SourceHeuristic, "escape_back", nil),
 	}
 
 	cmd, err := adapter.SelectAction(ctx, candidates)
@@ -124,8 +124,8 @@ func TestReuseAdapterSelectActionFallbackToAnyValid(t *testing.T) {
 	backCmd := types.NewActionCommand()
 	backCmd.Act = types.BACK
 
-	candidates := []candidate.Candidate{
-		candidate.NewCandidate(backCmd, candidate.SourceMemory, "go_back", nil),
+	candidates := []perception.Candidate{
+		perception.NewCandidate(backCmd, perception.SourceMemory, "go_back", nil),
 	}
 
 	cmd, err := adapter.SelectAction(ctx, candidates)

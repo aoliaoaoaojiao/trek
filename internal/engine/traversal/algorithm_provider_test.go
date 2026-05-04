@@ -3,25 +3,25 @@ package traversal_test
 import (
 	"testing"
 
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 	"trek/internal/engine/traversal"
 )
 
 // mockProviderAlgorithm 用于测试 AlgorithmProvider 的候选生成。
 type mockProviderAlgorithm struct {
-	candidates []candidate.Candidate
+	candidates []perception.Candidate
 	name       string
 }
 
 func (m *mockProviderAlgorithm) Name() string { return m.name }
 
-func (m *mockProviderAlgorithm) ProposeCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (m *mockProviderAlgorithm) ProposeCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	return m.candidates, nil
 }
 
-func (m *mockProviderAlgorithm) SelectAction(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types.ActionCommand, error) {
+func (m *mockProviderAlgorithm) SelectAction(ctx enginestate.TraversalContext, candidates []perception.Candidate) (*types.ActionCommand, error) {
 	if len(candidates) == 0 {
 		return nil, nil
 	}
@@ -35,8 +35,8 @@ func (m *mockProviderAlgorithm) ObserveOutcome(ctx enginestate.TraversalContext,
 func TestAlgorithmProviderBuildCandidates(t *testing.T) {
 	algo := &mockProviderAlgorithm{
 		name: "mock_algo",
-		candidates: []candidate.Candidate{
-			candidate.NewCandidate(nil, candidate.SourceAlgorithm, "click_search", nil),
+		candidates: []perception.Candidate{
+			perception.NewCandidate(nil, perception.SourceAlgorithm, "click_search", nil),
 		},
 	}
 	provider := traversal.NewAlgorithmProvider(algo)
@@ -49,8 +49,8 @@ func TestAlgorithmProviderBuildCandidates(t *testing.T) {
 	if len(result) != 1 {
 		t.Fatalf("expected 1 candidate, got %d", len(result))
 	}
-	if result[0].Source != candidate.SourceAlgorithm {
-		t.Errorf("expected source %s, got %s", candidate.SourceAlgorithm, result[0].Source)
+	if result[0].Source != perception.SourceAlgorithm {
+		t.Errorf("expected source %s, got %s", perception.SourceAlgorithm, result[0].Source)
 	}
 	if result[0].Intent != "click_search" {
 		t.Errorf("expected intent click_search, got %s", result[0].Intent)

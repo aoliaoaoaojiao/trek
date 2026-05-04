@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 )
 
@@ -60,7 +60,7 @@ func TestLLMHTTPProviderBuildCandidates(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("候选数量错误: %d", len(items))
 	}
-	if items[0].Source != candidate.SourceLLM || items[1].Source != candidate.SourceLLM {
+	if items[0].Source != perception.SourceLLM || items[1].Source != perception.SourceLLM {
 		t.Fatalf("候选来源错误: %s %s", items[0].Source, items[1].Source)
 	}
 	if items[0].Metadata["llm_reason"] == "" {

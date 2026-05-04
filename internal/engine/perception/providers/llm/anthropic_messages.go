@@ -10,7 +10,8 @@ import (
 	"path"
 	"strings"
 	"time"
-	"trek/internal/engine/candidate"
+	"trek/internal/engine/perception"
+	"trek/internal/engine/perception/pagecontrol"
 	enginestate "trek/internal/engine/state"
 )
 
@@ -93,7 +94,7 @@ func normalizeAnthropicMessagesURL(rawURL string) (string, error) {
 }
 
 // BuildCandidates 调用 Anthropic Messages API 构建恢复候选。
-func (p *AnthropicMessagesProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (p *AnthropicMessagesProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if p == nil {
 		return nil, nil
 	}
@@ -120,7 +121,7 @@ func (p *AnthropicMessagesProvider) BuildCandidates(ctx enginestate.TraversalCon
 }
 
 // DetectPageControls 调用 Anthropic Messages API 输出页面控件区域。
-func (p *AnthropicMessagesProvider) DetectPageControls(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (p *AnthropicMessagesProvider) DetectPageControls(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if p == nil {
 		return nil, nil
 	}
@@ -139,11 +140,11 @@ func (p *AnthropicMessagesProvider) DetectPageControls(ctx enginestate.Traversal
 	if err != nil {
 		return nil, err
 	}
-	var output pageControlResponse
+	var output pagecontrol.Response
 	if err := json.Unmarshal([]byte(text), &output); err != nil {
 		return nil, fmt.Errorf("解析 anthropic 控件检测输出失败: %w", err)
 	}
-	return parsePageControlCandidates(output), nil
+	return pagecontrol.ParseCandidates(output), nil
 }
 
 func (p *AnthropicMessagesProvider) buildRequestPayload(ctx enginestate.TraversalContext) ([]byte, error) {
@@ -164,7 +165,7 @@ func (p *AnthropicMessagesProvider) buildRequestPayload(ctx enginestate.Traversa
 }
 
 func (p *AnthropicMessagesProvider) buildPageControlRequestPayload(ctx enginestate.TraversalContext) ([]byte, error) {
-	prompt := buildPageControlPrompt(ctx)
+	prompt := pagecontrol.BuildPrompt(ctx)
 	userContent := p.buildUserContent(prompt.UserContent, prompt.ScreenshotMediaType, prompt.ScreenshotBase64())
 	payload := map[string]any{
 		"model":      p.model,

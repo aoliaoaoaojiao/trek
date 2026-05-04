@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 )
 
@@ -49,7 +49,7 @@ func TestOCRHTTPProviderBuildCandidatesWithNormalizedBounds(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("候选数量错误: %d", len(items))
 	}
-	if items[0].Source != candidate.SourceOCR {
+	if items[0].Source != perception.SourceOCR {
 		t.Fatalf("候选来源错误: %s", items[0].Source)
 	}
 	if items[0].Command == nil || items[0].Command.Act != types.CLICK {

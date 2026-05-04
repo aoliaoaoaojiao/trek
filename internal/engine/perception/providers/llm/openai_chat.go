@@ -9,7 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
-	"trek/internal/engine/candidate"
+	"trek/internal/engine/perception"
+	"trek/internal/engine/perception/pagecontrol"
 	enginestate "trek/internal/engine/state"
 )
 
@@ -67,7 +68,7 @@ func NewOpenAIChatProvider(cfg OpenAIChatProviderConfig) (*OpenAIChatProvider, e
 }
 
 // BuildCandidates 调用 OpenAI Chat Completions API 构建恢复候选。
-func (p *OpenAIChatProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (p *OpenAIChatProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if p == nil {
 		return nil, nil
 	}
@@ -95,7 +96,7 @@ func (p *OpenAIChatProvider) BuildCandidates(ctx enginestate.TraversalContext) (
 }
 
 // DetectPageControls 调用 Chat Completions 输出页面控件区域。
-func (p *OpenAIChatProvider) DetectPageControls(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (p *OpenAIChatProvider) DetectPageControls(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if p == nil {
 		return nil, nil
 	}
@@ -114,11 +115,11 @@ func (p *OpenAIChatProvider) DetectPageControls(ctx enginestate.TraversalContext
 	if err != nil {
 		return nil, err
 	}
-	var output pageControlResponse
+	var output pagecontrol.Response
 	if err := json.Unmarshal([]byte(text), &output); err != nil {
 		return nil, fmt.Errorf("解析 openai chat 控件检测输出失败: %w", err)
 	}
-	return parsePageControlCandidates(output), nil
+	return pagecontrol.ParseCandidates(output), nil
 }
 
 // buildRequestPayload 构建 Chat Completions API 请求载荷。
@@ -166,7 +167,7 @@ func (p *OpenAIChatProvider) buildRequestPayload(ctx enginestate.TraversalContex
 }
 
 func (p *OpenAIChatProvider) buildPageControlRequestPayload(ctx enginestate.TraversalContext) ([]byte, error) {
-	prompt := buildPageControlPrompt(ctx)
+	prompt := pagecontrol.BuildPrompt(ctx)
 	userContent := []map[string]any{
 		{"type": "text", "text": prompt.UserContent},
 	}
@@ -267,12 +268,12 @@ func extractChatContent(body []byte) (string, error) {
 
 // parseLLMCandidates 将 LLM 响应解析为统一候选列表。
 // OpenAI Chat 和 Responses provider 共享此解析逻辑。
-func parseLLMCandidates(output llmResponse) []candidate.Candidate {
+func parseLLMCandidates(output llmResponse) []perception.Candidate {
 	rawCandidates := output.Candidates
 	if len(rawCandidates) == 0 {
 		rawCandidates = output.Actions
 	}
-	items := make([]candidate.Candidate, 0, len(rawCandidates))
+	items := make([]perception.Candidate, 0, len(rawCandidates))
 	for _, raw := range rawCandidates {
 		cmd, ok := toActionCommand(raw)
 		if !ok || cmd == nil || !cmd.IsValid() {
@@ -285,7 +286,7 @@ func parseLLMCandidates(output llmResponse) []candidate.Candidate {
 		if strings.TrimSpace(raw.TargetHint) != "" {
 			metadata["llm_target_hint"] = strings.TrimSpace(raw.TargetHint)
 		}
-		item := candidate.NewCandidate(cmd, candidate.SourceLLM, strings.TrimSpace(raw.Intent), metadata)
+		item := perception.NewCandidate(cmd, perception.SourceLLM, strings.TrimSpace(raw.Intent), metadata)
 		item.Confidence = raw.Confidence
 		if raw.EscapeScore > 0 {
 			item.EscapeScore = raw.EscapeScore

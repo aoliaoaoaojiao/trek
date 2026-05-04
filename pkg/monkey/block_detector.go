@@ -43,13 +43,13 @@ func newBlockDetector(noChangeThreshold int, twoStateLoopThreshold int, highVisi
 		lowRewardWindow = defaultLowRewardWindow
 	}
 	return &blockDetector{
-		noChangeThreshold:  noChangeThreshold,
+		noChangeThreshold:     noChangeThreshold,
 		twoStateLoopThreshold: twoStateLoopThreshold,
-		highVisitThreshold: highVisitThreshold,
-		lowRewardWindow:    lowRewardWindow,
-		recentAfterSigs:    make([]string, 0, 8),
-		recentObservedSigs: make([]string, 0, 16),
-		pageVisitCount:     make(map[string]int),
+		highVisitThreshold:    highVisitThreshold,
+		lowRewardWindow:       lowRewardWindow,
+		recentAfterSigs:       make([]string, 0, 8),
+		recentObservedSigs:    make([]string, 0, 16),
+		pageVisitCount:        make(map[string]int),
 	}
 }
 

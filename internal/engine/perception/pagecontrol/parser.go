@@ -1,45 +1,46 @@
-package llm
+package pagecontrol
 
 import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 )
 
-type pageControlResponse struct {
-	Controls []llmControl `json:"controls"`
+// Response 是页面控件检测的结构化响应。
+type Response struct {
+	Controls []Control `json:"controls"`
 }
 
-type llmControl struct {
-	ControlType string    `json:"control_type"`
-	Text        string    `json:"text"`
-	Hint        string    `json:"hint"`
-	Clickable   *bool     `json:"clickable,omitempty"`
-	Confidence  float64   `json:"confidence"`
-	Bounds      llmBounds `json:"bounds"`
+// Control 是单个控件输出。
+type Control struct {
+	ControlType string  `json:"control_type"`
+	Text        string  `json:"text"`
+	Hint        string  `json:"hint"`
+	Clickable   *bool   `json:"clickable,omitempty"`
+	Confidence  float64 `json:"confidence"`
+	Bounds      Bounds  `json:"bounds"`
 }
 
-type llmBounds struct {
+// Bounds 是控件区域边界。
+type Bounds struct {
 	Left   float64 `json:"left"`
 	Top    float64 `json:"top"`
 	Right  float64 `json:"right"`
 	Bottom float64 `json:"bottom"`
 }
 
-// UnmarshalJSON 兼容两类 bounds 输出：
-// 1. 对象格式：{"left":...,"top":...,"right":...,"bottom":...}
-// 2. 数组格式：[left, top, right, bottom]
-func (b *llmBounds) UnmarshalJSON(data []byte) error {
+// UnmarshalJSON 兼容对象格式与四元数组格式。
+func (b *Bounds) UnmarshalJSON(data []byte) error {
 	if b == nil {
-		return fmt.Errorf("llmBounds 不能为空")
+		return fmt.Errorf("Bounds 不能为空")
 	}
 
-	type boundsObject llmBounds
+	type boundsObject Bounds
 	var obj boundsObject
 	if err := json.Unmarshal(data, &obj); err == nil {
-		*b = llmBounds(obj)
+		*b = Bounds(obj)
 		return nil
 	}
 
@@ -58,10 +59,11 @@ func (b *llmBounds) UnmarshalJSON(data []byte) error {
 	return fmt.Errorf("bounds 格式非法: %s", string(data))
 }
 
-func parsePageControlCandidates(output pageControlResponse) []candidate.Candidate {
-	items := make([]candidate.Candidate, 0, len(output.Controls))
+// ParseCandidates 将页面控件响应转换为统一候选列表。
+func ParseCandidates(output Response) []perception.Candidate {
+	items := make([]perception.Candidate, 0, len(output.Controls))
 	for _, raw := range output.Controls {
-		cmd, ok := toPageControlCommand(raw)
+		cmd, ok := toCommand(raw)
 		if !ok || cmd == nil || !cmd.IsValid() {
 			continue
 		}
@@ -85,14 +87,14 @@ func parsePageControlCandidates(output pageControlResponse) []candidate.Candidat
 				metadata["llm_clickable"] = "false"
 			}
 		}
-		item := candidate.NewCandidate(cmd, candidate.SourceLLM, intent, metadata)
+		item := perception.NewCandidate(cmd, perception.SourceLLM, intent, metadata)
 		item.Confidence = raw.Confidence
 		items = append(items, item)
 	}
 	return items
 }
 
-func toPageControlCommand(raw llmControl) (*types.ActionCommand, bool) {
+func toCommand(raw Control) (*types.ActionCommand, bool) {
 	if raw.Bounds.Right <= raw.Bounds.Left || raw.Bounds.Bottom <= raw.Bounds.Top {
 		return nil, false
 	}

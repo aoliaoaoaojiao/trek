@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"trek/internal/engine/candidate"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 
 	"github.com/glebarez/sqlite"
@@ -34,11 +34,11 @@ type recoveryMemoryRow struct {
 	TraceSignature   string `gorm:"size:2048"`
 	Mode             string `gorm:"size:64;index"`
 
-	CandidateJSON string  `gorm:"type:text"`
-	Outcome       string  `gorm:"size:64"`
-	EscapeScore   float64 `gorm:"not null;default:0"`
-	SuccessCount  int     `gorm:"not null;default:0"`
-	FailCount     int     `gorm:"not null;default:0"`
+	ItemJSON     string  `gorm:"type:text"`
+	Outcome      string  `gorm:"size:64"`
+	EscapeScore  float64 `gorm:"not null;default:0"`
+	SuccessCount int     `gorm:"not null;default:0"`
+	FailCount    int     `gorm:"not null;default:0"`
 
 	LastUsedAt       time.Time `gorm:"index"`
 	RecordCreatedAt  time.Time `gorm:"column:record_created_at;index"`
@@ -251,7 +251,7 @@ func ensureParentDir(path string) error {
 }
 
 func rowFromRecord(item RecoveryMemoryRecord) recoveryMemoryRow {
-	data, _ := json.Marshal(cloneCandidate(item.Candidate))
+	data, _ := json.Marshal(cloneCandidate(item.Item))
 	return recoveryMemoryRow{
 		MemoryKey:        strings.TrimSpace(item.MemoryKey),
 		ActionKey:        actionKeyFromRecord(item),
@@ -260,7 +260,7 @@ func rowFromRecord(item RecoveryMemoryRecord) recoveryMemoryRow {
 		BlockReason:      strings.TrimSpace(item.BlockReason),
 		TraceSignature:   strings.TrimSpace(item.TraceSignature),
 		Mode:             strings.TrimSpace(item.Mode),
-		CandidateJSON:    string(data),
+		ItemJSON:         string(data),
 		Outcome:          strings.TrimSpace(item.Outcome),
 		EscapeScore:      item.EscapeScore,
 		SuccessCount:     maxInt(item.SuccessCount, 0),
@@ -289,20 +289,20 @@ func (row recoveryMemoryRow) toRecord() RecoveryMemoryRecord {
 	if result.CreatedAt.IsZero() {
 		result.CreatedAt = row.CreatedAt
 	}
-	if strings.TrimSpace(row.CandidateJSON) != "" {
-		var c candidate.Candidate
-		if err := json.Unmarshal([]byte(row.CandidateJSON), &c); err == nil {
-			result.Candidate = cloneCandidate(c)
+	if strings.TrimSpace(row.ItemJSON) != "" {
+		var c perception.Candidate
+		if err := json.Unmarshal([]byte(row.ItemJSON), &c); err == nil {
+			result.Item = cloneCandidate(c)
 		}
 	}
 	return result
 }
 
 func actionKeyFromRecord(item RecoveryMemoryRecord) string {
-	if item.Candidate.Command == nil {
+	if item.Item.Command == nil {
 		return "_nil_action"
 	}
-	key := strings.TrimSpace(item.Candidate.Command.ToJSON())
+	key := strings.TrimSpace(item.Item.Command.ToJSON())
 	if key == "" {
 		return "_nil_action"
 	}
@@ -322,11 +322,11 @@ func cloneRecords(src []RecoveryMemoryRecord) []RecoveryMemoryRecord {
 
 func cloneRecord(src RecoveryMemoryRecord) RecoveryMemoryRecord {
 	item := src
-	item.Candidate = cloneCandidate(src.Candidate)
+	item.Item = cloneCandidate(src.Item)
 	return item
 }
 
-func cloneCandidate(src candidate.Candidate) candidate.Candidate {
+func cloneCandidate(src perception.Candidate) perception.Candidate {
 	dst := src
 	if src.Command != nil {
 		cmd := *src.Command
@@ -388,16 +388,16 @@ func mergeRecord(base RecoveryMemoryRecord, delta RecoveryMemoryRecord) Recovery
 	if result.CreatedAt.IsZero() || (!delta.CreatedAt.IsZero() && delta.CreatedAt.Before(result.CreatedAt)) {
 		result.CreatedAt = delta.CreatedAt
 	}
-	if delta.Candidate.Command != nil {
-		result.Candidate = cloneCandidate(delta.Candidate)
+	if delta.Item.Command != nil {
+		result.Item = cloneCandidate(delta.Item)
 	}
 	return result
 }
 
 func recordAggregateKey(item RecoveryMemoryRecord) string {
 	act := ""
-	if item.Candidate.Command != nil {
-		act = item.Candidate.Command.ToJSON()
+	if item.Item.Command != nil {
+		act = item.Item.Command.ToJSON()
 	}
 	return strings.TrimSpace(item.MemoryKey) + "|" + act
 }

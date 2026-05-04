@@ -2,8 +2,8 @@ package monkey
 
 import (
 	"strings"
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	"trek/internal/engine/recovery"
 	enginestate "trek/internal/engine/state"
 	"trek/logger"
@@ -73,7 +73,7 @@ func (r *Runner) trySelectFromTraversalCandidates(
 	}
 	baseItems := weightedCandidatesToAlgorithmCandidates(weighted)
 	if len(baseItems) == 0 {
-		baseItems = []candidate.Candidate{candidateFromCommand(baseCmd, candidate.SourceAlgorithm)}
+		baseItems = []perception.Candidate{candidateFromCommand(baseCmd, perception.SourceAlgorithm)}
 	}
 	items = append(items, baseItems...)
 
@@ -81,7 +81,7 @@ func (r *Runner) trySelectFromTraversalCandidates(
 	if err != nil {
 		return nil, err
 	}
-	fused := candidate.FuseCandidates(items, candidate.FusionOptions{
+	fused := perception.FuseCandidates(items, perception.FusionOptions{
 		KnownFailedActions:   knownFailed,
 		RiskDropThreshold:    r.cfg.CandidateRiskDropThreshold,
 		EnableMinScoreFilter: true,
@@ -222,7 +222,7 @@ func (r *Runner) nextBlockRecoveryCommand(pageName string, input session.ActionI
 		if err != nil {
 			return nil, err
 		}
-		fused := candidate.FuseCandidates(items, candidate.FusionOptions{
+		fused := perception.FuseCandidates(items, perception.FusionOptions{
 			KnownFailedActions:   knownFailed,
 			RiskDropThreshold:    r.cfg.CandidateRiskDropThreshold,
 			EnableMinScoreFilter: true,
@@ -235,12 +235,12 @@ func (r *Runner) nextBlockRecoveryCommand(pageName string, input session.ActionI
 				return nil, selectErr
 			}
 			if selected != nil {
-				r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, candidate: candidateFromCommand(selected, candidate.SourceAlgorithm)}
+				r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(selected, perception.SourceAlgorithm)}
 				return selected, nil
 			}
 		}
 		if item := firstCandidateWithCommand(fused); item != nil {
-			r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, candidate: *item}
+			r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: *item}
 			return item.Command, nil
 		}
 	}
@@ -251,12 +251,12 @@ func (r *Runner) nextBlockRecoveryCommand(pageName string, input session.ActionI
 			return nil, err
 		}
 		if cmd != nil {
-			r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, candidate: candidateFromCommand(cmd, candidate.SourceHeuristic)}
+			r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(cmd, perception.SourceHeuristic)}
 			return cmd, nil
 		}
 	}
 	fallback := &types.ActionCommand{Act: types.BACK}
-	r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, candidate: candidateFromCommand(fallback, candidate.SourceHeuristic)}
+	r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(fallback, perception.SourceHeuristic)}
 	return fallback, nil
 }
 
@@ -290,18 +290,18 @@ func (r *Runner) recordRecoveryOutcome(escaped bool) {
 	defer func() {
 		r.lastRecoveryAttempt = nil
 	}()
-	r.markRecoveryActionOutcome(attempt.candidate, escaped)
+	r.markRecoveryActionOutcome(attempt.item, escaped)
 
 	writer, ok := r.decider.(RecoveryMemoryWriter)
 	if !ok || writer == nil {
 		return
 	}
-	if err := writer.RecordRecoveryMemoryOutcome(attempt.ctx, attempt.candidate, escaped); err != nil {
+	if err := writer.RecordRecoveryMemoryOutcome(attempt.ctx, attempt.item, escaped); err != nil {
 		logger.Warnf("record recovery memory outcome failed: escaped=%t err=%v", escaped, err)
 	}
 }
 
-func (r *Runner) markRecoveryActionOutcome(item candidate.Candidate, escaped bool) {
+func (r *Runner) markRecoveryActionOutcome(item perception.Candidate, escaped bool) {
 	if r == nil || item.Command == nil {
 		return
 	}
@@ -401,9 +401,9 @@ func (r *Runner) collectKnownActions(local map[string]bool, ctx enginestate.Trav
 	return known, nil
 }
 
-type recoveryProviderFunc func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+type recoveryProviderFunc func(ctx enginestate.TraversalContext) ([]perception.Candidate, error)
 
-func (f recoveryProviderFunc) BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (f recoveryProviderFunc) BuildCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	return f(ctx)
 }
 

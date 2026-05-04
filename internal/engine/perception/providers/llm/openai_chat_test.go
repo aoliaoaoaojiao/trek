@@ -196,8 +196,8 @@ func TestExtractChatContent(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "正常响应",
-			body: `{"choices":[{"message":{"role":"assistant","content":"hello"}}]}`,
+			name:    "正常响应",
+			body:    `{"choices":[{"message":{"role":"assistant","content":"hello"}}]}`,
 			want:    "hello",
 			wantErr: false,
 		},

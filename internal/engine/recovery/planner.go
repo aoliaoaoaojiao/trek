@@ -1,7 +1,7 @@
 package recovery
 
 import (
-	"trek/internal/engine/candidate"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 )
 
@@ -19,8 +19,8 @@ func NewPlanner(config PlannerConfig) *Planner {
 }
 
 // BuildRecoveryCandidates 按 Memory -> Heuristic -> LLM 顺序汇总恢复候选。
-func (p *Planner) BuildRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
-	items := make([]candidate.Candidate, 0, 8)
+func (p *Planner) BuildRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
+	items := make([]perception.Candidate, 0, 8)
 
 	memoryItems, err := p.buildFromProvider(p.config.Memory, ctx)
 	if err != nil {
@@ -51,16 +51,16 @@ func (p *Planner) BuildRecoveryCandidates(ctx enginestate.TraversalContext) ([]c
 	return items, nil
 }
 
-func (p *Planner) buildFromProvider(provider CandidateProvider, ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (p *Planner) buildFromProvider(provider CandidateProvider, ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if provider == nil {
 		return nil, nil
 	}
 	return provider.BuildCandidates(ctx)
 }
 
-func (p *Planner) hasHighConfidenceMemory(items []candidate.Candidate) bool {
+func (p *Planner) hasHighConfidenceMemory(items []perception.Candidate) bool {
 	for _, item := range items {
-		if item.Source == candidate.SourceMemory && item.Confidence >= p.config.HighConfidenceThreshold {
+		if item.Source == perception.SourceMemory && item.Confidence >= p.config.HighConfidenceThreshold {
 			return true
 		}
 	}
@@ -91,7 +91,7 @@ func (p *Planner) recordLLMCall(ctx enginestate.TraversalContext) {
 	p.config.LLMBudget.Record(ctx)
 }
 
-func enrichLLMContext(ctx enginestate.TraversalContext, localCandidates []candidate.Candidate) enginestate.TraversalContext {
+func enrichLLMContext(ctx enginestate.TraversalContext, localCandidates []perception.Candidate) enginestate.TraversalContext {
 	next := ctx
 	if len(localCandidates) == 0 {
 		return next

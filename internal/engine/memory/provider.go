@@ -1,7 +1,7 @@
 package memory
 
 import (
-	"trek/internal/engine/candidate"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 )
 
@@ -18,15 +18,15 @@ func NewProvider(store *Store) *Provider {
 }
 
 // BuildCandidates 从 store 中检索并转换候选。
-func (p *Provider) BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (p *Provider) BuildCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if p == nil || p.store == nil {
 		return nil, nil
 	}
 	records := p.store.Find(ctx)
-	items := make([]candidate.Candidate, 0, len(records))
+	items := make([]perception.Candidate, 0, len(records))
 	for _, record := range records {
-		item := cloneCandidate(record.Candidate)
-		item.Source = candidate.SourceMemory
+		item := cloneCandidate(record.Item)
+		item.Source = perception.SourceMemory
 		item.Confidence = providerConfidence(record, ctx)
 		item.EscapeScore = record.EscapeScore
 		if item.Metadata == nil {

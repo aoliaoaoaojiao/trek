@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 	"trek/internal/engine/traversal"
 	"trek/pkg/driver/common"
@@ -78,10 +78,10 @@ type contextAwareRecoveryDecider struct {
 
 type plannerAwareRecoveryDecider struct {
 	contextAwareRecoveryDecider
-	memoryCandidates        []candidate.Candidate
-	heuristicCandidates     []candidate.Candidate
-	llmCandidates           []candidate.Candidate
-	algorithmCandidates     []candidate.Candidate
+	memoryCandidates        []perception.Candidate
+	heuristicCandidates     []perception.Candidate
+	llmCandidates           []perception.Candidate
+	algorithmCandidates     []perception.Candidate
 	weightedCandidates      []WeightedCandidate
 	persistedFailed         map[string]bool
 	persistedSuccess        map[string]bool
@@ -95,11 +95,11 @@ type plannerAwareRecoveryDecider struct {
 	outcomeCalls            int
 	lastOutcomeEscaped      bool
 	lastOutcomeContext      enginestate.TraversalContext
-	lastOutcomeItem         candidate.Candidate
+	lastOutcomeItem         perception.Candidate
 	enhancementOutcomeCalls int
 	lastEnhancementImproved bool
 	lastEnhancementContext  enginestate.TraversalContext
-	lastEnhancementItem     candidate.Candidate
+	lastEnhancementItem     perception.Candidate
 }
 
 type transformingDecider struct {
@@ -155,22 +155,22 @@ func (d *contextAwareRecoveryDecider) NextBlockRecoveryActionWithContext(ctx eng
 	return d.recoveryAction, nil
 }
 
-func (d *plannerAwareRecoveryDecider) BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (d *plannerAwareRecoveryDecider) BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	d.memoryCalls++
 	return d.memoryCandidates, nil
 }
 
-func (d *plannerAwareRecoveryDecider) BuildAlgorithmCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (d *plannerAwareRecoveryDecider) BuildAlgorithmCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	d.algorithmCalls++
 	return d.algorithmCandidates, nil
 }
 
-func (d *plannerAwareRecoveryDecider) BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (d *plannerAwareRecoveryDecider) BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	d.heuristicCalls++
 	return d.heuristicCandidates, nil
 }
 
-func (d *plannerAwareRecoveryDecider) BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (d *plannerAwareRecoveryDecider) BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	d.llmCalls++
 	d.lastLLMContext = ctx
 	return d.llmCandidates, nil
@@ -203,7 +203,7 @@ func (d *plannerAwareRecoveryDecider) BuildKnownSuccessfulRecoveryActions(ctx en
 	return result, nil
 }
 
-func (d *plannerAwareRecoveryDecider) SelectRecoveryAction(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types.ActionCommand, error) {
+func (d *plannerAwareRecoveryDecider) SelectRecoveryAction(ctx enginestate.TraversalContext, candidates []perception.Candidate) (*types.ActionCommand, error) {
 	d.selectCalls++
 	if d.selectedRecoveryCmd == nil {
 		return nil, nil
@@ -211,7 +211,7 @@ func (d *plannerAwareRecoveryDecider) SelectRecoveryAction(ctx enginestate.Trave
 	return d.selectedRecoveryCmd, nil
 }
 
-func (d *plannerAwareRecoveryDecider) RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, item candidate.Candidate, escaped bool) error {
+func (d *plannerAwareRecoveryDecider) RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, item perception.Candidate, escaped bool) error {
 	d.outcomeCalls++
 	d.lastOutcomeEscaped = escaped
 	d.lastOutcomeContext = ctx
@@ -219,7 +219,7 @@ func (d *plannerAwareRecoveryDecider) RecordRecoveryMemoryOutcome(ctx enginestat
 	return nil
 }
 
-func (d *plannerAwareRecoveryDecider) RecordCandidateEnhancementOutcome(ctx enginestate.TraversalContext, item candidate.Candidate, improved bool) error {
+func (d *plannerAwareRecoveryDecider) RecordCandidateEnhancementOutcome(ctx enginestate.TraversalContext, item perception.Candidate, improved bool) error {
 	d.enhancementOutcomeCalls++
 	d.lastEnhancementImproved = improved
 	d.lastEnhancementContext = ctx
@@ -1616,8 +1616,8 @@ func TestRunnerReportContainsCooldownStats(t *testing.T) {
 func TestRunnerRecoveryPlannerUsesSelectorWhenAvailable(t *testing.T) {
 	decider := &plannerAwareRecoveryDecider{
 		selectedRecoveryCmd: &types.ActionCommand{Act: types.BACK},
-		memoryCandidates: []candidate.Candidate{
-			{Command: &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}, Source: candidate.SourceMemory},
+		memoryCandidates: []perception.Candidate{
+			{Command: &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}, Source: perception.SourceMemory},
 		},
 	}
 	driver := &fakeDriver{
@@ -1668,8 +1668,8 @@ func TestRunnerExploreUsesTraversalCandidatesBeforeEnhancement(t *testing.T) {
 				},
 			},
 		},
-		algorithmCandidates: []candidate.Candidate{
-			{Command: &types.ActionCommand{Act: types.BACK}, Source: candidate.SourceAlgorithm, Confidence: 0.7},
+		algorithmCandidates: []perception.Candidate{
+			{Command: &types.ActionCommand{Act: types.BACK}, Source: perception.SourceAlgorithm, Confidence: 0.7},
 		},
 		selectedRecoveryCmd: &types.ActionCommand{Act: types.BACK},
 	}
@@ -1726,8 +1726,8 @@ func TestRunnerExploreLLMEnhancementDisabledEvenWhenEnabled(t *testing.T) {
 			{Command: &types.ActionCommand{Act: types.SCROLL_BOTTOM_UP, Pos: *types.NewRect(0, 0, 1, 1)}, Weight: 0.5},
 		},
 		selectedRecoveryCmd: &types.ActionCommand{Act: types.BACK},
-		llmCandidates: []candidate.Candidate{
-			{Command: &types.ActionCommand{Act: types.BACK}, Source: candidate.SourceLLM, Confidence: 0.9},
+		llmCandidates: []perception.Candidate{
+			{Command: &types.ActionCommand{Act: types.BACK}, Source: perception.SourceLLM, Confidence: 0.9},
 		},
 	}
 	driver := &fakeDriver{
@@ -1780,8 +1780,8 @@ func TestRunnerExploreLLMEnhancementDisabledByDefault(t *testing.T) {
 			},
 		},
 		selectedRecoveryCmd: &types.ActionCommand{Act: types.BACK},
-		llmCandidates: []candidate.Candidate{
-			{Command: &types.ActionCommand{Act: types.BACK}, Source: candidate.SourceLLM, Confidence: 0.9},
+		llmCandidates: []perception.Candidate{
+			{Command: &types.ActionCommand{Act: types.BACK}, Source: perception.SourceLLM, Confidence: 0.9},
 		},
 	}
 	driver := &fakeDriver{
@@ -1834,8 +1834,8 @@ func TestRunnerExploreLLMEnhancementSkipsWhenCandidatesDistinct(t *testing.T) {
 			{Command: &types.ActionCommand{Act: types.SCROLL_BOTTOM_UP, Pos: *types.NewRect(0, 0, 1, 1)}, Weight: 0.1},
 		},
 		selectedRecoveryCmd: &types.ActionCommand{Act: types.BACK},
-		llmCandidates: []candidate.Candidate{
-			{Command: &types.ActionCommand{Act: types.BACK}, Source: candidate.SourceLLM, Confidence: 0.9},
+		llmCandidates: []perception.Candidate{
+			{Command: &types.ActionCommand{Act: types.BACK}, Source: perception.SourceLLM, Confidence: 0.9},
 		},
 	}
 	driver := &fakeDriver{

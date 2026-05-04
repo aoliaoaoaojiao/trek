@@ -13,10 +13,10 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision"
 	"trek/internal/engine/decision/shared/types"
 	"trek/internal/engine/memory"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 	"trek/internal/engine/traversal"
 )
@@ -40,16 +40,16 @@ func closeSessionMemoryStore(s *Session) {
 }
 
 type mockTraversalAlgorithm struct {
-	proposeFn func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
-	selectFn  func(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types.ActionCommand, error)
+	proposeFn func(ctx enginestate.TraversalContext) ([]perception.Candidate, error)
+	selectFn  func(ctx enginestate.TraversalContext, candidates []perception.Candidate) (*types.ActionCommand, error)
 	observeFn func(ctx enginestate.TraversalContext, action *types.ActionCommand, outcome traversal.ActionOutcome) error
 }
 
 type mockCandidateProvider struct {
-	buildFn func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+	buildFn func(ctx enginestate.TraversalContext) ([]perception.Candidate, error)
 }
 
-func (m *mockCandidateProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (m *mockCandidateProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if m != nil && m.buildFn != nil {
 		return m.buildFn(ctx)
 	}
@@ -58,10 +58,10 @@ func (m *mockCandidateProvider) BuildCandidates(ctx enginestate.TraversalContext
 
 type mockPageControlProvider struct {
 	mockCandidateProvider
-	detectFn func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+	detectFn func(ctx enginestate.TraversalContext) ([]perception.Candidate, error)
 }
 
-func (m *mockPageControlProvider) DetectPageControls(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (m *mockPageControlProvider) DetectPageControls(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if m != nil && m.detectFn != nil {
 		return m.detectFn(ctx)
 	}
@@ -70,14 +70,14 @@ func (m *mockPageControlProvider) DetectPageControls(ctx enginestate.TraversalCo
 
 func (m *mockTraversalAlgorithm) Name() string { return "mock" }
 
-func (m *mockTraversalAlgorithm) ProposeCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (m *mockTraversalAlgorithm) ProposeCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if m != nil && m.proposeFn != nil {
 		return m.proposeFn(ctx)
 	}
 	return nil, nil
 }
 
-func (m *mockTraversalAlgorithm) SelectAction(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types.ActionCommand, error) {
+func (m *mockTraversalAlgorithm) SelectAction(ctx enginestate.TraversalContext, candidates []perception.Candidate) (*types.ActionCommand, error) {
 	if m != nil && m.selectFn != nil {
 		return m.selectFn(ctx, candidates)
 	}
@@ -183,14 +183,14 @@ func TestSessionTransformPageInfoWithOCRPageControlStrategy(t *testing.T) {
 		t.Fatalf("创建会话失败: %v", err)
 	}
 	session.ocrProvider = &mockCandidateProvider{
-		buildFn: func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
-			item := candidate.NewCandidate(
+		buildFn: func(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
+			item := perception.NewCandidate(
 				&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.2, 0.3, 0.4)},
-				candidate.SourceOCR,
+				perception.SourceOCR,
 				"ocr_click:登录",
 				map[string]string{"ocr_text": "登录"},
 			)
-			return []candidate.Candidate{item}, nil
+			return []perception.Candidate{item}, nil
 		},
 	}
 
@@ -221,14 +221,14 @@ func TestSessionTransformPageInfoWithLLMPageControlStrategy(t *testing.T) {
 		t.Fatalf("创建会话失败: %v", err)
 	}
 	session.llmProvider = &mockPageControlProvider{
-		detectFn: func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
-			item := candidate.NewCandidate(
+		detectFn: func(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
+			item := perception.NewCandidate(
 				&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.25, 0.25, 0.5, 0.5)},
-				candidate.SourceLLM,
+				perception.SourceLLM,
 				"点击确认",
 				map[string]string{"llm_control_text": "确认按钮", "llm_control_type": "dialog_action"},
 			)
-			return []candidate.Candidate{item}, nil
+			return []perception.Candidate{item}, nil
 		},
 	}
 
@@ -399,9 +399,9 @@ func TestSessionBuildMemoryRecoveryCandidates(t *testing.T) {
 		BlockReason:      "same_page_no_change",
 		TraceSignature:   "back",
 		Mode:             "recover",
-		Candidate: candidate.NewCandidate(
+		Item: perception.NewCandidate(
 			&types.ActionCommand{Act: types.BACK},
-			candidate.SourceAlgorithm,
+			perception.SourceAlgorithm,
 			"回退上一层",
 			map[string]string{"seed": "1"},
 		),
@@ -441,7 +441,7 @@ func TestSessionBuildMemoryRecoveryCandidates(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("预期命中 1 条候选，实际: %d", len(items))
 	}
-	if items[0].Source != candidate.SourceMemory {
+	if items[0].Source != perception.SourceMemory {
 		t.Fatalf("候选来源应为 memory，实际: %s", items[0].Source)
 	}
 	if items[0].Command == nil || items[0].Command.Act != types.BACK {
@@ -486,7 +486,7 @@ func TestSessionBuildHeuristicRecoveryCandidates(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("预期 1 条 heuristic 候选，实际: %d", len(items))
 	}
-	if items[0].Source != candidate.SourceHeuristic {
+	if items[0].Source != perception.SourceHeuristic {
 		t.Fatalf("候选来源应为 heuristic，实际: %s", items[0].Source)
 	}
 	if items[0].Command == nil || items[0].Command.Act != types.BACK {
@@ -539,20 +539,20 @@ func TestSessionSelectRecoveryActionPrefersAlgorithmCandidate(t *testing.T) {
 		t.Fatalf("创建会话失败: %v", err)
 	}
 	ctx := enginestate.TraversalContext{Mode: "Recover"}
-	items := []candidate.Candidate{
+	items := []perception.Candidate{
 		{
 			Command:    &types.ActionCommand{Act: types.BACK},
-			Source:     candidate.SourceAlgorithm,
+			Source:     perception.SourceAlgorithm,
 			Confidence: 0.3,
 		},
 		{
 			Command:    &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
-			Source:     candidate.SourceLLM,
+			Source:     perception.SourceLLM,
 			Confidence: 0.9,
 		},
 	}
 	session.traversalAlgo = &mockTraversalAlgorithm{
-		selectFn: func(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types.ActionCommand, error) {
+		selectFn: func(ctx enginestate.TraversalContext, candidates []perception.Candidate) (*types.ActionCommand, error) {
 			if len(candidates) == 0 {
 				return nil, nil
 			}
@@ -578,15 +578,15 @@ func TestSessionBuildAlgorithmCandidatesDelegatesTraversalAlgorithm(t *testing.T
 		t.Fatalf("创建会话失败: %v", err)
 	}
 	called := false
-	expected := []candidate.Candidate{
+	expected := []perception.Candidate{
 		{
 			Command:    &types.ActionCommand{Act: types.BACK},
-			Source:     candidate.SourceAlgorithm,
+			Source:     perception.SourceAlgorithm,
 			Confidence: 0.8,
 		},
 	}
 	session.traversalAlgo = &mockTraversalAlgorithm{
-		proposeFn: func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+		proposeFn: func(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 			called = true
 			return expected, nil
 		},
@@ -617,22 +617,22 @@ func TestSessionBuildAlgorithmCandidatesMergesOCRCandidates(t *testing.T) {
 		t.Fatalf("创建会话失败: %v", err)
 	}
 	session.traversalAlgo = &mockTraversalAlgorithm{
-		proposeFn: func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
-			return []candidate.Candidate{
+		proposeFn: func(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
+			return []perception.Candidate{
 				{
 					Command:    &types.ActionCommand{Act: types.BACK},
-					Source:     candidate.SourceAlgorithm,
+					Source:     perception.SourceAlgorithm,
 					Confidence: 0.8,
 				},
 			}, nil
 		},
 	}
 	session.ocrProvider = &mockCandidateProvider{
-		buildFn: func(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
-			return []candidate.Candidate{
+		buildFn: func(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
+			return []perception.Candidate{
 				{
 					Command:    &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.2, 0.3, 0.4)},
-					Source:     candidate.SourceOCR,
+					Source:     perception.SourceOCR,
 					Confidence: 0.7,
 				},
 			}, nil
@@ -650,7 +650,7 @@ func TestSessionBuildAlgorithmCandidatesMergesOCRCandidates(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("预期合并 algorithm + ocr 候选，实际: %d", len(items))
 	}
-	if items[0].Source != candidate.SourceAlgorithm || items[1].Source != candidate.SourceOCR {
+	if items[0].Source != perception.SourceAlgorithm || items[1].Source != perception.SourceOCR {
 		t.Fatalf("候选来源顺序错误: %+v", items)
 	}
 }
@@ -698,9 +698,9 @@ func TestSessionRecordRecoveryMemoryOutcome(t *testing.T) {
 				{ActionKey: "click"},
 			},
 		},
-		candidate.Candidate{
+		perception.Candidate{
 			Command: &types.ActionCommand{Act: types.BACK},
-			Source:  candidate.SourceHeuristic,
+			Source:  perception.SourceHeuristic,
 		},
 		true,
 	)
@@ -751,9 +751,9 @@ func TestSessionRecordRecoveryMemoryOutcomeAggregatesCounts(t *testing.T) {
 			{ActionKey: "back"},
 		},
 	}
-	item := candidate.Candidate{
+	item := perception.Candidate{
 		Command: &types.ActionCommand{Act: types.BACK},
-		Source:  candidate.SourceMemory,
+		Source:  perception.SourceMemory,
 	}
 
 	if err := session.RecordRecoveryMemoryOutcome(ctx, item, true); err != nil {
@@ -802,9 +802,9 @@ func TestSessionRecordCandidateEnhancementOutcome(t *testing.T) {
 			{ActionKey: "click"},
 		},
 	}
-	item := candidate.Candidate{
+	item := perception.Candidate{
 		Command: &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
-		Source:  candidate.SourceLLM,
+		Source:  perception.SourceLLM,
 	}
 	if err := session.RecordCandidateEnhancementOutcome(ctx, item, true); err != nil {
 		t.Fatalf("写回候选增强结果失败: %v", err)
@@ -850,9 +850,9 @@ func TestSessionBuildKnownFailedRecoveryActions(t *testing.T) {
 			{ActionKey: "back"},
 		},
 	}
-	item := candidate.Candidate{
+	item := perception.Candidate{
 		Command: &types.ActionCommand{Act: types.BACK},
-		Source:  candidate.SourceMemory,
+		Source:  perception.SourceMemory,
 	}
 	if err := session.RecordRecoveryMemoryOutcome(ctx, item, false); err != nil {
 		t.Fatalf("写回失败样本失败: %v", err)
@@ -888,9 +888,9 @@ func TestSessionBuildKnownSuccessfulRecoveryActions(t *testing.T) {
 			{ActionKey: "back"},
 		},
 	}
-	item := candidate.Candidate{
+	item := perception.Candidate{
 		Command: &types.ActionCommand{Act: types.BACK},
-		Source:  candidate.SourceMemory,
+		Source:  perception.SourceMemory,
 	}
 	if err := session.RecordRecoveryMemoryOutcome(ctx, item, true); err != nil {
 		t.Fatalf("写回成功样本失败: %v", err)

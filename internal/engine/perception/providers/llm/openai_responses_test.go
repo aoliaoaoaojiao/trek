@@ -25,9 +25,18 @@ func TestOpenAIResponsesProviderBuildCandidates(t *testing.T) {
 		if req["model"] != "gpt-4.1-mini" {
 			t.Fatalf("model 错误: %v", req["model"])
 		}
-		// 使用 point 格式返回坐标
+		responseFormat, ok := req["response_format"].(map[string]any)
+		if !ok || responseFormat["type"] != "json_schema" {
+			t.Fatalf("应包含 response_format: %+v", req)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"output_text": `{"candidates":[{"intent":"返回","action_type":"BACK","confidence":0.91,"reason":"疑似弹窗"},{"intent":"点击主区域","action_type":"CLICK","point":{"x":0.1,"y":0.2},"confidence":0.7}]}`,
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `{"candidates":[{"intent":"返回","action_type":"BACK","confidence":0.91,"reason":"疑似弹窗"},{"intent":"点击主区域","action_type":"CLICK","point":{"x":0.1,"y":0.2},"confidence":0.7}]}`,
+					},
+				},
+			},
 		})
 	}))
 	defer server.Close()
@@ -79,10 +88,10 @@ func TestOpenAIResponsesProviderWithScreenshot(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("解析请求失败: %v", err)
 		}
-		// 检查 input 消息中有 input_image
-		inputArr, ok := req["input"].([]any)
+		// 检查 messages 中有 image_url block
+		inputArr, ok := req["messages"].([]any)
 		if !ok || len(inputArr) < 2 {
-			t.Fatalf("input 应有至少 2 条消息")
+			t.Fatalf("messages 应有至少 2 条消息")
 		}
 		userMsg, ok := inputArr[1].(map[string]any)
 		if !ok {
@@ -92,18 +101,24 @@ func TestOpenAIResponsesProviderWithScreenshot(t *testing.T) {
 		if !ok || len(contentArr) < 2 {
 			t.Fatalf("user content 应包含文本和截图两个 block")
 		}
-		// 第一个 block 应是 text，第二个应是 input_image
+		// 第一个 block 应是 text，第二个应是 image_url
 		textBlock, _ := contentArr[0].(map[string]any)
-		if textBlock["type"] != "input_text" {
-			t.Fatalf("第一个 block 应为 input_text, 实际: %v", textBlock["type"])
+		if textBlock["type"] != "text" {
+			t.Fatalf("第一个 block 应为 text, 实际: %v", textBlock["type"])
 		}
 		imgBlock, _ := contentArr[1].(map[string]any)
-		if imgBlock["type"] != "input_image" {
-			t.Fatalf("第二个 block 应为 input_image, 实际: %v", imgBlock["type"])
+		if imgBlock["type"] != "image_url" {
+			t.Fatalf("第二个 block 应为 image_url, 实际: %v", imgBlock["type"])
 		}
 
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"output_text": `{"candidates":[{"action_type":"BACK","confidence":0.95}]}`,
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `{"candidates":[{"action_type":"BACK","confidence":0.95}]}`,
+					},
+				},
+			},
 		})
 	}))
 	defer server.Close()
@@ -145,16 +160,22 @@ func TestOpenAIResponsesProviderDetectPageControls(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("解析请求失败: %v", err)
 		}
-		textCfg, ok := req["text"].(map[string]any)
-		if !ok {
-			t.Fatalf("应包含 text.format 配置")
+		responseFormat, ok := req["response_format"].(map[string]any)
+		if !ok || responseFormat["type"] != "json_schema" {
+			t.Fatalf("应包含 response_format 配置")
 		}
-		format, ok := textCfg["format"].(map[string]any)
-		if !ok || format["name"] != "trek_page_controls" {
-			t.Fatalf("控件检测 schema 名称错误: %+v", textCfg)
+		jsonSchema, ok := responseFormat["json_schema"].(map[string]any)
+		if !ok || jsonSchema["name"] != "trek_page_controls" {
+			t.Fatalf("控件检测 schema 名称错误: %+v", responseFormat)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"output_text": `{"controls":[{"control_type":"button","text":"确定","hint":"确认","clickable":true,"confidence":0.88,"bounds":{"left":0.2,"top":0.3,"right":0.5,"bottom":0.6}}]}`,
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `{"controls":[{"control_type":"button","text":"确定","hint":"确认","clickable":true,"confidence":0.88,"bounds":{"left":0.2,"top":0.3,"right":0.5,"bottom":0.6}}]}`,
+					},
+				},
+			},
 		})
 	}))
 	defer server.Close()
@@ -185,7 +206,13 @@ func TestOpenAIResponsesProviderDetectPageControls(t *testing.T) {
 func TestOpenAIResponsesProviderDetectPageControlsWithBoundsArray(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"output_text": `{"controls":[{"control_type":"button","text":"确定","hint":"确认","clickable":true,"confidence":0.88,"bounds":[0.2,0.3,0.5,0.6]}]}`,
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `{"controls":[{"control_type":"button","text":"确定","hint":"确认","clickable":true,"confidence":0.88,"bounds":[0.2,0.3,0.5,0.6]}]}`,
+					},
+				},
+			},
 		})
 	}))
 	defer server.Close()
@@ -214,13 +241,19 @@ func TestOpenAIResponsesProviderDetectPageControlsWithBoundsArray(t *testing.T) 
 }
 
 func TestNewOpenAIResponsesProviderNormalizeBaseURL(t *testing.T) {
-	t.Run("自动补全_v1_responses", func(t *testing.T) {
+	t.Run("自动补全_v1_chat_completions", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/v1/responses" {
+			if r.URL.Path != "/v1/chat/completions" {
 				t.Fatalf("请求路径错误: %s", r.URL.Path)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"output_text": `{"controls":[{"control_type":"button","text":"确定","clickable":true,"confidence":0.88,"bounds":{"left":0.2,"top":0.3,"right":0.5,"bottom":0.6}}]}`,
+				"choices": []map[string]any{
+					{
+						"message": map[string]any{
+							"content": `{"controls":[{"control_type":"button","text":"确定","clickable":true,"confidence":0.88,"bounds":{"left":0.2,"top":0.3,"right":0.5,"bottom":0.6}}]}`,
+						},
+					},
+				},
 			})
 		}))
 		defer server.Close()
@@ -233,7 +266,7 @@ func TestNewOpenAIResponsesProviderNormalizeBaseURL(t *testing.T) {
 		if err != nil {
 			t.Fatalf("创建 provider 失败: %v", err)
 		}
-		if !strings.HasSuffix(provider.baseURL, "/v1/responses") {
+		if !strings.HasSuffix(provider.baseURL, "/v1/chat/completions") {
 			t.Fatalf("归一化后的 baseURL 错误: %s", provider.baseURL)
 		}
 
@@ -249,80 +282,33 @@ func TestNewOpenAIResponsesProviderNormalizeBaseURL(t *testing.T) {
 		}
 	})
 
-	t.Run("完整_responses_endpoint_保持不变", func(t *testing.T) {
+	t.Run("完整_chat_completions_endpoint_保持不变", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/custom/responses" {
+			if r.URL.Path != "/custom/chat/completions" {
 				t.Fatalf("请求路径错误: %s", r.URL.Path)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"output_text": `{"controls":[{"control_type":"button","text":"返回","clickable":true,"confidence":0.88,"bounds":{"left":0.1,"top":0.1,"right":0.2,"bottom":0.2}}]}`,
+				"choices": []map[string]any{
+					{
+						"message": map[string]any{
+							"content": `{"controls":[{"control_type":"button","text":"返回","clickable":true,"confidence":0.88,"bounds":{"left":0.1,"top":0.1,"right":0.2,"bottom":0.2}}]}`,
+						},
+					},
+				},
 			})
 		}))
 		defer server.Close()
 
 		provider, err := NewOpenAIResponsesProvider(OpenAIResponsesProviderConfig{
-			BaseURL: server.URL + "/custom/responses",
+			BaseURL: server.URL + "/custom/chat/completions",
 			APIKey:  "sk-test",
 			Model:   "gpt-4.1-mini",
 		})
 		if err != nil {
 			t.Fatalf("创建 provider 失败: %v", err)
 		}
-		if provider.baseURL != server.URL+"/custom/responses" {
+		if provider.baseURL != server.URL+"/custom/chat/completions" {
 			t.Fatalf("完整 endpoint 不应被改写: %s", provider.baseURL)
 		}
 	})
-}
-
-func TestOpenAIResponsesProviderDetectPageControlsFallbackToChatCompletions(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/v1/responses":
-			http.NotFound(w, r)
-		case "/v1/chat/completions":
-			var req map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("解析 chat 回退请求失败: %v", err)
-			}
-			responseFormat, ok := req["response_format"].(map[string]any)
-			if !ok || responseFormat["type"] != "json_schema" {
-				t.Fatalf("chat 回退请求缺少 response_format: %+v", req)
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"choices": []map[string]any{
-					{
-						"message": map[string]any{
-							"content": `{"controls":[{"control_type":"button","text":"确定","clickable":true,"confidence":0.88,"bounds":{"left":0.2,"top":0.3,"right":0.5,"bottom":0.6}}]}`,
-						},
-					},
-				},
-			})
-		default:
-			t.Fatalf("收到意外路径: %s", r.URL.Path)
-		}
-	}))
-	defer server.Close()
-
-	provider, err := NewOpenAIResponsesProvider(OpenAIResponsesProviderConfig{
-		BaseURL: server.URL + "/v1",
-		APIKey:  "sk-test",
-		Model:   "gpt-4.1-mini",
-	})
-	if err != nil {
-		t.Fatalf("创建 provider 失败: %v", err)
-	}
-
-	items, err := provider.DetectPageControls(enginestate.TraversalContext{
-		PageName:   "DialogPage",
-		Screenshot: []byte("fake-image"),
-	})
-	if err != nil {
-		t.Fatalf("控件检测失败: %v", err)
-	}
-	if len(items) != 1 {
-		t.Fatalf("控件候选数量错误: %d", len(items))
-	}
-	if items[0].Metadata["llm_control_text"] != "确定" {
-		t.Fatalf("chat 回退控件文本错误: %+v", items[0].Metadata)
-	}
 }

@@ -1,4 +1,4 @@
-package candidate
+package perception
 
 import (
 	"sort"

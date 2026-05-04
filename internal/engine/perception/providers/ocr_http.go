@@ -14,8 +14,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 )
 
@@ -77,7 +77,7 @@ func NewOCRHTTPProvider(cfg OCRHTTPProviderConfig) (*OCRHTTPProvider, error) {
 }
 
 // BuildCandidates 将 OCR 文本区域直接映射为 CLICK 候选。
-func (p *OCRHTTPProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (p *OCRHTTPProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if p == nil || len(ctx.Screenshot) == 0 {
 		return nil, nil
 	}
@@ -124,7 +124,7 @@ func (p *OCRHTTPProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]c
 	return p.toCandidates(ocrResponse{Regions: fallback}, width, height), nil
 }
 
-func (p *OCRHTTPProvider) toCandidates(output ocrResponse, width int, height int) []candidate.Candidate {
+func (p *OCRHTTPProvider) toCandidates(output ocrResponse, width int, height int) []perception.Candidate {
 	regions := output.Regions
 	if len(regions) == 0 {
 		regions = output.Results
@@ -138,7 +138,7 @@ func (p *OCRHTTPProvider) toCandidates(output ocrResponse, width int, height int
 		limit = p.maxCandidates
 	}
 
-	items := make([]candidate.Candidate, 0, limit)
+	items := make([]perception.Candidate, 0, limit)
 	for _, region := range regions[:limit] {
 		bounds, ok := normalizeOCRBounds(region.Bounds, width, height)
 		if !ok {
@@ -161,7 +161,7 @@ func (p *OCRHTTPProvider) toCandidates(output ocrResponse, width int, height int
 			confidence = 1
 		}
 
-		item := candidate.NewCandidate(cmd, candidate.SourceOCR, intent, map[string]string{
+		item := perception.NewCandidate(cmd, perception.SourceOCR, intent, map[string]string{
 			"provider": "ocr_http",
 			"ocr_text": text,
 		})

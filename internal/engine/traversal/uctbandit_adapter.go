@@ -3,8 +3,8 @@ package traversal
 import (
 	"fmt"
 
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 )
 
@@ -39,7 +39,7 @@ func (a *UCTBanditAdapter) Name() string {
 
 // ProposeCandidates 从 UCTBandit 当前状态提取可选动作，
 // 映射为统一 Candidate 列表，UCT 分数作为 Confidence。
-func (a *UCTBanditAdapter) ProposeCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (a *UCTBanditAdapter) ProposeCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if a.stateProvider == nil {
 		return nil, nil
 	}
@@ -54,7 +54,7 @@ func (a *UCTBanditAdapter) ProposeCandidates(ctx enginestate.TraversalContext) (
 		return nil, nil
 	}
 
-	candidates := make([]candidate.Candidate, 0, len(actions))
+	candidates := make([]perception.Candidate, 0, len(actions))
 	for _, action := range actions {
 		if action == nil {
 			continue
@@ -74,9 +74,9 @@ func (a *UCTBanditAdapter) ProposeCandidates(ctx enginestate.TraversalContext) (
 			confidence = 0
 		}
 
-		c := candidate.NewCandidate(
+		c := perception.NewCandidate(
 			cmd,
-			candidate.SourceAlgorithm,
+			perception.SourceAlgorithm,
 			action.GetActionType().String(),
 			map[string]string{
 				"algorithm":     "uctbandit",
@@ -95,21 +95,21 @@ func (a *UCTBanditAdapter) ProposeCandidates(ctx enginestate.TraversalContext) (
 
 // SelectAction 从融合候选集中选择最终动作。
 // 优先选择算法自身的候选，否则从其他来源中按置信度选择。
-func (a *UCTBanditAdapter) SelectAction(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types.ActionCommand, error) {
+func (a *UCTBanditAdapter) SelectAction(ctx enginestate.TraversalContext, candidates []perception.Candidate) (*types.ActionCommand, error) {
 	if len(candidates) == 0 {
 		return nil, nil
 	}
 
 	// 优先选择算法自身的候选
 	for _, c := range candidates {
-		if c.Source == candidate.SourceAlgorithm && c.Command != nil && c.Command.IsValid() {
+		if c.Source == perception.SourceAlgorithm && c.Command != nil && c.Command.IsValid() {
 			scored := applyOutcomeFeedback(c, a.feedback)
 			return scored.Command, nil
 		}
 	}
 
 	// 回退：选择置信度最高的有效候选
-	best := candidate.Candidate{}
+	best := perception.Candidate{}
 	found := false
 	for _, c := range candidates {
 		if c.Command == nil || !c.Command.IsValid() {

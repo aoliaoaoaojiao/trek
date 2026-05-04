@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
-	"trek/internal/engine/candidate"
+	"trek/internal/engine/perception"
+	"trek/internal/engine/perception/pagecontrol"
 	enginestate "trek/internal/engine/state"
 	"trek/internal/testutil"
 
@@ -37,75 +37,6 @@ var gameNavigationExpectedControls = []fixtureExpectedControl{
 	},
 }
 
-var gameNavigationOCRExpectedControls = []fixtureExpectedControl{
-	{
-		name:    "basic",
-		aliases: []string{"basic"},
-		bounds:  [4]float64{0.1950, 0.1646, 0.2900, 0.2593},
-	},
-	{
-		name:    "drag drop",
-		aliases: []string{"drag drop"},
-		bounds:  [4]float64{0.1950, 0.2904, 0.2893, 0.3851},
-	},
-	{
-		name:    "wait ui 2",
-		aliases: []string{"wait ui 2"},
-		bounds:  [4]float64{0.3291, 0.1646, 0.4235, 0.2593},
-	},
-	{
-		name:    "list view",
-		aliases: []string{"list view"},
-		bounds:  [4]float64{0.1950, 0.4115, 0.2893, 0.5062},
-	},
-	{
-		name:    "local",
-		aliases: []string{"local"},
-		bounds:  [4]float64{0.1950, 0.5419, 0.2893, 0.6366},
-	},
-	{
-		name:    "positioning",
-		aliases: []string{"positioning"},
-		bounds:  [4]float64{0.1950, 0.5419, 0.2893, 0.7578},
-	},
-	{
-		name:    "wait ui",
-		aliases: []string{"wait ui"},
-		bounds:  [4]float64{0.1950, 0.7488, 0.2893, 0.8736},
-	},
-	{
-		name:    "back",
-		aliases: []string{"back"},
-		bounds:  [4]float64{0.1614, 0.8736, 0.2857, 0.9984},
-	},
-}
-
-func TestOCRIntegration_GameNavigationFixtureAccurateControlBounds(t *testing.T) {
-	endpoint, apiKey := testutil.RequireOCREnv(t)
-	screenshot := testutil.ReadRootFixture(t, testutil.FixtureGameNavigation)
-
-	provider, err := NewOCRHTTPProvider(OCRHTTPProviderConfig{
-		Endpoint: endpoint,
-		APIKey:   apiKey,
-		Timeout:  30 * time.Second,
-	})
-	require.NoError(t, err, "创建 OCR provider 失败")
-	logOCRRawResponseArtifact(t, provider, enginestate.TraversalContext{
-		PageName:   "GameNavigation",
-		Screenshot: screenshot,
-	})
-
-	items, err := provider.BuildCandidates(enginestate.TraversalContext{
-		PageName:   "GameNavigation",
-		Screenshot: screenshot,
-	})
-	require.NoError(t, err, "OCR 控件检测失败")
-	require.NotEmpty(t, items, "OCR 应返回至少一个候选")
-	logOverlayArtifact(t, "ocr_game_navigation_overlay.png", items)
-
-	assertCandidatesHitExpectedControls(t, items, gameNavigationOCRExpectedControls, extractOCRCandidateText)
-}
-
 func TestLLMIntegration_GameNavigationFixtureAccurateControlBounds(t *testing.T) {
 	screenshot := testutil.ReadRootFixture(t, testutil.FixtureGameNavigation)
 	ctx := enginestate.TraversalContext{
@@ -121,6 +52,7 @@ func TestLLMIntegration_GameNavigationFixtureAccurateControlBounds(t *testing.T)
 			Model:    model,
 		})
 		require.NoError(t, err, "创建 LLM HTTP provider 失败")
+		logLLMHTTPRawResponseArtifact(t, provider, ctx, "llm_http_game_navigation_raw.json")
 
 		items, err := provider.DetectPageControls(ctx)
 		require.NoError(t, err, "LLM HTTP 控件检测失败")
@@ -138,6 +70,7 @@ func TestLLMIntegration_GameNavigationFixtureAccurateControlBounds(t *testing.T)
 			Model:   model,
 		})
 		require.NoError(t, err, "创建 OpenAI Responses provider 失败")
+		logOpenAIRawResponseArtifact(t, provider, ctx, "openai_game_navigation_raw.json")
 
 		items, err := provider.DetectPageControls(ctx)
 		require.NoError(t, err, "OpenAI 控件检测失败")
@@ -155,6 +88,7 @@ func TestLLMIntegration_GameNavigationFixtureAccurateControlBounds(t *testing.T)
 			Model:   model,
 		})
 		require.NoError(t, err, "创建 Anthropic Messages provider 失败")
+		logAnthropicRawResponseArtifact(t, provider, ctx, "anthropic_game_navigation_raw.json")
 
 		items, err := provider.DetectPageControls(ctx)
 		require.NoError(t, err, "Anthropic 控件检测失败")
@@ -165,86 +99,86 @@ func TestLLMIntegration_GameNavigationFixtureAccurateControlBounds(t *testing.T)
 	})
 }
 
-func logOverlayArtifact(t *testing.T, fileName string, items []candidate.Candidate) {
+func logOverlayArtifact(t *testing.T, fileName string, items []perception.Candidate) {
 	t.Helper()
 	path := testutil.WriteCandidateOverlayPNG(t, testutil.FixtureGameNavigation, fileName, items)
 	t.Logf("标注图已输出: %s", path)
 }
 
-func logOCRRawResponseArtifact(t *testing.T, provider *OCRHTTPProvider, ctx enginestate.TraversalContext) {
+func logLLMHTTPRawResponseArtifact(t *testing.T, provider *LLMHTTPProvider, ctx enginestate.TraversalContext, fileName string) {
 	t.Helper()
 	if provider == nil {
 		return
 	}
-	width, height := decodeImageSize(ctx.Screenshot)
-	payload, err := provider.buildPayload(ctx, width, height)
-	require.NoError(t, err, "构建 OCR 原始请求失败")
+	prompt := pagecontrol.BuildPrompt(ctx)
+	payload := llmRequest{
+		Model:            provider.model,
+		Instruction:      prompt.SystemContent,
+		UserMessage:      prompt.UserContent,
+		ScreenshotBase64: prompt.ScreenshotBase64(),
+	}
+	data, err := json.Marshal(payload)
+	require.NoError(t, err, "构建 LLM HTTP 原始请求失败")
 
-	req, err := http.NewRequest(http.MethodPost, provider.endpoint, bytes.NewReader(payload))
-	require.NoError(t, err, "构建 OCR 原始请求失败")
+	req, err := http.NewRequest(http.MethodPost, provider.endpoint, bytes.NewReader(data))
+	require.NoError(t, err, "构建 LLM HTTP 原始请求失败")
 	req.Header.Set("Content-Type", "application/json")
-	provider.setAuthHeader(req)
+	if provider.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+provider.apiKey)
+	}
 	for key, value := range provider.headers {
 		req.Header.Set(key, value)
 	}
 
 	resp, err := provider.client.Do(req)
-	require.NoError(t, err, "执行 OCR 原始请求失败")
+	require.NoError(t, err, "执行 LLM HTTP 原始请求失败")
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
-	require.NoError(t, err, "读取 OCR 原始响应失败")
+	require.NoError(t, err, "读取 LLM HTTP 原始响应失败")
+	t.Logf("%s status=%d\n%s", fileName, resp.StatusCode, prettyJSON(body))
+}
 
+func logOpenAIRawResponseArtifact(t *testing.T, provider *OpenAIResponsesProvider, ctx enginestate.TraversalContext, fileName string) {
+	t.Helper()
+	if provider == nil {
+		return
+	}
+	payload, err := provider.buildPageControlRequestPayload(ctx)
+	require.NoError(t, err, "构建 OpenAI 原始请求失败")
+
+	body, status, err := provider.postWithRetry(payload)
+	require.NoError(t, err, "执行 OpenAI 原始请求失败")
+	t.Logf("%s status=%d\n%s", fileName, status, prettyJSON(body))
+}
+
+func logAnthropicRawResponseArtifact(t *testing.T, provider *AnthropicMessagesProvider, ctx enginestate.TraversalContext, fileName string) {
+	t.Helper()
+	if provider == nil {
+		return
+	}
+	payload, err := provider.buildPageControlRequestPayload(ctx)
+	require.NoError(t, err, "构建 Anthropic 原始请求失败")
+
+	body, status, err := provider.postWithRetry(payload)
+	require.NoError(t, err, "执行 Anthropic 原始请求失败")
+	t.Logf("%s status=%d\n%s", fileName, status, prettyJSON(body))
+}
+
+func prettyJSON(body []byte) string {
 	formatted := body
 	var pretty bytes.Buffer
 	if json.Valid(body) && json.Indent(&pretty, body, "", "  ") == nil {
 		formatted = pretty.Bytes()
 	}
-	path := testutil.WriteArtifactBytes(t, "ocr_game_navigation_raw.json", formatted)
-	t.Logf("OCR 原始响应已输出: %s (status=%d)", path, resp.StatusCode)
-
-	rawRects := extractRawOCRBoxes(body)
-	if len(rawRects) > 0 {
-		rawOverlayPath := testutil.WritePixelRectOverlayPNG(t, testutil.FixtureGameNavigation, "ocr_game_navigation_http_overlay.png", rawRects)
-		t.Logf("OCR 原始框标注图已输出: %s", rawOverlayPath)
-	}
-}
-
-func extractRawOCRBoxes(body []byte) []testutil.PixelRect {
-	var payload struct {
-		Result struct {
-			OCRResults []struct {
-				PrunedResult struct {
-					RecBoxes [][]int `json:"rec_boxes"`
-				} `json:"prunedResult"`
-			} `json:"ocrResults"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil
-	}
-	rects := make([]testutil.PixelRect, 0, 8)
-	for _, result := range payload.Result.OCRResults {
-		for _, box := range result.PrunedResult.RecBoxes {
-			if len(box) != 4 {
-				continue
-			}
-			rects = append(rects, testutil.PixelRect{
-				Left:   box[0],
-				Top:    box[1],
-				Right:  box[2],
-				Bottom: box[3],
-			})
-		}
-	}
-	return rects
+	return string(formatted)
 }
 
 func assertCandidatesHitExpectedControls(
 	t *testing.T,
-	items []candidate.Candidate,
+	items []perception.Candidate,
 	expected []fixtureExpectedControl,
-	textExtractor func(candidate.Candidate) string,
+	textExtractor func(perception.Candidate) string,
 ) {
 	t.Helper()
 	const marginX = 0.03
@@ -276,10 +210,10 @@ func assertCandidatesHitExpectedControls(
 }
 
 func findCandidateByAliases(
-	items []candidate.Candidate,
+	items []perception.Candidate,
 	aliases []string,
-	textExtractor func(candidate.Candidate) string,
-) (candidate.Candidate, string, bool) {
+	textExtractor func(perception.Candidate) string,
+) (perception.Candidate, string, bool) {
 	for _, item := range items {
 		text := normalizeFixtureText(textExtractor(item))
 		if text == "" {
@@ -307,17 +241,10 @@ func findCandidateByAliases(
 			}
 		}
 	}
-	return candidate.Candidate{}, "", false
+	return perception.Candidate{}, "", false
 }
 
-func extractOCRCandidateText(item candidate.Candidate) string {
-	if item.Metadata == nil {
-		return ""
-	}
-	return item.Metadata["ocr_text"]
-}
-
-func extractLLMCandidateText(item candidate.Candidate) string {
+func extractLLMCandidateText(item perception.Candidate) string {
 	if item.Metadata == nil {
 		return ""
 	}
@@ -335,7 +262,7 @@ func normalizeFixtureText(text string) string {
 	return strings.Join(strings.Fields(text), " ")
 }
 
-func formatCandidates(items []candidate.Candidate, textExtractor func(candidate.Candidate) string) string {
+func formatCandidates(items []perception.Candidate, textExtractor func(perception.Candidate) string) string {
 	if len(items) == 0 {
 		return "(空)"
 	}

@@ -10,8 +10,9 @@ import (
 	"net/http"
 	"strings"
 	"time"
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
+	"trek/internal/engine/perception/pagecontrol"
 	enginestate "trek/internal/engine/state"
 )
 
@@ -69,7 +70,7 @@ func NewLLMHTTPProvider(cfg LLMHTTPProviderConfig) (*LLMHTTPProvider, error) {
 }
 
 // BuildCandidates 调用 LLM 接口并转换为统一 Candidate。
-func (p *LLMHTTPProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (p *LLMHTTPProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if p == nil {
 		return nil, nil
 	}
@@ -103,11 +104,11 @@ func (p *LLMHTTPProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]c
 }
 
 // DetectPageControls 调用 LLM 接口输出页面控件区域，而不是恢复动作。
-func (p *LLMHTTPProvider) DetectPageControls(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (p *LLMHTTPProvider) DetectPageControls(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if p == nil {
 		return nil, nil
 	}
-	prompt := buildPageControlPrompt(ctx)
+	prompt := pagecontrol.BuildPrompt(ctx)
 	payload := llmRequest{
 		Model:            p.model,
 		Instruction:      prompt.SystemContent,
@@ -127,11 +128,11 @@ func (p *LLMHTTPProvider) DetectPageControls(ctx enginestate.TraversalContext) (
 		return nil, fmt.Errorf("llm endpoint 响应异常: status=%d body=%s", status, truncateText(string(body), 512))
 	}
 
-	var output pageControlResponse
+	var output pagecontrol.Response
 	if err := json.Unmarshal(body, &output); err != nil {
 		return nil, fmt.Errorf("解析 llm 控件检测响应失败: %w", err)
 	}
-	return parsePageControlCandidates(output), nil
+	return pagecontrol.ParseCandidates(output), nil
 }
 
 func (p *LLMHTTPProvider) postWithRetry(payload []byte) ([]byte, int, error) {

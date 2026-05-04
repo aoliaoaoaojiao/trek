@@ -3,8 +3,8 @@ package monkey
 import (
 	"math/rand"
 
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 	"trek/internal/engine/traversal"
 )
@@ -30,7 +30,7 @@ func (a *MonkeyAdapter) Name() string {
 }
 
 // ProposeCandidates 从当前状态提取所有可选动作作为候选。
-func (a *MonkeyAdapter) ProposeCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (a *MonkeyAdapter) ProposeCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if a.stateProvider == nil {
 		return nil, nil
 	}
@@ -45,7 +45,7 @@ func (a *MonkeyAdapter) ProposeCandidates(ctx enginestate.TraversalContext) ([]c
 		return nil, nil
 	}
 
-	candidates := make([]candidate.Candidate, 0, len(actions))
+	candidates := make([]perception.Candidate, 0, len(actions))
 	for _, action := range actions {
 		if action == nil {
 			continue
@@ -54,9 +54,9 @@ func (a *MonkeyAdapter) ProposeCandidates(ctx enginestate.TraversalContext) ([]c
 		if !cmd.IsValid() {
 			continue
 		}
-		candidates = append(candidates, candidate.NewCandidate(
+		candidates = append(candidates, perception.NewCandidate(
 			cmd,
-			candidate.SourceAlgorithm,
+			perception.SourceAlgorithm,
 			action.GetActionType().String(),
 			map[string]string{
 				"algorithm":   "monkey",
@@ -68,13 +68,13 @@ func (a *MonkeyAdapter) ProposeCandidates(ctx enginestate.TraversalContext) ([]c
 }
 
 // SelectAction 从候选集中随机选择一个有效动作。
-func (a *MonkeyAdapter) SelectAction(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types.ActionCommand, error) {
+func (a *MonkeyAdapter) SelectAction(ctx enginestate.TraversalContext, candidates []perception.Candidate) (*types.ActionCommand, error) {
 	if len(candidates) == 0 {
 		return nil, nil
 	}
 
 	// 过滤有效候选
-	valid := make([]candidate.Candidate, 0, len(candidates))
+	valid := make([]perception.Candidate, 0, len(candidates))
 	for _, c := range candidates {
 		if c.Command != nil && c.Command.IsValid() {
 			valid = append(valid, c)

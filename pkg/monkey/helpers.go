@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 )
 
@@ -113,7 +113,7 @@ func normalizeConfig(cfg Config) Config {
 	return cfg
 }
 
-func firstCandidateWithCommand(items []candidate.Candidate) *candidate.Candidate {
+func firstCandidateWithCommand(items []perception.Candidate) *perception.Candidate {
 	for _, item := range items {
 		if item.Command != nil {
 			copyItem := item
@@ -123,18 +123,18 @@ func firstCandidateWithCommand(items []candidate.Candidate) *candidate.Candidate
 	return nil
 }
 
-func candidateFromCommand(cmd *types.ActionCommand, source string) candidate.Candidate {
+func candidateFromCommand(cmd *types.ActionCommand, source string) perception.Candidate {
 	if cmd == nil {
-		return candidate.Candidate{Source: source}
+		return perception.Candidate{Source: source}
 	}
 	cmdCopy := *cmd
-	return candidate.Candidate{
+	return perception.Candidate{
 		Command: &cmdCopy,
 		Source:  source,
 	}
 }
 
-func weightedCandidatesToAlgorithmCandidates(weighted []WeightedCandidate) []candidate.Candidate {
+func weightedCandidatesToAlgorithmCandidates(weighted []WeightedCandidate) []perception.Candidate {
 	if len(weighted) == 0 {
 		return nil
 	}
@@ -145,12 +145,12 @@ func weightedCandidatesToAlgorithmCandidates(weighted []WeightedCandidate) []can
 		}
 		total += item.Weight
 	}
-	result := make([]candidate.Candidate, 0, len(weighted))
+	result := make([]perception.Candidate, 0, len(weighted))
 	for _, item := range weighted {
 		if item.Command == nil {
 			continue
 		}
-		c := candidateFromCommand(item.Command, candidate.SourceAlgorithm)
+		c := candidateFromCommand(item.Command, perception.SourceAlgorithm)
 		if total > 0 && item.Weight > 0 {
 			c.Confidence = item.Weight / total
 		}
@@ -179,7 +179,7 @@ func summarizeWeightedCandidates(weighted []WeightedCandidate, baseCmd *types.Ac
 		result = append(result, enginestate.CandidateSummary{
 			ActionKey:  item.Command.ToJSON(),
 			ActionType: item.Command.Act.String(),
-			Source:     candidate.SourceAlgorithm,
+			Source:     perception.SourceAlgorithm,
 			Confidence: confidence,
 		})
 	}
@@ -187,7 +187,7 @@ func summarizeWeightedCandidates(weighted []WeightedCandidate, baseCmd *types.Ac
 		result = append(result, enginestate.CandidateSummary{
 			ActionKey:  baseCmd.ToJSON(),
 			ActionType: baseCmd.Act.String(),
-			Source:     candidate.SourceAlgorithm,
+			Source:     perception.SourceAlgorithm,
 			Confidence: 1,
 		})
 	}

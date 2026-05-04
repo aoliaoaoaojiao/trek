@@ -10,12 +10,12 @@ import (
 	"os"
 	"strings"
 	"time"
-	"trek/internal/engine/candidate"
-	candidateproviders "trek/internal/engine/candidate/providers"
 	"trek/internal/engine/decision"
 	"trek/internal/engine/decision/monkey"
 	"trek/internal/engine/decision/shared/types"
 	"trek/internal/engine/memory"
+	"trek/internal/engine/perception"
+	candidateproviders "trek/internal/engine/perception/providers"
 	engineruntime "trek/internal/engine/runtime"
 	enginestate "trek/internal/engine/state"
 	"trek/internal/engine/traversal"
@@ -85,11 +85,11 @@ type Session struct {
 }
 
 type candidateProvider interface {
-	BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+	BuildCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error)
 }
 
 type pageControlCandidateProvider interface {
-	DetectPageControls(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+	DetectPageControls(ctx enginestate.TraversalContext) ([]perception.Candidate, error)
 }
 
 type stateReader interface {
@@ -369,7 +369,7 @@ func (s *Session) NextBlockRecoveryActionWithContext(ctx enginestate.TraversalCo
 }
 
 // BuildMemoryRecoveryCandidates 将 memory 经验转为恢复候选，供 runner 的 RecoveryPlanner 调用。
-func (s *Session) BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (s *Session) BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if s == nil || s.memoryProvider == nil {
 		return nil, nil
 	}
@@ -377,7 +377,7 @@ func (s *Session) BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext
 }
 
 // BuildHeuristicRecoveryCandidates 通过插件 block_recovery 链路生成启发式恢复候选。
-func (s *Session) BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (s *Session) BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if s == nil {
 		return nil, nil
 	}
@@ -396,10 +396,10 @@ func (s *Session) BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalCont
 	}
 
 	cmd := *operate
-	return []candidate.Candidate{
+	return []perception.Candidate{
 		{
 			Command: &cmd,
-			Source:  candidate.SourceHeuristic,
+			Source:  perception.SourceHeuristic,
 			Intent:  "plugin_block_recovery",
 			Metadata: map[string]string{
 				"provider": "session_plugin",
@@ -429,10 +429,10 @@ func (s *Session) BuildKnownRecoveryActions(ctx enginestate.TraversalContext) (f
 	}
 	items := s.memoryStore.Find(ctx)
 	for _, item := range items {
-		if item.Candidate.Command == nil {
+		if item.Item.Command == nil {
 			continue
 		}
-		key := item.Candidate.Command.ToJSON()
+		key := item.Item.Command.ToJSON()
 		if item.FailCount > item.SuccessCount || strings.EqualFold(item.Outcome, memory.OutcomeFailed) {
 			failed[key] = true
 		}
@@ -445,17 +445,17 @@ func (s *Session) BuildKnownRecoveryActions(ctx enginestate.TraversalContext) (f
 
 // BuildLLMRecoveryCandidates 已废弃。
 // LLM 不再直接参与动作决策，仅用于页面控件检测。
-func (s *Session) BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (s *Session) BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	_ = ctx
 	return nil, nil
 }
 
 // BuildAlgorithmCandidates 将统一算法适配器产出的候选暴露给 Runner 的探索融合链路。
-func (s *Session) BuildAlgorithmCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (s *Session) BuildAlgorithmCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if s == nil {
 		return nil, nil
 	}
-	items := make([]candidate.Candidate, 0)
+	items := make([]perception.Candidate, 0)
 	if s.traversalAlgo == nil {
 		s.initTraversalAlgorithm()
 	}
@@ -481,7 +481,7 @@ func (s *Session) BuildAlgorithmCandidates(ctx enginestate.TraversalContext) ([]
 }
 
 // SelectRecoveryAction 基于 traversal 算法从融合恢复候选中选择最终动作。
-func (s *Session) SelectRecoveryAction(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types.ActionCommand, error) {
+func (s *Session) SelectRecoveryAction(ctx enginestate.TraversalContext, candidates []perception.Candidate) (*types.ActionCommand, error) {
 	if s == nil || len(candidates) == 0 {
 		return nil, nil
 	}
@@ -509,7 +509,7 @@ func (s *Session) ObserveTraversalOutcome(ctx enginestate.TraversalContext, acti
 }
 
 // RecordRecoveryMemoryOutcome 写回一次恢复动作结果，用于跨会话复用。
-func (s *Session) RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, item candidate.Candidate, escaped bool) error {
+func (s *Session) RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, item perception.Candidate, escaped bool) error {
 	if s == nil || s.memoryStore == nil || item.Command == nil {
 		return nil
 	}
@@ -531,7 +531,7 @@ func (s *Session) RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, 
 		BlockReason:      ctx.BlockReason,
 		TraceSignature:   traceSignature,
 		Mode:             string(ctx.Mode),
-		Candidate:        item,
+		Item:             item,
 		Outcome:          outcome,
 		EscapeScore:      escapeScore,
 		SuccessCount:     successCount,
@@ -543,7 +543,7 @@ func (s *Session) RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, 
 }
 
 // RecordCandidateEnhancementOutcome 写回候选增强动作结果，沉淀正负样本。
-func (s *Session) RecordCandidateEnhancementOutcome(ctx enginestate.TraversalContext, item candidate.Candidate, improved bool) error {
+func (s *Session) RecordCandidateEnhancementOutcome(ctx enginestate.TraversalContext, item perception.Candidate, improved bool) error {
 	if s == nil || s.memoryStore == nil || item.Command == nil {
 		return nil
 	}
@@ -569,7 +569,7 @@ func (s *Session) RecordCandidateEnhancementOutcome(ctx enginestate.TraversalCon
 		BlockReason:      blockReason,
 		TraceSignature:   traceSignature,
 		Mode:             string(ctx.Mode),
-		Candidate:        item,
+		Item:             item,
 		Outcome:          outcome,
 		EscapeScore:      escapeScore,
 		SuccessCount:     successCount,
@@ -670,7 +670,7 @@ func (s *Session) buildPageInfoByStrategy(pageName string, input ActionInput, ap
 	return info, nil
 }
 
-func (s *Session) buildPageControlCandidates(strategy string, ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (s *Session) buildPageControlCandidates(strategy string, ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	switch strategy {
 	case pageControlStrategyOCR:
 		if s == nil || s.ocrProvider == nil {
@@ -736,7 +736,7 @@ func normalizePageControlStrategy(strategy string) string {
 	}
 }
 
-func buildSyntheticXMLFromCandidates(items []candidate.Candidate, screenshot []byte) string {
+func buildSyntheticXMLFromCandidates(items []perception.Candidate, screenshot []byte) string {
 	width, height := decodeScreenshotSize(screenshot)
 	if width <= 0 {
 		width = 1000

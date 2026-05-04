@@ -6,8 +6,8 @@ import (
 	"math/rand"
 	"strings"
 	"time"
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	"trek/internal/engine/recovery"
 	enginestate "trek/internal/engine/state"
 	"trek/internal/engine/traversal"
@@ -226,25 +226,25 @@ type ContextAwareBlockRecoveryDecider interface {
 // RecoveryCandidateProvider 聚合恢复阶段的候选来源。
 // 当前仅使用 memory / heuristic；LLM 决策接口仅为兼容保留，不再参与恢复决策。
 type RecoveryCandidateProvider interface {
-	BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
-	BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
-	BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+	BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error)
+	BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error)
+	BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error)
 }
 
 // RecoveryCandidateSelector 在恢复阶段从融合候选集中选择最终动作。
 type RecoveryCandidateSelector interface {
-	SelectRecoveryAction(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types.ActionCommand, error)
+	SelectRecoveryAction(ctx enginestate.TraversalContext, candidates []perception.Candidate) (*types.ActionCommand, error)
 }
 
 // AlgorithmCandidateProvider 提供主探索阶段的算法候选。
 type AlgorithmCandidateProvider interface {
-	BuildAlgorithmCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+	BuildAlgorithmCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error)
 }
 
 // RecoveryMemoryWriter 在恢复动作执行后写回成功/失败经验，以及候选增强动作的正负样本。
 type RecoveryMemoryWriter interface {
-	RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, item candidate.Candidate, escaped bool) error
-	RecordCandidateEnhancementOutcome(ctx enginestate.TraversalContext, item candidate.Candidate, improved bool) error
+	RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, item perception.Candidate, escaped bool) error
+	RecordCandidateEnhancementOutcome(ctx enginestate.TraversalContext, item perception.Candidate, improved bool) error
 }
 
 // RecoveryActionHistoryProvider 提供可持久化的已知失败/成功恢复动作集合。
@@ -289,14 +289,14 @@ type Runner struct {
 }
 
 type recoveryAttempt struct {
-	ctx       enginestate.TraversalContext
-	candidate candidate.Candidate
+	ctx  enginestate.TraversalContext
+	item perception.Candidate
 }
 
 type enhancementAttempt struct {
-	ctx       enginestate.TraversalContext
-	candidate candidate.Candidate
-	step      int
+	ctx  enginestate.TraversalContext
+	item perception.Candidate
+	step int
 }
 
 // NewRunner 创建 Monkey Runner。

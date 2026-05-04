@@ -1,7 +1,7 @@
 package recovery
 
 import (
-	"trek/internal/engine/candidate"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 )
 
@@ -9,7 +9,7 @@ const defaultHighConfidenceThreshold = 0.9
 
 // CandidateProvider 表示恢复阶段的统一候选提供者。
 type CandidateProvider interface {
-	BuildCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+	BuildCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error)
 }
 
 // LLMBudget 控制恢复阶段 LLM provider 的调用预算。
@@ -24,7 +24,7 @@ type LLMBudget interface {
 // （如基于规则的规划器、基于上下文的规划器等），
 // 同时保持 Runner 对恢复规划器的依赖解耦。
 type RecoveryPlanner interface {
-	BuildRecoveryCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error)
+	BuildRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error)
 }
 
 // PlannerConfig 是恢复规划器的最小配置骨架。

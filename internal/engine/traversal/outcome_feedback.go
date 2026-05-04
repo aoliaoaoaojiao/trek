@@ -5,8 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 )
 
 const (
@@ -79,7 +79,7 @@ func outcomeDelta(outcome ActionOutcome) float64 {
 	}
 }
 
-func applyOutcomeFeedback(item candidate.Candidate, feedback *outcomeFeedbackStore) candidate.Candidate {
+func applyOutcomeFeedback(item perception.Candidate, feedback *outcomeFeedbackStore) perception.Candidate {
 	if item.Command == nil || feedback == nil {
 		return item
 	}

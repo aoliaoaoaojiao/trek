@@ -1,4 +1,4 @@
-package llm
+package pagecontrol
 
 import (
 	"encoding/base64"
@@ -8,8 +8,8 @@ import (
 	enginestate "trek/internal/engine/state"
 )
 
-// PageControlPrompt 是页面控件检测专用提示，供视觉模型输出控件区域。
-type PageControlPrompt struct {
+// Prompt 是页面控件检测专用提示，供视觉模型输出控件区域。
+type Prompt struct {
 	SystemContent       string
 	UserContent         string
 	Screenshot          []byte
@@ -18,14 +18,15 @@ type PageControlPrompt struct {
 }
 
 // ScreenshotBase64 返回截图的 base64 编码字符串。
-func (p *PageControlPrompt) ScreenshotBase64() string {
+func (p *Prompt) ScreenshotBase64() string {
 	if len(p.Screenshot) == 0 {
 		return ""
 	}
 	return base64.StdEncoding.EncodeToString(p.Screenshot)
 }
 
-func buildPageControlPrompt(ctx enginestate.TraversalContext) PageControlPrompt {
+// BuildPrompt 构建页面控件检测提示。
+func BuildPrompt(ctx enginestate.TraversalContext) Prompt {
 	systemInstruction := `你是一个专业的 Android UI 视觉控件检测器。你将收到当前屏幕截图，需要识别页面中的可交互控件区域，并返回结构化控件列表。
 
 关键规则：
@@ -35,21 +36,21 @@ func buildPageControlPrompt(ctx enginestate.TraversalContext) PageControlPrompt 
 4. 若控件文字可见，请尽量填写 text；若无法确认文字，可填写 hint
 5. 输出必须是 JSON，且仅返回符合 schema 的 controls 数组`
 
-	userMessage := buildPageControlUserMessage(ctx)
+	userMessage := buildUserMessage(ctx)
 	mediaType := "image/png"
 	if len(ctx.Screenshot) == 0 {
 		mediaType = ""
 	}
-	return PageControlPrompt{
+	return Prompt{
 		SystemContent:       systemInstruction,
 		UserContent:         userMessage,
 		Screenshot:          cloneBytes(ctx.Screenshot),
 		ScreenshotMediaType: mediaType,
-		ResponseSchema:      pageControlSchema(),
+		ResponseSchema:      schema(),
 	}
 }
 
-func buildPageControlUserMessage(ctx enginestate.TraversalContext) string {
+func buildUserMessage(ctx enginestate.TraversalContext) string {
 	var sb strings.Builder
 	if ctx.PageName != "" {
 		sb.WriteString(fmt.Sprintf("页面名: %s\n", ctx.PageName))
@@ -71,7 +72,7 @@ func buildPageControlUserMessage(ctx enginestate.TraversalContext) string {
 	return sb.String()
 }
 
-func pageControlSchema() map[string]any {
+func schema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -117,4 +118,13 @@ func pageControlSchema() map[string]any {
 		},
 		"required": []string{"controls"},
 	}
+}
+
+func cloneBytes(src []byte) []byte {
+	if len(src) == 0 {
+		return nil
+	}
+	result := make([]byte, len(src))
+	copy(result, src)
+	return result
 }

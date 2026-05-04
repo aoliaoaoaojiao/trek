@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 )
 
@@ -26,9 +26,9 @@ func TestProviderBuildCandidatesFromStore(t *testing.T) {
 		BlockReason:      "scroll_no_change",
 		TraceSignature:   "CLICK>BACK",
 		Mode:             string(enginestate.ModeRecover),
-		Candidate: candidate.NewCandidate(
+		Item: perception.NewCandidate(
 			&types.ActionCommand{Act: types.BACK},
-			candidate.SourceMemory,
+			perception.SourceMemory,
 			"返回上一层",
 			nil,
 		),
@@ -62,7 +62,7 @@ func TestProviderBuildCandidatesFromStore(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("候选数量错误: %d", len(items))
 	}
-	if items[0].Source != candidate.SourceMemory {
+	if items[0].Source != perception.SourceMemory {
 		t.Fatalf("候选来源错误: %s", items[0].Source)
 	}
 	if items[0].Command == nil || items[0].Command.Act != types.BACK {
@@ -90,7 +90,7 @@ func TestProviderBoostsCandidateEnhancementInExplore(t *testing.T) {
 		BlockReason:      BlockReasonCandidateEnhancement,
 		TraceSignature:   "CLICK",
 		Mode:             string(enginestate.ModeExplore),
-		Candidate:        candidate.NewCandidate(&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}, candidate.SourceMemory, "增强点击", nil),
+		Item:             perception.NewCandidate(&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}, perception.SourceMemory, "增强点击", nil),
 		Outcome:          OutcomeEscaped,
 		SuccessCount:     1,
 		FailCount:        1,
@@ -104,7 +104,7 @@ func TestProviderBoostsCandidateEnhancementInExplore(t *testing.T) {
 		BlockReason:      "same_page_no_change",
 		TraceSignature:   "BACK",
 		Mode:             string(enginestate.ModeExplore),
-		Candidate:        candidate.NewCandidate(&types.ActionCommand{Act: types.BACK}, candidate.SourceMemory, "普通返回", nil),
+		Item:             perception.NewCandidate(&types.ActionCommand{Act: types.BACK}, perception.SourceMemory, "普通返回", nil),
 		Outcome:          OutcomeEscaped,
 		SuccessCount:     1,
 		FailCount:        1,

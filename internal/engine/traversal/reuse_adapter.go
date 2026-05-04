@@ -3,8 +3,8 @@ package traversal
 import (
 	"fmt"
 
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 )
 
@@ -53,7 +53,7 @@ func (a *ReuseAdapter) Name() string {
 // 映射为统一 Candidate 列表。
 //
 // 当 stateProvider 为 nil 或当前状态无可用动作时返回空列表。
-func (a *ReuseAdapter) ProposeCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (a *ReuseAdapter) ProposeCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if a.stateProvider == nil {
 		return nil, nil
 	}
@@ -68,7 +68,7 @@ func (a *ReuseAdapter) ProposeCandidates(ctx enginestate.TraversalContext) ([]ca
 		return nil, nil
 	}
 
-	candidates := make([]candidate.Candidate, 0, len(actions))
+	candidates := make([]perception.Candidate, 0, len(actions))
 	for _, action := range actions {
 		if action == nil {
 			continue
@@ -77,9 +77,9 @@ func (a *ReuseAdapter) ProposeCandidates(ctx enginestate.TraversalContext) ([]ca
 		if !cmd.IsValid() {
 			continue
 		}
-		candidates = append(candidates, candidate.NewCandidate(
+		candidates = append(candidates, perception.NewCandidate(
 			cmd,
-			candidate.SourceAlgorithm,
+			perception.SourceAlgorithm,
 			action.GetActionType().String(),
 			map[string]string{
 				"algorithm":     "reuse",
@@ -97,21 +97,21 @@ func (a *ReuseAdapter) ProposeCandidates(ctx enginestate.TraversalContext) ([]ca
 //
 // 优先选择 Source=algorithm 的候选（来自 Reuse 自身产出），
 // 若无 algorithm 来源候选，从其他来源中按 Confidence 选择最高者。
-func (a *ReuseAdapter) SelectAction(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types.ActionCommand, error) {
+func (a *ReuseAdapter) SelectAction(ctx enginestate.TraversalContext, candidates []perception.Candidate) (*types.ActionCommand, error) {
 	if len(candidates) == 0 {
 		return nil, nil
 	}
 
 	// 优先选择算法自身的候选
 	for _, c := range candidates {
-		if c.Source == candidate.SourceAlgorithm && c.Command != nil && c.Command.IsValid() {
+		if c.Source == perception.SourceAlgorithm && c.Command != nil && c.Command.IsValid() {
 			scored := applyOutcomeFeedback(c, a.feedback)
 			return scored.Command, nil
 		}
 	}
 
 	// 回退：选择置信度最高的有效候选
-	best := candidate.Candidate{}
+	best := perception.Candidate{}
 	found := false
 	for _, c := range candidates {
 		if c.Command == nil || !c.Command.IsValid() {

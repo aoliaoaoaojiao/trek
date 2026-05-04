@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"trek/internal/engine/candidate"
+	"trek/internal/engine/perception"
 )
 
 // PixelRect 表示图片上的绝对像素矩形。
@@ -36,7 +36,7 @@ func WriteCandidateOverlayPNG(
 	t *testing.T,
 	fixtureName string,
 	fileName string,
-	items []candidate.Candidate,
+	items []perception.Candidate,
 ) string {
 	t.Helper()
 

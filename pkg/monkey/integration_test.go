@@ -40,14 +40,14 @@ func TestMonkeyIntegration_ShortRun(t *testing.T) {
 
 	maxSteps := 5
 	runner, err := NewRunner(sess, driver, Config{
-		PackageName:    pkgName,
-		MaxSteps:       maxSteps,
-		MaxDuration:    60 * time.Second,
-		StepInterval:   500 * time.Millisecond,
-		StopOnCrash:    true,
-		StopOnANR:      true,
+		PackageName:     pkgName,
+		MaxSteps:        maxSteps,
+		MaxDuration:     60 * time.Second,
+		StepInterval:    500 * time.Millisecond,
+		StopOnCrash:     true,
+		StopOnANR:       true,
 		KeepStepRecords: true,
-		PageSourceType: string(android.PageTypeUIA),
+		PageSourceType:  string(android.PageTypeUIA),
 	})
 	require.NoError(t, err, "创建 Runner 失败")
 
@@ -93,7 +93,7 @@ func TestMonkeyIntegration_WithBlockRecovery(t *testing.T) {
 		StepInterval:           500 * time.Millisecond,
 		StopOnCrash:            true,
 		StopOnANR:              true,
-		KeepStepRecords:         true,
+		KeepStepRecords:        true,
 		PageSourceType:         string(android.PageTypeUIA),
 		EnableBlockRecovery:    &enableBlockRecovery,
 		BlockNoChangeThreshold: 3,
@@ -112,4 +112,3 @@ func TestMonkeyIntegration_WithBlockRecovery(t *testing.T) {
 		report.StepsTotal, report.StopReason,
 		report.RecoveryCooldownEnterCount, report.OutOfAppRecoveries)
 }
-

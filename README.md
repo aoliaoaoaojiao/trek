@@ -20,8 +20,9 @@ cmd/                    CLI 与 Web 入口
 pkg/monkey/             遍历编排与执行
 pkg/session/            稳定决策会话入口
 internal/engine/        决策、恢复、候选、记忆、运行时
-internal/engine/candidate/providers/     Provider 对外入口与 OCR 等非 LLM provider
-internal/engine/candidate/providers/llm/ LLM 页面控件检测相关实现与提示词
+internal/engine/perception/providers/     Provider 对外入口与 OCR 等非 LLM provider
+internal/engine/perception/providers/llm/ LLM 页面控件检测相关实现与提示词
+internal/engine/perception/pagecontrol/   页面控件检测公共提示词与解析逻辑
 docs/                   设计与实现文档
 ```
 
@@ -326,8 +327,8 @@ trek run --package com.example.app --capture-screenshot
 - CLI 入口：[root.go](/h:/CodeProject/GoProject/trek-dev/cmd/root.go)
 - 运行命令：[run.go](/h:/CodeProject/GoProject/trek-dev/cmd/run.go)
 - 会话装配：[session.go](/h:/CodeProject/GoProject/trek-dev/pkg/session/session.go)
-- LLM Provider 入口：[llm.go](/h:/CodeProject/GoProject/Trek/internal/engine/candidate/providers/llm.go)
-- OCR Provider：[ocr_http.go](/h:/CodeProject/GoProject/trek-dev/internal/engine/candidate/providers/ocr_http.go)
+- LLM Provider 入口：[llm.go](/h:/CodeProject/GoProject/Trek/internal/engine/perception/providers/llm.go)
+- OCR Provider：[ocr_http.go](/h:/CodeProject/GoProject/Trek/internal/engine/perception/providers/ocr_http.go)
 
 ## 开发说明
 

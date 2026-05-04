@@ -2,8 +2,8 @@ package monkey
 
 import (
 	"sort"
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 	"trek/internal/engine/traversal"
 	"trek/logger"
@@ -21,7 +21,7 @@ func (r *Runner) recordCandidateEnhancementOutcome(step int, cmd *types.ActionCo
 	defer func() {
 		r.lastEnhancementAttempt = nil
 	}()
-	if attempt.candidate.Command == nil || !attempt.candidate.Command.Equal(cmd) {
+	if attempt.item.Command == nil || !attempt.item.Command.Equal(cmd) {
 		return
 	}
 	writer, ok := r.decider.(RecoveryMemoryWriter)
@@ -29,7 +29,7 @@ func (r *Runner) recordCandidateEnhancementOutcome(step int, cmd *types.ActionCo
 		return
 	}
 	improved := outcome == traversal.OutcomeNewState || outcome == traversal.OutcomeEscapeBlock
-	if err := writer.RecordCandidateEnhancementOutcome(attempt.ctx, attempt.candidate, improved); err != nil {
+	if err := writer.RecordCandidateEnhancementOutcome(attempt.ctx, attempt.item, improved); err != nil {
 		logger.Warnf("record candidate enhancement outcome failed: improved=%t err=%v", improved, err)
 	}
 }
@@ -44,7 +44,7 @@ func (r *Runner) tryEnhanceCandidates(step int, beforePage session.PageSnapshot,
 	return nil, nil
 }
 
-func findCandidateByCommand(items []candidate.Candidate, cmd *types.ActionCommand) *candidate.Candidate {
+func findCandidateByCommand(items []perception.Candidate, cmd *types.ActionCommand) *perception.Candidate {
 	if cmd == nil {
 		return nil
 	}

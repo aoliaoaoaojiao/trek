@@ -3,8 +3,8 @@ package traversal_test
 import (
 	"testing"
 
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 	"trek/internal/engine/traversal"
 )
@@ -13,10 +13,10 @@ import (
 type mockAlgorithm struct{}
 
 func (m *mockAlgorithm) Name() string { return "mock" }
-func (m *mockAlgorithm) ProposeCandidates(ctx enginestate.TraversalContext) ([]candidate.Candidate, error) {
+func (m *mockAlgorithm) ProposeCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	return nil, nil
 }
-func (m *mockAlgorithm) SelectAction(ctx enginestate.TraversalContext, candidates []candidate.Candidate) (*types.ActionCommand, error) {
+func (m *mockAlgorithm) SelectAction(ctx enginestate.TraversalContext, candidates []perception.Candidate) (*types.ActionCommand, error) {
 	return nil, nil
 }
 func (m *mockAlgorithm) ObserveOutcome(ctx enginestate.TraversalContext, action *types.ActionCommand, outcome traversal.ActionOutcome) error {

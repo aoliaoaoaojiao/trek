@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"trek/internal/engine/perception/pagecontrol"
 	enginestate "trek/internal/engine/state"
 )
 
@@ -317,7 +318,7 @@ func TestBuildRecoveryPrompt_EmptyContext(t *testing.T) {
 }
 
 func TestBuildPageControlPrompt_SystemContentAndSchema(t *testing.T) {
-	prompt := buildPageControlPrompt(enginestate.TraversalContext{
+	prompt := pagecontrol.BuildPrompt(enginestate.TraversalContext{
 		PageName:   "DialogPage",
 		Screenshot: []byte("fake-image"),
 	})

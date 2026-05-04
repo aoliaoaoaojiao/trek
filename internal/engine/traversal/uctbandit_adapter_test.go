@@ -3,8 +3,8 @@ package traversal_test
 import (
 	"testing"
 
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	"trek/internal/engine/traversal"
 )
 
@@ -62,12 +62,12 @@ func TestUCTBanditAdapterObserveOutcomeAffectsSelection(t *testing.T) {
 		t.Fatalf("observe outcome 失败: %v", err)
 	}
 
-	backCandidate := candidate.NewCandidate(backCmd, candidate.SourceMemory, "back", nil)
+	backCandidate := perception.NewCandidate(backCmd, perception.SourceMemory, "back", nil)
 	backCandidate.Confidence = 0.5
-	clickCandidate := candidate.NewCandidate(clickCmd, candidate.SourceMemory, "click", nil)
+	clickCandidate := perception.NewCandidate(clickCmd, perception.SourceMemory, "click", nil)
 	clickCandidate.Confidence = 0.5
 
-	cmd, err := adapter.SelectAction(ctx, []candidate.Candidate{backCandidate, clickCandidate})
+	cmd, err := adapter.SelectAction(ctx, []perception.Candidate{backCandidate, clickCandidate})
 	if err != nil {
 		t.Fatalf("select action 失败: %v", err)
 	}
@@ -87,9 +87,9 @@ func TestUCTBanditAdapterSelectActionPrefersAlgorithmSource(t *testing.T) {
 	backCmd := types.NewActionCommand()
 	backCmd.Act = types.BACK
 
-	candidates := []candidate.Candidate{
-		candidate.NewCandidate(backCmd, candidate.SourceLLM, "escape_dialog", nil),
-		candidate.NewCandidate(clickCmd, candidate.SourceAlgorithm, "click_search", nil),
+	candidates := []perception.Candidate{
+		perception.NewCandidate(backCmd, perception.SourceLLM, "escape_dialog", nil),
+		perception.NewCandidate(clickCmd, perception.SourceAlgorithm, "click_search", nil),
 	}
 
 	cmd, err := adapter.SelectAction(ctx, candidates)
@@ -116,16 +116,16 @@ func TestUCTBanditAdapterSelectActionWithEscapeBoost(t *testing.T) {
 	clickCmd.Pos = *types.NewRect(0.1, 0.2, 0.3, 0.4)
 
 	// Memory 来源候选带高 EscapeScore（逃逸加成）
-	memCandidate := candidate.NewCandidate(backCmd, candidate.SourceMemory, "escape_back", nil)
+	memCandidate := perception.NewCandidate(backCmd, perception.SourceMemory, "escape_back", nil)
 	memCandidate.EscapeScore = 3.0
 	memCandidate.Confidence = 0.5
 
 	// Algorithm 来源候选无逃逸加成
-	algoCandidate := candidate.NewCandidate(clickCmd, candidate.SourceAlgorithm, "click_search", nil)
+	algoCandidate := perception.NewCandidate(clickCmd, perception.SourceAlgorithm, "click_search", nil)
 	algoCandidate.Confidence = 0.3
 
 	// 无 algorithm 来源时，应选择 Score 较高的候选
-	candidates := []candidate.Candidate{memCandidate, algoCandidate}
+	candidates := []perception.Candidate{memCandidate, algoCandidate}
 	cmd, err := adapter.SelectAction(ctx, candidates)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

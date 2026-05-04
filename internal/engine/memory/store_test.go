@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-	"trek/internal/engine/candidate"
 	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 )
 
@@ -27,9 +27,9 @@ func TestStoreAppendAndReloadFromJSONL(t *testing.T) {
 		BlockReason:      "scroll_no_change",
 		TraceSignature:   "CLICK>BACK",
 		Mode:             string(enginestate.ModeRecover),
-		Candidate: candidate.NewCandidate(
+		Item: perception.NewCandidate(
 			&types.ActionCommand{Act: types.BACK},
-			candidate.SourceMemory,
+			perception.SourceMemory,
 			"返回上一层",
 			map[string]string{"memory_key": "page-a"},
 		),
@@ -59,8 +59,8 @@ func TestStoreAppendAndReloadFromJSONL(t *testing.T) {
 	if items[0].PageSignature != "page-a" {
 		t.Fatalf("重载记录 page signature 错误: %s", items[0].PageSignature)
 	}
-	if items[0].Candidate.Command == nil || items[0].Candidate.Command.Act != types.BACK {
-		t.Fatalf("重载记录 candidate 命令错误: %+v", items[0].Candidate.Command)
+	if items[0].Item.Command == nil || items[0].Item.Command.Act != types.BACK {
+		t.Fatalf("重载记录 memory item 命令错误: %+v", items[0].Item.Command)
 	}
 }
 
@@ -81,9 +81,9 @@ func TestStoreFindPrefersExactMatch(t *testing.T) {
 		BlockReason:      "scroll_no_change",
 		TraceSignature:   "CLICK>BACK",
 		Mode:             string(enginestate.ModeRecover),
-		Candidate: candidate.NewCandidate(
+		Item: perception.NewCandidate(
 			&types.ActionCommand{Act: types.BACK},
-			candidate.SourceMemory,
+			perception.SourceMemory,
 			"exact",
 			nil,
 		),
@@ -99,9 +99,9 @@ func TestStoreFindPrefersExactMatch(t *testing.T) {
 		BlockReason:      "scroll_no_change",
 		TraceSignature:   "",
 		Mode:             string(enginestate.ModeRecover),
-		Candidate: candidate.NewCandidate(
+		Item: perception.NewCandidate(
 			&types.ActionCommand{Act: types.CLICK},
-			candidate.SourceMemory,
+			perception.SourceMemory,
 			"fallback",
 			nil,
 		),
@@ -132,8 +132,8 @@ func TestStoreFindPrefersExactMatch(t *testing.T) {
 	if len(items) == 0 {
 		t.Fatalf("预期命中至少一个记录")
 	}
-	if items[0].Candidate.Intent != "exact" {
-		t.Fatalf("预期优先命中 exact，实际: %s", items[0].Candidate.Intent)
+	if items[0].Item.Intent != "exact" {
+		t.Fatalf("预期优先命中 exact，实际: %s", items[0].Item.Intent)
 	}
 }
 
@@ -155,9 +155,9 @@ func TestStoreAppendOutcomeAggregatesByMemoryKeyAndAction(t *testing.T) {
 		BlockReason:      "same_page_no_change",
 		TraceSignature:   "BACK",
 		Mode:             string(enginestate.ModeRecover),
-		Candidate: candidate.NewCandidate(
+		Item: perception.NewCandidate(
 			&types.ActionCommand{Act: types.BACK},
-			candidate.SourceMemory,
+			perception.SourceMemory,
 			"返回上一层",
 			nil,
 		),

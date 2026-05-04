@@ -21,8 +21,8 @@ pkg/monkey/             遍历编排与执行
 pkg/session/            稳定决策会话入口
 internal/engine/        决策、恢复、候选、记忆、运行时
 internal/engine/perception/providers/     Provider 对外入口与 OCR 等非 LLM provider
-internal/engine/perception/providers/llm/ LLM 页面控件检测相关实现与提示词
-internal/engine/perception/pagecontrol/   页面控件检测公共提示词与解析逻辑
+internal/engine/perception/providers/llm/ LLM 页面控件检测相关实现
+internal/engine/perception/pagecontrol/   页面控件检测公共提示词、schema 与解析逻辑
 docs/                   设计与实现文档
 ```
 
@@ -71,8 +71,8 @@ LLM_API_URL=https://your-llm-gateway/v1/chat/completions
 LLM_API_KEY=your_page_control_llm_key
 LLM_MODEL=your-model-name
 
-# OpenAI Responses Provider（页面控件检测，可选）
-OPENAI_API_URL=https://api.openai.com/v1/responses
+# OpenAI Chat Completions 兼容 Provider（页面控件检测，可选）
+OPENAI_API_URL=https://api.openai.com/v1/chat/completions
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_MODEL=gpt-4.1-mini
 
@@ -134,7 +134,7 @@ const config = {
 
 当 `page_control_strategy` 为 `ocr` 或 `llm` 时，Trek 会自动启用截图采集；如果当前步骤拿不到 dump，会继续尝试走“截图 -> 控件区域 -> 伪 XML”链路，而不是直接中断该步。
 
-其中 `llm` 现已使用专门的“控件检测 schema”，要求模型直接返回控件区域列表（`controls`），不再复用恢复动作建议的 `candidates` schema。控件 `bounds` 优先使用对象格式 `{left,top,right,bottom}`，同时兼容四元数组 `[left, top, right, bottom]`。
+其中 `llm` 现已使用专门的“控件检测 schema”，要求模型直接返回控件区域列表（`controls`），不再复用恢复动作建议的 `candidates` schema。页面控件提示词独立存放在 Markdown 文档中，并通过 Go `embed` 加载，便于单独维护。控件输出以基础交互类型 `action_type` 为主，例如 `click`、`drag`、`swipe_*`、`input`；可选的 `control_type` 仅作为语义补充。控件 `bounds` 优先使用对象格式 `{left,top,right,bottom}`，同时兼容四元数组 `[left, top, right, bottom]`。
 
 同样支持在 JS 中配置恢复相关调参（示例）：
 
@@ -273,7 +273,7 @@ trek run --package com.example.app --capture-screenshot
 页面控件检测链路支持两种方式：
 
 - 通用 HTTP Provider
-- OpenAI Responses Provider
+- OpenAI Chat Completions 兼容 Provider
 - Anthropic Messages Provider
 
 常用环境变量：
@@ -293,7 +293,7 @@ trek run --package com.example.app --capture-screenshot
 
 - 恢复经验库可通过 `RECOVERY_MEMORY_FILE` 指定本地持久化路径
 - 通用 HTTP Provider：至少配置 `LLM_API_URL`、`LLM_MODEL` 和 `LLM_API_KEY`
-- OpenAI Responses Provider：至少配置 `OPENAI_MODEL` 和 `OPENAI_API_KEY`
+- OpenAI Chat Completions 兼容 Provider：至少配置 `OPENAI_MODEL` 和 `OPENAI_API_KEY`
 - Anthropic Messages Provider：至少配置 `ANTHROPIC_MODEL` 和 `ANTHROPIC_API_KEY`
 - 如果使用 OpenAI 兼容网关或代理，可额外配置 `OPENAI_API_URL`
 - 如果使用 Anthropic 兼容网关或米莫 Anthropic 接口，可额外配置 `ANTHROPIC_API_URL`

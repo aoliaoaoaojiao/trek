@@ -326,6 +326,9 @@ func TestBuildPageControlPrompt_SystemContentAndSchema(t *testing.T) {
 	if !strings.Contains(prompt.SystemContent, "视觉控件检测器") {
 		t.Fatalf("SystemContent 应包含控件检测角色: %s", prompt.SystemContent)
 	}
+	if !strings.Contains(prompt.SystemContent, "`action_type`") {
+		t.Fatalf("SystemContent 应说明基础交互类型: %s", prompt.SystemContent)
+	}
 	if !strings.Contains(prompt.SystemContent, "四元数组") {
 		t.Fatalf("SystemContent 应说明 bounds 支持四元数组: %s", prompt.SystemContent)
 	}
@@ -348,6 +351,17 @@ func TestBuildPageControlPrompt_SystemContentAndSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("controls.items.properties 类型错误")
 	}
+	actionType, ok := itemProps["action_type"].(map[string]any)
+	if !ok {
+		t.Fatalf("应存在 action_type 字段")
+	}
+	enumVals, ok := actionType["enum"].([]string)
+	if !ok || len(enumVals) == 0 {
+		t.Fatalf("action_type 枚举定义错误: %+v", actionType)
+	}
+	if enumVals[0] != "click" {
+		t.Fatalf("action_type 第一项应为 click，实际: %+v", enumVals)
+	}
 	bounds, ok := itemProps["bounds"].(map[string]any)
 	if !ok {
 		t.Fatalf("应存在 bounds 字段")
@@ -364,5 +378,9 @@ func TestBuildPageControlPrompt_SystemContentAndSchema(t *testing.T) {
 	arraySchema := oneOf[1]
 	if arraySchema["type"] != "array" || arraySchema["minItems"] != 4 || arraySchema["maxItems"] != 4 {
 		t.Fatalf("bounds 数组格式定义错误: %+v", arraySchema)
+	}
+	required, ok := items["required"].([]string)
+	if !ok || len(required) < 3 {
+		t.Fatalf("controls.items.required 定义错误: %+v", items["required"])
 	}
 }

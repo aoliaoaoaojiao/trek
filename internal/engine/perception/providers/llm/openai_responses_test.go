@@ -172,7 +172,7 @@ func TestOpenAIResponsesProviderDetectPageControls(t *testing.T) {
 			"choices": []map[string]any{
 				{
 					"message": map[string]any{
-						"content": `{"controls":[{"control_type":"button","text":"确定","hint":"确认","clickable":true,"confidence":0.88,"bounds":{"left":0.2,"top":0.3,"right":0.5,"bottom":0.6}}]}`,
+						"content": `{"controls":[{"action_type":"click","control_type":"button","text":"确定","hint":"确认","clickable":true,"confidence":0.88,"bounds":{"left":0.2,"top":0.3,"right":0.5,"bottom":0.6}}]}`,
 					},
 				},
 			},
@@ -209,7 +209,7 @@ func TestOpenAIResponsesProviderDetectPageControlsWithBoundsArray(t *testing.T) 
 			"choices": []map[string]any{
 				{
 					"message": map[string]any{
-						"content": `{"controls":[{"control_type":"button","text":"确定","hint":"确认","clickable":true,"confidence":0.88,"bounds":[0.2,0.3,0.5,0.6]}]}`,
+						"content": `{"controls":[{"action_type":"click","control_type":"button","text":"确定","hint":"确认","clickable":true,"confidence":0.88,"bounds":[0.2,0.3,0.5,0.6]}]}`,
 					},
 				},
 			},
@@ -250,7 +250,7 @@ func TestNewOpenAIResponsesProviderNormalizeBaseURL(t *testing.T) {
 				"choices": []map[string]any{
 					{
 						"message": map[string]any{
-							"content": `{"controls":[{"control_type":"button","text":"确定","clickable":true,"confidence":0.88,"bounds":{"left":0.2,"top":0.3,"right":0.5,"bottom":0.6}}]}`,
+							"content": `{"controls":[{"action_type":"click","control_type":"button","text":"确定","clickable":true,"confidence":0.88,"bounds":{"left":0.2,"top":0.3,"right":0.5,"bottom":0.6}}]}`,
 						},
 					},
 				},
@@ -291,7 +291,7 @@ func TestNewOpenAIResponsesProviderNormalizeBaseURL(t *testing.T) {
 				"choices": []map[string]any{
 					{
 						"message": map[string]any{
-							"content": `{"controls":[{"control_type":"button","text":"返回","clickable":true,"confidence":0.88,"bounds":{"left":0.1,"top":0.1,"right":0.2,"bottom":0.2}}]}`,
+							"content": `{"controls":[{"action_type":"click","control_type":"button","text":"返回","clickable":true,"confidence":0.88,"bounds":{"left":0.1,"top":0.1,"right":0.2,"bottom":0.2}}]}`,
 						},
 					},
 				},

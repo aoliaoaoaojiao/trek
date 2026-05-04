@@ -226,7 +226,7 @@ func TestSessionTransformPageInfoWithLLMPageControlStrategy(t *testing.T) {
 				&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.25, 0.25, 0.5, 0.5)},
 				perception.SourceLLM,
 				"点击确认",
-				map[string]string{"llm_control_text": "确认按钮", "llm_control_type": "dialog_action"},
+				map[string]string{"llm_control_text": "确认按钮", "llm_control_type": "dialog_action", "llm_action_type": "click"},
 			)
 			return []perception.Candidate{item}, nil
 		},
@@ -984,6 +984,7 @@ func TestSessionInitLLMProviderFromEnvForPageControlOnly(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"controls": []map[string]any{
 				{
+					"action_type":  "click",
 					"control_type": "button",
 					"text":         "继续",
 					"hint":         "下一步",
@@ -1030,7 +1031,13 @@ func TestSessionInitOpenAIProviderFromEnvForPageControlOnly(t *testing.T) {
 			t.Fatalf("Authorization 错误: %s", got)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"output_text": `{"controls":[{"control_type":"button","text":"确认","hint":"主按钮","clickable":true,"confidence":0.8,"bounds":{"left":0.2,"top":0.2,"right":0.6,"bottom":0.6}}]}`,
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `{"controls":[{"action_type":"click","control_type":"button","text":"确认","hint":"主按钮","clickable":true,"confidence":0.8,"bounds":{"left":0.2,"top":0.2,"right":0.6,"bottom":0.6}}]}`,
+					},
+				},
+			},
 		})
 	}))
 	defer server.Close()

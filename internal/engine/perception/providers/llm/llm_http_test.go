@@ -320,6 +320,7 @@ func TestLLMHTTPProviderDetectPageControls(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"controls": []map[string]any{
 				{
+					"action_type":  "click",
 					"control_type": "button",
 					"text":         "登录",
 					"hint":         "主按钮",

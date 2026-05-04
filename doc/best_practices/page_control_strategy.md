@@ -10,7 +10,7 @@
 - `ocr`：基于截图 OCR 提取文本区域，生成伪控件树。
 - `llm`：基于截图由 LLM 推断控件区域，生成伪控件树。
 
-其中 `llm` 走的是独立的控件检测 schema，要求模型返回 `controls` 数组，而不是恢复动作 `candidates`。控件 `bounds` 优先返回对象格式 `{left,top,right,bottom}`，同时兼容四元数组 `[left, top, right, bottom]`。同时，LLM 不再直接参与 Trek 内置决策链路，只负责页面控件检测。
+其中 `llm` 走的是独立的控件检测 schema，要求模型返回 `controls` 数组，而不是恢复动作 `candidates`。提示词建议维护在独立 Markdown 文档中，并通过 Go `embed` 加载。控件输出应优先给出基础交互类型 `action_type`，例如 `click`、`drag`、`swipe_up`、`swipe_down`、`swipe_left`、`swipe_right`、`input`；`control_type` 仅作为可选语义补充。控件 `bounds` 优先返回对象格式 `{left,top,right,bottom}`，同时兼容四元数组 `[left, top, right, bottom]`。同时，LLM 不再直接参与 Trek 内置决策链路，只负责页面控件检测。
 
 ## 推荐用法
 
@@ -37,4 +37,8 @@ const config = {
 
 - `ocr` / `llm` 依赖截图质量，截图为空时无法生效。
 - `llm` 依赖外部模型服务配置，未配置时不会启用专用控件检测。
+- 当前执行层还没有单独的原生 `DRAG` / `INPUT` 动作枚举，页面控件检测结果会先映射到现有动作：
+  - `click -> CLICK`
+  - `input -> ACTIVATE`
+  - `swipe_* / drag -> SCROLL_*`
 - 当前伪控件树主要服务“继续决策”和“继续点击区域定位”，复杂层级关系仍以真实 dump 为准。

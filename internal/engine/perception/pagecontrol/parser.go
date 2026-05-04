@@ -15,6 +15,7 @@ type Response struct {
 
 // Control 是单个控件输出。
 type Control struct {
+	ActionType  string  `json:"action_type"`
 	ControlType string  `json:"control_type"`
 	Text        string  `json:"text"`
 	Hint        string  `json:"hint"`
@@ -76,6 +77,7 @@ func ParseCandidates(output Response) []perception.Candidate {
 			intent = "llm_control:" + label
 		}
 		metadata := map[string]string{
+			"llm_action_type":  normalizeActionType(raw),
 			"llm_control_type": strings.TrimSpace(raw.ControlType),
 			"llm_control_text": strings.TrimSpace(raw.Text),
 			"llm_target_hint":  strings.TrimSpace(raw.Hint),
@@ -98,8 +100,60 @@ func toCommand(raw Control) (*types.ActionCommand, bool) {
 	if raw.Bounds.Right <= raw.Bounds.Left || raw.Bounds.Bottom <= raw.Bounds.Top {
 		return nil, false
 	}
+	act, ok := toActionType(raw)
+	if !ok {
+		return nil, false
+	}
 	cmd := types.NewActionCommand()
-	cmd.Act = types.CLICK
+	cmd.Act = act
 	cmd.Pos = *types.NewRect(raw.Bounds.Left, raw.Bounds.Top, raw.Bounds.Right, raw.Bounds.Bottom)
 	return cmd, true
+}
+
+func toActionType(raw Control) (types.ActionType, bool) {
+	switch normalizeActionType(raw) {
+	case "click":
+		return types.CLICK, true
+	case "input":
+		return types.ACTIVATE, true
+	case "swipe_up":
+		return types.SCROLL_BOTTOM_UP, true
+	case "swipe_down":
+		return types.SCROLL_TOP_DOWN, true
+	case "swipe_left":
+		return types.SCROLL_RIGHT_LEFT, true
+	case "swipe_right":
+		return types.SCROLL_LEFT_RIGHT, true
+	case "drag":
+		return inferDragAction(raw), true
+	default:
+		return types.NOP, false
+	}
+}
+
+func normalizeActionType(raw Control) string {
+	actionType := strings.ToLower(strings.TrimSpace(raw.ActionType))
+	if actionType != "" {
+		return actionType
+	}
+	switch strings.ToLower(strings.TrimSpace(raw.ControlType)) {
+	case "input":
+		return "input"
+	default:
+		return "click"
+	}
+}
+
+func inferDragAction(raw Control) types.ActionType {
+	label := strings.ToLower(strings.TrimSpace(raw.Text + " " + raw.Hint))
+	switch {
+	case strings.Contains(label, "左"), strings.Contains(label, "left"):
+		return types.SCROLL_RIGHT_LEFT
+	case strings.Contains(label, "右"), strings.Contains(label, "right"):
+		return types.SCROLL_LEFT_RIGHT
+	case strings.Contains(label, "下"), strings.Contains(label, "down"):
+		return types.SCROLL_TOP_DOWN
+	default:
+		return types.SCROLL_BOTTOM_UP
+	}
 }

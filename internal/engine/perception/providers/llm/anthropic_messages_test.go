@@ -53,7 +53,7 @@ func TestAnthropicMessagesProviderDetectPageControls(t *testing.T) {
 			"content": []map[string]any{
 				{
 					"type": "text",
-					"text": `{"controls":[{"control_type":"button","text":"确定","clickable":true,"confidence":0.91,"bounds":[0.2,0.3,0.5,0.6]}]}`,
+					"text": `{"controls":[{"action_type":"click","control_type":"button","text":"确定","clickable":true,"confidence":0.91,"bounds":[0.2,0.3,0.5,0.6]}]}`,
 				},
 			},
 		})
@@ -153,7 +153,7 @@ func TestAnthropicMessagesProviderEncodesScreenshotAsBase64Image(t *testing.T) {
 			"content": []map[string]any{
 				{
 					"type": "text",
-					"text": `{"controls":[{"control_type":"button","text":"确定","clickable":true,"confidence":0.88,"bounds":{"left":0.2,"top":0.3,"right":0.5,"bottom":0.6}}]}`,
+					"text": `{"controls":[{"action_type":"click","control_type":"button","text":"确定","clickable":true,"confidence":0.88,"bounds":{"left":0.2,"top":0.3,"right":0.5,"bottom":0.6}}]}`,
 				},
 			},
 		})

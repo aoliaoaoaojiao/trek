@@ -5,11 +5,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 	"trek/internal/engine/candidate"
@@ -22,6 +24,7 @@ const (
 	defaultOCRCandidateConfidence = 0.6
 	defaultOCRMaxCandidates       = 24
 	requestFormatDefault          = "default"
+	requestFormatAistudioOCR      = "aistudio_ocr"
 	requestFormatAistudioLayout   = "aistudio_layout"
 )
 
@@ -116,7 +119,7 @@ func (p *OCRHTTPProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]c
 	if len(items) > 0 {
 		return items, nil
 	}
-	// 兼容 aistudio layout-parsing 等多层结构响应。
+	// 兼容 aistudio /ocr、layout-parsing 等多层结构响应。
 	fallback := extractOCRRegionsFromArbitraryJSON(body)
 	return p.toCandidates(ocrResponse{Regions: fallback}, width, height), nil
 }
@@ -169,13 +172,16 @@ func (p *OCRHTTPProvider) toCandidates(output ocrResponse, width int, height int
 }
 
 func (p *OCRHTTPProvider) buildPayload(ctx enginestate.TraversalContext, width int, height int) ([]byte, error) {
-	if p != nil && p.requestFormat == requestFormatAistudioLayout {
+	if p != nil && (p.requestFormat == requestFormatAistudioLayout || p.requestFormat == requestFormatAistudioOCR) {
 		payload := map[string]any{
 			"file":                      base64.StdEncoding.EncodeToString(ctx.Screenshot),
 			"fileType":                  1,
+			"useDocPreprocessor":        false,
 			"useDocOrientationClassify": false,
 			"useDocUnwarping":           false,
-			"useChartRecognition":       false,
+		}
+		if p.requestFormat == requestFormatAistudioLayout {
+			payload["useChartRecognition"] = false
 		}
 		return json.Marshal(payload)
 	}
@@ -192,7 +198,7 @@ func (p *OCRHTTPProvider) setAuthHeader(req *http.Request) {
 	if p == nil || req == nil || p.apiKey == "" {
 		return
 	}
-	if p.requestFormat == requestFormatAistudioLayout {
+	if p.requestFormat == requestFormatAistudioLayout || p.requestFormat == requestFormatAistudioOCR {
 		req.Header.Set("Authorization", "token "+p.apiKey)
 		return
 	}
@@ -208,12 +214,15 @@ func resolveOCRMaxCandidates(value int) int {
 
 func resolveOCRRequestFormat(endpoint string, configured string) string {
 	mode := strings.ToLower(strings.TrimSpace(configured))
-	if mode == requestFormatAistudioLayout || mode == requestFormatDefault {
+	if mode == requestFormatAistudioLayout || mode == requestFormatAistudioOCR || mode == requestFormatDefault {
 		return mode
 	}
 	lowEndpoint := strings.ToLower(strings.TrimSpace(endpoint))
 	if strings.Contains(lowEndpoint, "/layout-parsing") {
 		return requestFormatAistudioLayout
+	}
+	if strings.HasSuffix(lowEndpoint, "/ocr") || strings.Contains(lowEndpoint, "/ocr?") {
+		return requestFormatAistudioOCR
 	}
 	return requestFormatDefault
 }
@@ -242,8 +251,8 @@ func extractOCRRegionsFromArbitraryJSON(data []byte) []ocrRegion {
 func walkOCRNode(node any, acc *[]ocrRegion) {
 	switch typed := node.(type) {
 	case map[string]any:
-		if region, ok := extractRegionFromMap(typed); ok {
-			*acc = append(*acc, region)
+		if regions := extractRegionsFromMap(typed); len(regions) > 0 {
+			*acc = append(*acc, regions...)
 		}
 		for _, value := range typed {
 			walkOCRNode(value, acc)
@@ -253,6 +262,59 @@ func walkOCRNode(node any, acc *[]ocrRegion) {
 			walkOCRNode(value, acc)
 		}
 	}
+}
+
+func extractRegionsFromMap(item map[string]any) []ocrRegion {
+	regions := make([]ocrRegion, 0, 4)
+	if ocrResults := extractAistudioOCRResults(item); len(ocrResults) > 0 {
+		regions = append(regions, ocrResults...)
+	}
+	if region, ok := extractRegionFromMap(item); ok {
+		regions = append(regions, region)
+	}
+	if tableRegions := extractTableCellRegions(item); len(tableRegions) > 0 {
+		regions = append(regions, tableRegions...)
+	}
+	return regions
+}
+
+func extractAistudioOCRResults(item map[string]any) []ocrRegion {
+	textsValue, ok := item["rec_texts"]
+	if !ok {
+		return nil
+	}
+	boxesValue, ok := item["rec_boxes"]
+	if !ok {
+		return nil
+	}
+	texts := readStringArray(textsValue)
+	boxes := readBoundsArray(boxesValue)
+	if len(texts) == 0 || len(boxes) == 0 {
+		return nil
+	}
+
+	scores := readFloatArrayFromAny(item["rec_scores"])
+	limit := len(texts)
+	if len(boxes) < limit {
+		limit = len(boxes)
+	}
+	regions := make([]ocrRegion, 0, limit)
+	for i := 0; i < limit; i++ {
+		text := strings.TrimSpace(texts[i])
+		if text == "" || len(boxes[i]) != 4 {
+			continue
+		}
+		confidence := defaultOCRCandidateConfidence
+		if i < len(scores) && scores[i] > 0 {
+			confidence = scores[i]
+		}
+		regions = append(regions, ocrRegion{
+			Text:       text,
+			Confidence: confidence,
+			Bounds:     boxes[i],
+		})
+	}
+	return regions
 }
 
 func extractRegionFromMap(item map[string]any) (ocrRegion, bool) {
@@ -270,6 +332,106 @@ func extractRegionFromMap(item map[string]any) (ocrRegion, bool) {
 	region.Confidence = confidence
 	region.Bounds = bounds
 	return region, true
+}
+
+var (
+	htmlTableRowPattern  = regexp.MustCompile(`(?is)<tr[^>]*>(.*?)</tr>`)
+	htmlTableCellPattern = regexp.MustCompile(`(?is)<t[dh][^>]*>(.*?)</t[dh]>`)
+	htmlTagPattern       = regexp.MustCompile(`(?is)<[^>]+>`)
+)
+
+func extractTableCellRegions(item map[string]any) []ocrRegion {
+	content := strings.TrimSpace(readStringByKeys(item, "block_content"))
+	if content == "" || !strings.Contains(strings.ToLower(content), "<table") {
+		return nil
+	}
+	bounds, ok := readBoundsByKeys(item, "block_bbox", "coordinate", "bounds", "bbox")
+	if !ok || len(bounds) != 4 {
+		return nil
+	}
+
+	rows := parseHTMLTableRows(content)
+	if len(rows) == 0 {
+		return nil
+	}
+	colCount := maxTableColumnCount(rows)
+	if colCount <= 0 {
+		return nil
+	}
+
+	rowCount := len(rows)
+	rowHeight := (bounds[3] - bounds[1]) / float64(rowCount)
+	colWidth := (bounds[2] - bounds[0]) / float64(colCount)
+	if rowHeight <= 0 || colWidth <= 0 {
+		return nil
+	}
+
+	regions := make([]ocrRegion, 0, rowCount)
+	for rowIndex, row := range rows {
+		for colIndex, cellText := range row {
+			cellText = normalizeOCRTableText(cellText)
+			if cellText == "" {
+				continue
+			}
+			left := bounds[0] + float64(colIndex)*colWidth
+			top := bounds[1] + float64(rowIndex)*rowHeight
+			right := left + colWidth
+			bottom := top + rowHeight
+			regions = append(regions, ocrRegion{
+				Text:       cellText,
+				Confidence: readFloatByKeys(item, "score", "confidence", "probability"),
+				Bounds:     []float64{left, top, right, bottom},
+			})
+		}
+	}
+	return regions
+}
+
+func parseHTMLTableRows(content string) [][]string {
+	rowMatches := htmlTableRowPattern.FindAllStringSubmatch(content, -1)
+	if len(rowMatches) == 0 {
+		return nil
+	}
+	rows := make([][]string, 0, len(rowMatches))
+	for _, rowMatch := range rowMatches {
+		if len(rowMatch) < 2 {
+			continue
+		}
+		cellMatches := htmlTableCellPattern.FindAllStringSubmatch(rowMatch[1], -1)
+		if len(cellMatches) == 0 {
+			continue
+		}
+		row := make([]string, 0, len(cellMatches))
+		for _, cellMatch := range cellMatches {
+			if len(cellMatch) < 2 {
+				row = append(row, "")
+				continue
+			}
+			row = append(row, normalizeOCRTableText(cellMatch[1]))
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+func normalizeOCRTableText(text string) string {
+	text = html.UnescapeString(text)
+	text = htmlTagPattern.ReplaceAllString(text, " ")
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	return strings.Join(strings.Fields(text), " ")
+}
+
+func maxTableColumnCount(rows [][]string) int {
+	maxCols := 0
+	for _, row := range rows {
+		if len(row) > maxCols {
+			maxCols = len(row)
+		}
+	}
+	return maxCols
 }
 
 func readStringByKeys(item map[string]any, keys ...string) string {
@@ -296,6 +458,45 @@ func readFloatByKeys(item map[string]any, keys ...string) float64 {
 		}
 	}
 	return 0
+}
+
+func readStringArray(value any) []string {
+	raw, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(raw))
+	for _, item := range raw {
+		text, ok := item.(string)
+		if !ok {
+			result = append(result, "")
+			continue
+		}
+		result = append(result, text)
+	}
+	return result
+}
+
+func readBoundsArray(value any) [][]float64 {
+	raw, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	result := make([][]float64, 0, len(raw))
+	for _, item := range raw {
+		if bounds, ok := toBounds(item); ok {
+			result = append(result, bounds)
+			continue
+		}
+		if values := readFloatArray(item); len(values) == 4 {
+			result = append(result, values)
+		}
+	}
+	return result
+}
+
+func readFloatArrayFromAny(value any) []float64 {
+	return readFloatArray(value)
 }
 
 func readBoundsByKeys(item map[string]any, keys ...string) ([]float64, bool) {

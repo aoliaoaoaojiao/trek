@@ -7,11 +7,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"trek/internal/util"
 	"trek/pkg/driver/android"
 	"trek/pkg/driver/common"
 )
 
 func init() {
+	util.LoadDotEnvFiles()
 	rootPath, _ := common.RepoRootFromCurrentFile()
 	common.SetPluginDirPath(rootPath)
 }

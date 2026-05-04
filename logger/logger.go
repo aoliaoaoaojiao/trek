@@ -31,8 +31,14 @@ func InitLogger(logDir string) error {
 func initLoggerWithFilename(logDir string, filePrefix string) error {
 	var initErr error
 	once.Do(func() {
+		resolvedLogDir, err := resolveLogDir(logDir)
+		if err != nil {
+			initErr = err
+			return
+		}
+
 		// 确保日志目录存在
-		if err := os.MkdirAll(logDir, 0755); err != nil {
+		if err := os.MkdirAll(resolvedLogDir, 0755); err != nil {
 			initErr = err
 			return
 		}
@@ -41,7 +47,7 @@ func initLoggerWithFilename(logDir string, filePrefix string) error {
 			filePrefix = "app"
 		}
 		timestamp := time.Now().Format("2006-01-02_15-04-05")
-		logFilePath := filepath.Join(logDir, filePrefix+"_"+timestamp+".log")
+		logFilePath := filepath.Join(resolvedLogDir, filePrefix+"_"+timestamp+".log")
 
 		// 配置日志文件
 		file, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
@@ -84,6 +90,48 @@ func initLoggerWithFilename(logDir string, filePrefix string) error {
 	})
 
 	return initErr
+}
+
+func resolveLogDir(logDir string) (string, error) {
+	logDir = strings.TrimSpace(logDir)
+	if logDir == "" {
+		logDir = "log"
+	}
+	if filepath.IsAbs(logDir) {
+		return logDir, nil
+	}
+
+	startDir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("获取当前工作目录失败: %w", err)
+	}
+	rootDir, err := findProjectRoot(startDir)
+	if err != nil {
+		return filepath.Clean(logDir), nil
+	}
+	return filepath.Join(rootDir, logDir), nil
+}
+
+func findProjectRoot(startDir string) (string, error) {
+	current := filepath.Clean(startDir)
+	for {
+		if fileExists(filepath.Join(current, "go.mod")) {
+			return current, nil
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", fmt.Errorf("未找到项目根目录")
+		}
+		current = parent
+	}
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
 }
 
 // InitLoggerWithPackage 使用被测应用包名作为日志前缀：

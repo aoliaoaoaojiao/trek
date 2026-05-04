@@ -116,3 +116,35 @@ func TestInitLoggerWithPackageUsesPackageAsFilePrefix(t *testing.T) {
 		t.Fatalf("包级日志文件名缺少日期前缀: %s", filepath.Base(matches[0]))
 	}
 }
+
+func TestResolveLogDirUsesProjectRootForRelativePath(t *testing.T) {
+	workingDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("获取当前目录失败: %v", err)
+	}
+	expectedRoot := findRootForTest(t, workingDir)
+
+	got, err := resolveLogDir("log")
+	if err != nil {
+		t.Fatalf("解析相对日志目录失败: %v", err)
+	}
+	expected := filepath.Join(expectedRoot, "log")
+	if got != expected {
+		t.Fatalf("相对日志目录应解析到项目根目录: got=%s want=%s", got, expected)
+	}
+}
+
+func findRootForTest(t *testing.T, start string) string {
+	t.Helper()
+	current := filepath.Clean(start)
+	for {
+		if _, err := os.Stat(filepath.Join(current, "go.mod")); err == nil {
+			return current
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			t.Fatalf("未找到 go.mod: start=%s", start)
+		}
+		current = parent
+	}
+}

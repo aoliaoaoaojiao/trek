@@ -2,12 +2,12 @@ package monkey
 
 import (
 	"sort"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 	"trek/internal/engine/traversal"
 	"trek/logger"
-	"trek/pkg/session"
+	"trek/pkg/coordinator"
 )
 
 func (r *Runner) recordCandidateEnhancementOutcome(step int, cmd *types.ActionCommand, outcome traversal.ActionOutcome) {
@@ -34,7 +34,7 @@ func (r *Runner) recordCandidateEnhancementOutcome(step int, cmd *types.ActionCo
 	}
 }
 
-func (r *Runner) tryEnhanceCandidates(step int, beforePage session.PageSnapshot, baseCmd *types.ActionCommand, weighted []WeightedCandidate) (*types.ActionCommand, error) {
+func (r *Runner) tryEnhanceCandidates(step int, beforePage coordinator.PageSnapshot, baseCmd *types.ActionCommand, weighted []WeightedCandidate) (*types.ActionCommand, error) {
 	if r == nil || baseCmd == nil {
 		return nil, nil
 	}

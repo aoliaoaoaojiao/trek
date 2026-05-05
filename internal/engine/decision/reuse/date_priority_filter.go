@@ -1,6 +1,6 @@
 package reuse
 
-import "trek/internal/engine/decision/shared/types"
+import "trek/internal/engine/core/types"
 
 // ActionFilterValidDatePriority 是 reuse 策略专用的动作过滤器。
 type ActionFilterValidDatePriority struct{}

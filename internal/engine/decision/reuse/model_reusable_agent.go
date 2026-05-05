@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"sync"
 
+	"trek/internal/engine/core/types"
 	"trek/internal/engine/decision"
 	sharedgraph "trek/internal/engine/decision/shared/graph"
-	"trek/internal/engine/decision/shared/types"
 )
 
 var _ types.IAgent = (*ModelReusableAgent)(nil)

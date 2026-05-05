@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/primitives"
 	"trek/logger"
 	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/common"
@@ -27,7 +27,7 @@ func (a *ADBTouch) Close() error {
 	return nil
 }
 
-func (a *ADBTouch) Click(point types.Point) error {
+func (a *ADBTouch) Click(point primitives.Point) error {
 	if a.device == nil {
 		return common.NoADBDeviceErr
 	}
@@ -35,7 +35,7 @@ func (a *ADBTouch) Click(point types.Point) error {
 	return err
 }
 
-func (a *ADBTouch) LongClick(point types.Point, duration int64) error {
+func (a *ADBTouch) LongClick(point primitives.Point, duration int64) error {
 	if a.device == nil {
 		return common.NoADBDeviceErr
 	}
@@ -53,7 +53,7 @@ func (a *ADBTouch) LongClick(point types.Point, duration int64) error {
 
 }
 
-func (a *ADBTouch) Swipe(startPoint types.Point, endPoint types.Point, step int64, duration int64) error {
+func (a *ADBTouch) Swipe(startPoint primitives.Point, endPoint primitives.Point, step int64, duration int64) error {
 	// 基础校验：设备非空
 	if a.device == nil {
 		return common.NoADBDeviceErr
@@ -75,7 +75,7 @@ func (a *ADBTouch) Swipe(startPoint types.Point, endPoint types.Point, step int6
 	return err
 }
 
-func (a *ADBTouch) Pinch(centerPoint types.Point, startDistance float64, endDistance float64, duration int64) error {
+func (a *ADBTouch) Pinch(centerPoint primitives.Point, startDistance float64, endDistance float64, duration int64) error {
 	return errors.New("adb not pinchable")
 }
 

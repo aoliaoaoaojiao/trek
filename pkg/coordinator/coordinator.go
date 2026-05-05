@@ -1,4 +1,4 @@
-package session
+package coordinator
 
 import (
 	"bytes"
@@ -10,9 +10,9 @@ import (
 	"os"
 	"strings"
 	"time"
+	"trek/internal/engine/core/types"
 	"trek/internal/engine/decision"
 	"trek/internal/engine/decision/monkey"
-	"trek/internal/engine/decision/shared/types"
 	"trek/internal/engine/memory"
 	"trek/internal/engine/perception"
 	candidateproviders "trek/internal/engine/perception/providers"
@@ -22,7 +22,7 @@ import (
 	"trek/logger"
 )
 
-// Config 决策会话配置
+// Config 决策协调器配置
 type Config struct {
 	PackageName              string
 	Algorithm                decision.AlgorithmType
@@ -41,19 +41,19 @@ type Config struct {
 	PageControlStrategy      string
 }
 
-// ActionInput 动作输入，包含 XML 描述的 GUI 树和可选截图
+// ActionInput 动作输入，包含 XML 描述的 GUI 树和可选截图。
 type ActionInput struct {
 	XMLDescOfGuiTree string
 	Screenshot       []byte
 }
 
-// PageInfo 页面信息，包含页面名和 XML
+// PageInfo 页面信息，包含页面名和 XML。
 type PageInfo struct {
 	PageName string
 	XML      string
 }
 
-// PageSnapshot 页面快照，包含页面名、XML 和截图
+// PageSnapshot 页面快照，包含页面名、XML 和截图。
 type PageSnapshot struct {
 	PageName   string
 	XML        string
@@ -61,7 +61,7 @@ type PageSnapshot struct {
 	Signature  string // pageSignature 缓存，避免每步重复 FNV 哈希
 }
 
-// StepResultInput 步骤结果输入，用于向引擎报告步骤执行结果
+// StepResultInput 步骤结果输入，用于向引擎报告步骤执行结果。
 type StepResultInput struct {
 	Step       int
 	Action     *types.ActionCommand
@@ -74,9 +74,10 @@ type StepResultInput struct {
 	After      *PageSnapshot
 }
 
-// Session 对外稳定会话入口
-type Session struct {
+// Coordinator 对外稳定协调入口。
+type Coordinator struct {
 	config         Config
+	runtime        *engineruntime.Runtime
 	memoryStore    *memory.Store
 	memoryProvider *memory.Provider
 	ocrProvider    candidateProvider
@@ -96,8 +97,8 @@ type stateReader interface {
 	GetCurrentState() types.IState
 }
 
-// NewSession 创建新会话
-func NewSession(config Config) (*Session, error) {
+// New 创建新的协调器。
+func New(config Config) (*Coordinator, error) {
 	if config.Algorithm == 0 {
 		config.Algorithm = decision.AlgorithmReuse
 	}
@@ -105,21 +106,29 @@ func NewSession(config Config) (*Session, error) {
 		config.DeviceType = types.Phone
 	}
 
-	session := &Session{config: config}
-	session.initRecoveryMemoryProvider()
-	session.initExploreOCRProvider()
-	session.initPageControlLLMProvider()
+	coordinator := &Coordinator{
+		config:  config,
+		runtime: engineruntime.New(config.PackageName),
+	}
+	coordinator.initRecoveryMemoryProvider()
+	coordinator.initExploreOCRProvider()
+	coordinator.initPageControlLLMProvider()
 
 	// 在 Reset 之前设置生命周期上下文，供插件 onInit/onDestroy 使用
-	engineruntime.SetLifecycleContext(engineruntime.NewLifecycleContext(config.PackageName))
+	coordinator.runtime.SetLifecycleContext(coordinator.runtime.NewLifecycleContext())
 
-	if err := session.Reset(); err != nil {
+	if err := coordinator.Reset(); err != nil {
 		return nil, err
 	}
-	return session, nil
+	return coordinator, nil
 }
 
-func (s *Session) initRecoveryMemoryProvider() {
+// NewSession 为旧名称兼容入口，后续优先使用 New。
+func NewSession(config Config) (*Coordinator, error) {
+	return New(config)
+}
+
+func (s *Coordinator) initRecoveryMemoryProvider() {
 	path := strings.TrimSpace(s.config.RecoveryMemoryFile)
 	if path == "" {
 		path = strings.TrimSpace(os.Getenv("RECOVERY_MEMORY_FILE"))
@@ -129,15 +138,15 @@ func (s *Session) initRecoveryMemoryProvider() {
 	}
 	store, err := memory.NewStore(path)
 	if err != nil {
-		logger.Warnf("session 初始化 recovery memory 失败: path=%s err=%v", path, err)
+		logger.Warnf("coordinator 初始化 recovery memory 失败: path=%s err=%v", path, err)
 		return
 	}
 	s.memoryStore = store
 	s.memoryProvider = memory.NewProvider(store)
-	logger.Infof("session recovery memory 已启用: path=%s", path)
+	logger.Infof("coordinator recovery memory 已启用: path=%s", path)
 }
 
-func (s *Session) initExploreOCRProvider() {
+func (s *Coordinator) initExploreOCRProvider() {
 	endpoint := strings.TrimSpace(s.config.ExploreOCREndpoint)
 	if endpoint == "" {
 		endpoint = strings.TrimSpace(os.Getenv("PADDLEOCR_API_URL"))
@@ -155,14 +164,14 @@ func (s *Session) initExploreOCRProvider() {
 		Timeout:  s.config.ExploreOCRTimeout,
 	})
 	if err != nil {
-		logger.Warnf("session 初始化 explore ocr provider 失败: endpoint=%s err=%v", endpoint, err)
+		logger.Warnf("coordinator 初始化 explore ocr provider 失败: endpoint=%s err=%v", endpoint, err)
 		return
 	}
 	s.ocrProvider = provider
-	logger.Infof("session explore ocr provider 已启用: endpoint=%s", endpoint)
+	logger.Infof("coordinator explore ocr provider 已启用: endpoint=%s", endpoint)
 }
 
-func (s *Session) initPageControlLLMProvider() {
+func (s *Coordinator) initPageControlLLMProvider() {
 	endpoint := strings.TrimSpace(s.config.RecoveryLLMEndpoint)
 	if endpoint == "" {
 		endpoint = strings.TrimSpace(os.Getenv("LLM_API_URL"))
@@ -185,11 +194,11 @@ func (s *Session) initPageControlLLMProvider() {
 			Timeout:  s.config.RecoveryLLMTimeout,
 		})
 		if err != nil {
-			logger.Warnf("session 初始化 page control llm provider 失败: endpoint=%s err=%v", endpoint, err)
+			logger.Warnf("coordinator 初始化 page control llm provider 失败: endpoint=%s err=%v", endpoint, err)
 			return
 		}
 		s.llmProvider = provider
-		logger.Infof("session page control llm provider 已启用: endpoint=%s", endpoint)
+		logger.Infof("coordinator page control llm provider 已启用: endpoint=%s", endpoint)
 		return
 	}
 
@@ -215,17 +224,17 @@ func (s *Session) initPageControlLLMProvider() {
 		Timeout: s.config.RecoveryLLMTimeout,
 	})
 	if err != nil {
-		logger.Warnf("session 初始化 openai page control llm provider 失败: model=%s err=%v", openAIModel, err)
+		logger.Warnf("coordinator 初始化 openai page control llm provider 失败: model=%s err=%v", openAIModel, err)
 		return
 	}
 	s.llmProvider = provider
-	logger.Infof("session openai page control llm provider 已启用: model=%s", openAIModel)
+	logger.Infof("coordinator openai page control llm provider 已启用: model=%s", openAIModel)
 }
 
 // Reset 重置引擎模型和脚本插件状态
-func (s *Session) Reset() error {
-	engineruntime.ResetModel()
-	if err := engineruntime.InitAgent(s.config.Algorithm, s.config.PackageName, s.config.DeviceType); err != nil {
+func (s *Coordinator) Reset() error {
+	s.runtime.ResetModel()
+	if err := s.runtime.InitAgent(s.config.Algorithm, s.config.PackageName, s.config.DeviceType); err != nil {
 		return fmt.Errorf("重置时初始化决策代理失败: %w", err)
 	}
 	s.initTraversalAlgorithm()
@@ -233,22 +242,22 @@ func (s *Session) Reset() error {
 }
 
 // LoadConfigFile 加载 JS 配置文件
-func (s *Session) LoadConfigFile(path string) error {
-	if engineruntime.GetModel() == nil {
-		engineruntime.ResetModel()
-		if err := engineruntime.InitAgent(s.config.Algorithm, s.config.PackageName, s.config.DeviceType); err != nil {
+func (s *Coordinator) LoadConfigFile(path string) error {
+	if s.runtime.GetModel() == nil {
+		s.runtime.ResetModel()
+		if err := s.runtime.InitAgent(s.config.Algorithm, s.config.PackageName, s.config.DeviceType); err != nil {
 			return fmt.Errorf("初始化决策代理失败: %w", err)
 		}
 		s.initTraversalAlgorithm()
 	} else if s.traversalAlgo == nil {
 		s.initTraversalAlgorithm()
 	}
-	return engineruntime.LoadConfigFile(path)
+	return s.runtime.LoadConfigFile(path)
 }
 
-func (s *Session) initTraversalAlgorithm() {
+func (s *Coordinator) initTraversalAlgorithm() {
 	s.traversalAlgo = nil
-	model := engineruntime.GetModel()
+	model := s.runtime.GetModel()
 	if model == nil {
 		return
 	}
@@ -276,12 +285,12 @@ func (s *Session) initTraversalAlgorithm() {
 }
 
 // Deprecated: 使用 LoadConfigFile 代替
-func (s *Session) LoadPreferenceFile(path string) error {
+func (s *Coordinator) LoadPreferenceFile(path string) error {
 	return s.LoadConfigFile(path)
 }
 
 // NextActionJSON 返回 JSON 格式的下一步动作
-func (s *Session) NextActionJSON(pageName string, xmlDescOfGuiTree string) (string, error) {
+func (s *Coordinator) NextActionJSON(pageName string, xmlDescOfGuiTree string) (string, error) {
 	operate, err := s.NextAction(pageName, xmlDescOfGuiTree)
 	if err != nil {
 		return "", err
@@ -290,7 +299,7 @@ func (s *Session) NextActionJSON(pageName string, xmlDescOfGuiTree string) (stri
 }
 
 // NextActionJSONWithInput 返回 JSON 格式的下一步动作（带输入）
-func (s *Session) NextActionJSONWithInput(pageName string, input ActionInput) (string, error) {
+func (s *Coordinator) NextActionJSONWithInput(pageName string, input ActionInput) (string, error) {
 	operate, err := s.NextActionWithInput(pageName, input)
 	if err != nil {
 		return "", err
@@ -299,12 +308,12 @@ func (s *Session) NextActionJSONWithInput(pageName string, input ActionInput) (s
 }
 
 // NextAction 返回下一步动作
-func (s *Session) NextAction(pageName string, xmlDescOfGuiTree string) (*types.ActionCommand, error) {
+func (s *Coordinator) NextAction(pageName string, xmlDescOfGuiTree string) (*types.ActionCommand, error) {
 	return s.NextActionWithInput(pageName, ActionInput{XMLDescOfGuiTree: xmlDescOfGuiTree})
 }
 
 // NextActionWithInput 返回下一步动作（带输入）
-func (s *Session) NextActionWithInput(pageName string, input ActionInput) (*types.ActionCommand, error) {
+func (s *Coordinator) NextActionWithInput(pageName string, input ActionInput) (*types.ActionCommand, error) {
 	if strings.TrimSpace(pageName) == "" {
 		return nil, fmt.Errorf("pageName is empty")
 	}
@@ -314,26 +323,26 @@ func (s *Session) NextActionWithInput(pageName string, input ActionInput) (*type
 	if strings.TrimSpace(input.XMLDescOfGuiTree) == "" && len(input.Screenshot) > 0 {
 		pageInfo, err := s.buildPageInfoByStrategy(pageName, input, false)
 		if err != nil {
-			logger.Warnf("session 基于图片生成页面控件信息失败，继续使用空 XML: page=%s err=%v", pageName, err)
+			logger.Warnf("coordinator 基于图片生成页面控件信息失败，继续使用空 XML: page=%s err=%v", pageName, err)
 		} else {
 			pageName = pageInfo.PageName
 			input.XMLDescOfGuiTree = pageInfo.XML
 		}
 	}
 
-	operate := engineruntime.GetActionOptWithInput(pageName, input.XMLDescOfGuiTree, input.Screenshot)
+	operate := s.runtime.GetActionOptWithInput(pageName, input.XMLDescOfGuiTree, input.Screenshot)
 	if operate == nil {
 		return nil, fmt.Errorf("get nil action from engine runtime")
 	}
 
-	logger.Infof("session next action: page=%s cmd={%s}", pageName, operate.DetailLogString())
+	logger.Infof("coordinator next action: page=%s cmd={%s}", pageName, operate.DetailLogString())
 
 	return operate, nil
 }
 
 // NextBlockRecoveryAction 在 Runner 检测到阻塞后提供兜底动作。
 // 该链路会显式标记 block_recovery 上下文，便于插件触发自定义恢复规划。
-func (s *Session) NextBlockRecoveryAction(pageName string, input ActionInput) (*types.ActionCommand, error) {
+func (s *Coordinator) NextBlockRecoveryAction(pageName string, input ActionInput) (*types.ActionCommand, error) {
 	if strings.TrimSpace(pageName) == "" {
 		return nil, fmt.Errorf("pageName 不能为空")
 	}
@@ -343,33 +352,33 @@ func (s *Session) NextBlockRecoveryAction(pageName string, input ActionInput) (*
 	if strings.TrimSpace(input.XMLDescOfGuiTree) == "" && len(input.Screenshot) > 0 {
 		pageInfo, err := s.buildPageInfoByStrategy(pageName, input, false)
 		if err != nil {
-			logger.Warnf("session 阻塞恢复基于图片生成页面控件信息失败，继续使用空 XML: page=%s err=%v", pageName, err)
+			logger.Warnf("coordinator 阻塞恢复基于图片生成页面控件信息失败，继续使用空 XML: page=%s err=%v", pageName, err)
 		} else {
 			pageName = pageInfo.PageName
 			input.XMLDescOfGuiTree = pageInfo.XML
 		}
 	}
 
-	operate := engineruntime.GetBlockRecoveryActionOptWithInput(pageName, input.XMLDescOfGuiTree, input.Screenshot)
+	operate := s.runtime.GetBlockRecoveryActionOptWithInput(pageName, input.XMLDescOfGuiTree, input.Screenshot)
 	if operate == nil {
 		return nil, nil
 	}
 	if isAppRestartAction(operate.Act) {
-		logger.Warnf("session block recovery rejected app restart action: page=%s act=%s", pageName, operate.Act.String())
+		logger.Warnf("coordinator block recovery rejected app restart action: page=%s act=%s", pageName, operate.Act.String())
 		return nil, nil
 	}
 
-	logger.Infof("session block recovery action: page=%s cmd={%s}", pageName, operate.DetailLogString())
+	logger.Infof("coordinator block recovery action: page=%s cmd={%s}", pageName, operate.DetailLogString())
 	return operate, nil
 }
 
 // NextBlockRecoveryActionWithContext 在 Runner 检测到阻塞后提供兜底动作（上下文感知版本）。
-func (s *Session) NextBlockRecoveryActionWithContext(ctx enginestate.TraversalContext, input ActionInput) (*types.ActionCommand, error) {
+func (s *Coordinator) NextBlockRecoveryActionWithContext(ctx enginestate.TraversalContext, input ActionInput) (*types.ActionCommand, error) {
 	return s.NextBlockRecoveryAction(ctx.PageName, input)
 }
 
 // BuildMemoryRecoveryCandidates 将 memory 经验转为恢复候选，供 runner 的 RecoveryPlanner 调用。
-func (s *Session) BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
+func (s *Coordinator) BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if s == nil || s.memoryProvider == nil {
 		return nil, nil
 	}
@@ -377,7 +386,7 @@ func (s *Session) BuildMemoryRecoveryCandidates(ctx enginestate.TraversalContext
 }
 
 // BuildHeuristicRecoveryCandidates 通过插件 block_recovery 链路生成启发式恢复候选。
-func (s *Session) BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
+func (s *Coordinator) BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if s == nil {
 		return nil, nil
 	}
@@ -390,7 +399,7 @@ func (s *Session) BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalCont
 		pageName = "UnknownPage"
 	}
 
-	operate := engineruntime.GetBlockRecoveryActionOptWithInput(pageName, ctx.XML, ctx.Screenshot)
+	operate := s.runtime.GetBlockRecoveryActionOptWithInput(pageName, ctx.XML, ctx.Screenshot)
 	if operate == nil || isAppRestartAction(operate.Act) {
 		return nil, nil
 	}
@@ -409,19 +418,19 @@ func (s *Session) BuildHeuristicRecoveryCandidates(ctx enginestate.TraversalCont
 }
 
 // BuildKnownFailedRecoveryActions 返回恢复阶段已知失败动作，用于候选融合惩罚。
-func (s *Session) BuildKnownFailedRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
+func (s *Coordinator) BuildKnownFailedRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
 	failed, _, err := s.BuildKnownRecoveryActions(ctx)
 	return failed, err
 }
 
 // BuildKnownSuccessfulRecoveryActions 返回恢复阶段已知成功动作，用于提示词增强。
-func (s *Session) BuildKnownSuccessfulRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
+func (s *Coordinator) BuildKnownSuccessfulRecoveryActions(ctx enginestate.TraversalContext) (map[string]bool, error) {
 	_, success, err := s.BuildKnownRecoveryActions(ctx)
 	return success, err
 }
 
 // BuildKnownRecoveryActions 单次 Find 返回失败/成功两个集合，避免重复遍历记忆库。
-func (s *Session) BuildKnownRecoveryActions(ctx enginestate.TraversalContext) (failed, success map[string]bool, err error) {
+func (s *Coordinator) BuildKnownRecoveryActions(ctx enginestate.TraversalContext) (failed, success map[string]bool, err error) {
 	failed = make(map[string]bool)
 	success = make(map[string]bool)
 	if s == nil || s.memoryStore == nil {
@@ -445,13 +454,13 @@ func (s *Session) BuildKnownRecoveryActions(ctx enginestate.TraversalContext) (f
 
 // BuildLLMRecoveryCandidates 已废弃。
 // LLM 不再直接参与动作决策，仅用于页面控件检测。
-func (s *Session) BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
+func (s *Coordinator) BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	_ = ctx
 	return nil, nil
 }
 
 // BuildAlgorithmCandidates 将统一算法适配器产出的候选暴露给 Runner 的探索融合链路。
-func (s *Session) BuildAlgorithmCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
+func (s *Coordinator) BuildAlgorithmCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if s == nil {
 		return nil, nil
 	}
@@ -469,7 +478,7 @@ func (s *Session) BuildAlgorithmCandidates(ctx enginestate.TraversalContext) ([]
 	if s.ocrProvider != nil && len(ctx.Screenshot) > 0 {
 		ocrItems, err := s.ocrProvider.BuildCandidates(ctx)
 		if err != nil {
-			logger.Warnf("session 构建 OCR 候选失败: page=%s err=%v", ctx.PageName, err)
+			logger.Warnf("coordinator 构建 OCR 候选失败: page=%s err=%v", ctx.PageName, err)
 		} else {
 			items = append(items, ocrItems...)
 		}
@@ -481,7 +490,7 @@ func (s *Session) BuildAlgorithmCandidates(ctx enginestate.TraversalContext) ([]
 }
 
 // SelectRecoveryAction 基于 traversal 算法从融合恢复候选中选择最终动作。
-func (s *Session) SelectRecoveryAction(ctx enginestate.TraversalContext, candidates []perception.Candidate) (*types.ActionCommand, error) {
+func (s *Coordinator) SelectRecoveryAction(ctx enginestate.TraversalContext, candidates []perception.Candidate) (*types.ActionCommand, error) {
 	if s == nil || len(candidates) == 0 {
 		return nil, nil
 	}
@@ -495,7 +504,7 @@ func (s *Session) SelectRecoveryAction(ctx enginestate.TraversalContext, candida
 }
 
 // ObserveTraversalOutcome 回写统一动作结果，供 traversal 算法在线学习。
-func (s *Session) ObserveTraversalOutcome(ctx enginestate.TraversalContext, action *types.ActionCommand, outcome traversal.ActionOutcome) error {
+func (s *Coordinator) ObserveTraversalOutcome(ctx enginestate.TraversalContext, action *types.ActionCommand, outcome traversal.ActionOutcome) error {
 	if s == nil || action == nil {
 		return nil
 	}
@@ -509,7 +518,7 @@ func (s *Session) ObserveTraversalOutcome(ctx enginestate.TraversalContext, acti
 }
 
 // RecordRecoveryMemoryOutcome 写回一次恢复动作结果，用于跨会话复用。
-func (s *Session) RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, item perception.Candidate, escaped bool) error {
+func (s *Coordinator) RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, item perception.Candidate, escaped bool) error {
 	if s == nil || s.memoryStore == nil || item.Command == nil {
 		return nil
 	}
@@ -543,7 +552,7 @@ func (s *Session) RecordRecoveryMemoryOutcome(ctx enginestate.TraversalContext, 
 }
 
 // RecordCandidateEnhancementOutcome 写回候选增强动作结果，沉淀正负样本。
-func (s *Session) RecordCandidateEnhancementOutcome(ctx enginestate.TraversalContext, item perception.Candidate, improved bool) error {
+func (s *Coordinator) RecordCandidateEnhancementOutcome(ctx enginestate.TraversalContext, item perception.Candidate, improved bool) error {
 	if s == nil || s.memoryStore == nil || item.Command == nil {
 		return nil
 	}
@@ -581,28 +590,28 @@ func (s *Session) RecordCandidateEnhancementOutcome(ctx enginestate.TraversalCon
 }
 
 // SetObservationMode 设置感知模式（xml-only / image-only / hybrid）。
-func (s *Session) SetObservationMode(mode string) error {
-	return engineruntime.SetObservationMode(mode)
+func (s *Coordinator) SetObservationMode(mode string) error {
+	return s.runtime.SetObservationMode(mode)
 }
 
 // GetObservationMode 获取当前感知模式
-func (s *Session) GetObservationMode() string {
-	return engineruntime.GetObservationMode()
+func (s *Coordinator) GetObservationMode() string {
+	return s.runtime.GetObservationMode()
 }
 
 // CheckPointInBlackRects 检查点是否在黑名单区域内
-func (s *Session) CheckPointInBlackRects(pageName string, point types.Point) bool {
-	return engineruntime.CheckPointIsInBlackRects(pageName, float32(point.X), float32(point.Y))
+func (s *Coordinator) CheckPointInBlackRects(pageName string, point types.Point) bool {
+	return s.runtime.CheckPointIsInBlackRects(pageName, float32(point.X), float32(point.Y))
 }
 
 // NativeVersion 获取被测应用的原生版本号
-func (s *Session) NativeVersion() string {
-	return engineruntime.GetNativeVersion()
+func (s *Coordinator) NativeVersion() string {
+	return s.runtime.GetNativeVersion()
 }
 
 // ResolvePageNameWithInput 通过 Goja 插件的 resolvePageName 钩子解析自定义页面名。
-func (s *Session) ResolvePageNameWithInput(pageName string, input ActionInput) (string, error) {
-	name, err := engineruntime.ResolvePageNameWithInput(pageName, input.XMLDescOfGuiTree, input.Screenshot)
+func (s *Coordinator) ResolvePageNameWithInput(pageName string, input ActionInput) (string, error) {
+	name, err := s.runtime.ResolvePageNameWithInput(pageName, input.XMLDescOfGuiTree, input.Screenshot)
 	if err != nil {
 		return "", err
 	}
@@ -610,7 +619,7 @@ func (s *Session) ResolvePageNameWithInput(pageName string, input ActionInput) (
 }
 
 // TransformPageInfoWithInput 通过 Goja 插件转换页面信息
-func (s *Session) TransformPageInfoWithInput(pageName string, input ActionInput) (PageInfo, error) {
+func (s *Coordinator) TransformPageInfoWithInput(pageName string, input ActionInput) (PageInfo, error) {
 	if strings.TrimSpace(pageName) == "" {
 		return PageInfo{}, fmt.Errorf("pageName is empty")
 	}
@@ -620,12 +629,12 @@ func (s *Session) TransformPageInfoWithInput(pageName string, input ActionInput)
 	return s.buildPageInfoByStrategy(pageName, input, true)
 }
 
-func (s *Session) buildPageInfoByStrategy(pageName string, input ActionInput, applyPluginTransform bool) (PageInfo, error) {
+func (s *Coordinator) buildPageInfoByStrategy(pageName string, input ActionInput, applyPluginTransform bool) (PageInfo, error) {
 	resolvedPageName := strings.TrimSpace(pageName)
 	resolvedXML := strings.TrimSpace(input.XMLDescOfGuiTree)
 
 	if applyPluginTransform {
-		newPage, newXML, err := engineruntime.TransformPageInfoWithInput(pageName, input.XMLDescOfGuiTree, input.Screenshot)
+		newPage, newXML, err := s.runtime.TransformPageInfoWithInput(pageName, input.XMLDescOfGuiTree, input.Screenshot)
 		if err != nil {
 			return PageInfo{}, err
 		}
@@ -656,7 +665,7 @@ func (s *Session) buildPageInfoByStrategy(pageName string, input ActionInput, ap
 	})
 	if err != nil {
 		if strings.TrimSpace(info.XML) != "" {
-			logger.Warnf("session 页面控件策略回退到 raw: strategy=%s page=%s err=%v", strategy, resolvedPageName, err)
+			logger.Warnf("coordinator 页面控件策略回退到 raw: strategy=%s page=%s err=%v", strategy, resolvedPageName, err)
 			return info, nil
 		}
 		return PageInfo{}, err
@@ -670,7 +679,7 @@ func (s *Session) buildPageInfoByStrategy(pageName string, input ActionInput, ap
 	return info, nil
 }
 
-func (s *Session) buildPageControlCandidates(strategy string, ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
+func (s *Coordinator) buildPageControlCandidates(strategy string, ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	switch strategy {
 	case pageControlStrategyOCR:
 		if s == nil || s.ocrProvider == nil {
@@ -688,7 +697,7 @@ func (s *Session) buildPageControlCandidates(strategy string, ctx enginestate.Tr
 }
 
 // OnStepResult 通过 Goja 插件通知步骤结果
-func (s *Session) OnStepResult(input StepResultInput) error {
+func (s *Coordinator) OnStepResult(input StepResultInput) error {
 	runtimeInput := engineruntime.StepResultInput{
 		Step:       input.Step,
 		Action:     input.Action,
@@ -710,7 +719,7 @@ func (s *Session) OnStepResult(input StepResultInput) error {
 			Screenshot: input.After.Screenshot,
 		}
 	}
-	return engineruntime.OnStepResult(runtimeInput)
+	return s.runtime.OnStepResult(runtimeInput)
 }
 
 func isAppRestartAction(act types.ActionType) bool {

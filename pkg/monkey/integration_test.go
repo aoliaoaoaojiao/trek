@@ -6,11 +6,11 @@ import (
 	"context"
 	"testing"
 	"time"
+	"trek/internal/engine/core/types"
 	"trek/internal/engine/decision"
-	"trek/internal/engine/decision/shared/types"
 	"trek/internal/testutil"
+	"trek/pkg/coordinator"
 	"trek/pkg/driver/android"
-	"trek/pkg/session"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,15 +31,15 @@ func TestMonkeyIntegration_ShortRun(t *testing.T) {
 	driver := testutil.RequireDevice(t)
 	pkgName := testutil.DetectForegroundPackage(t, driver)
 
-	sess, err := session.NewSession(session.Config{
+	coord, err := coordinator.New(coordinator.Config{
 		PackageName: pkgName,
 		Algorithm:   decision.AlgorithmReuse,
 		DeviceType:  types.Phone,
 	})
-	require.NoError(t, err, "创建 Session 失败")
+	require.NoError(t, err, "创建 Coordinator 失败")
 
 	maxSteps := 5
-	runner, err := NewRunner(sess, driver, Config{
+	runner, err := NewRunner(coord, driver, Config{
 		PackageName:     pkgName,
 		MaxSteps:        maxSteps,
 		MaxDuration:     60 * time.Second,
@@ -78,7 +78,7 @@ func TestMonkeyIntegration_WithBlockRecovery(t *testing.T) {
 	driver := testutil.RequireDevice(t)
 	pkgName := testutil.DetectForegroundPackage(t, driver)
 
-	sess, err := session.NewSession(session.Config{
+	coord, err := coordinator.New(coordinator.Config{
 		PackageName: pkgName,
 		Algorithm:   decision.AlgorithmReuse,
 		DeviceType:  types.Phone,
@@ -86,7 +86,7 @@ func TestMonkeyIntegration_WithBlockRecovery(t *testing.T) {
 	require.NoError(t, err)
 
 	enableBlockRecovery := true
-	runner, err := NewRunner(sess, driver, Config{
+	runner, err := NewRunner(coord, driver, Config{
 		PackageName:            pkgName,
 		MaxSteps:               10,
 		MaxDuration:            90 * time.Second,

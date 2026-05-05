@@ -1,9 +1,9 @@
 package monkey
 
 import (
+	"trek/internal/engine/core/types"
 	"trek/internal/engine/decision"
 	sharedgraph "trek/internal/engine/decision/shared/graph"
-	"trek/internal/engine/decision/shared/types"
 )
 
 var createMonkeyAgent = func(m *sharedgraph.Model, deviceType types.DeviceType) (types.IAgent, error) {

@@ -12,10 +12,9 @@ import (
 	"trek/internal/engine/decision"
 	"trek/internal/scripting"
 	"trek/logger"
+	"trek/pkg/coordinator"
 	"trek/pkg/driver/android"
-	"trek/pkg/driver/common/page/poco"
 	"trek/pkg/monkey"
-	"trek/pkg/session"
 
 	"github.com/spf13/cobra"
 )
@@ -124,16 +123,22 @@ func runMonkey(logLevelStr string, opts struct {
 		opts.captureScreenshot = true
 	}
 
-	pageSourceType, err := resolvePageSourceType(staticCfg)
+	pageSourceType, err := android.ResolvePageSourceType(staticCfg.PageSource)
 	if err != nil {
 		return err
 	}
-	touchMode, touchType, err := resolveTouchMode(staticCfg)
+	touchMode, touchType, err := android.ResolveTouchMode(staticCfg.TouchMode)
 	if err != nil {
 		return err
 	}
 
-	driverOptions, err := resolveDriverOptions(staticCfg, pageSourceType, touchType)
+	driverOptions, err := android.BuildDriverOptions(android.DriverBootstrapConfig{
+		PageSource:    staticCfg.PageSource,
+		TouchMode:     staticCfg.TouchMode,
+		UIAServerPort: staticCfg.UIA.ServerPort,
+		PocoEngine:    staticCfg.Poco.Engine,
+		PocoPort:      staticCfg.Poco.Port,
+	}, pageSourceType, touchType)
 	if err != nil {
 		return err
 	}
@@ -172,7 +177,7 @@ func runMonkey(logLevelStr string, opts struct {
 		return err
 	}
 
-	sess, err := session.NewSession(session.Config{
+	coord, err := coordinator.New(coordinator.Config{
 		PackageName:         packageName,
 		Algorithm:           algorithmType,
 		ExploreOCRTimeout:   exploreOCRTimeout,
@@ -183,7 +188,7 @@ func runMonkey(logLevelStr string, opts struct {
 		return fmt.Errorf("创建会话失败: %w", err)
 	}
 	if opts.configPath != "" {
-		if err := sess.LoadConfigFile(opts.configPath); err != nil {
+		if err := coord.LoadConfigFile(opts.configPath); err != nil {
 			return fmt.Errorf("加载配置文件失败(%s): %w", opts.configPath, err)
 		}
 		fmt.Printf("配置加载成功: %s\n", opts.configPath)
@@ -219,7 +224,7 @@ func runMonkey(logLevelStr string, opts struct {
 		return probePageName(driver, cfg)
 	}
 
-	runner, err := monkey.NewRunner(sess, driver, cfg)
+	runner, err := monkey.NewRunner(coord, driver, cfg)
 	if err != nil {
 		return fmt.Errorf("创建 runner 失败: %w", err)
 	}
@@ -284,98 +289,6 @@ func resolveAlgorithmType(text string) (decision.AlgorithmType, error) {
 		return decision.AlgorithmRandom, nil
 	default:
 		return decision.AlgorithmReuse, nil
-	}
-}
-
-// resolvePageSourceType 从静态配置解析页面源类型。
-func resolvePageSourceType(staticCfg scripting.StaticConfig) (string, error) {
-	pageSource := strings.TrimSpace(staticCfg.PageSource)
-	if pageSource == "" {
-		pageSource = "uia"
-	}
-	switch strings.ToLower(pageSource) {
-	case "uia":
-		return "uia", nil
-	case "poco":
-		return "poco", nil
-	default:
-		return "", fmt.Errorf("不支持的页面源类型: %s（可选: uia, poco）", pageSource)
-	}
-}
-
-// resolveTouchMode 从静态配置解析触控模式。
-func resolveTouchMode(staticCfg scripting.StaticConfig) (string, android.TouchType, error) {
-	touchMode := strings.TrimSpace(staticCfg.TouchMode)
-	if touchMode == "" {
-		touchMode = "motion"
-	}
-	switch strings.ToLower(touchMode) {
-	case "motion":
-		return "motion", android.TouchTypeMotion, nil
-	case "uia":
-		return "uia", android.TouchTypeUIA, nil
-	case "adb":
-		return "adb", android.TouchTypeADB, nil
-	default:
-		return "", "", fmt.Errorf("不支持的触控模式: %s（可选: motion, uia, adb）", touchMode)
-	}
-}
-
-// resolveDriverOptions 从静态配置构建 Android 驱动选项。
-func resolveDriverOptions(staticCfg scripting.StaticConfig, pageSourceType string, touchType android.TouchType) ([]android.AndroidDriverOption, error) {
-	options := []android.AndroidDriverOption{
-		android.WithTouch(touchType),
-	}
-
-	uiaServerPort := staticCfg.UIA.ServerPort
-	if uiaServerPort > 0 {
-		options = append(options, android.WithUIAServerPort(uiaServerPort))
-	}
-
-	if strings.EqualFold(pageSourceType, "poco") {
-		engineText := strings.TrimSpace(staticCfg.Poco.Engine)
-		if engineText == "" {
-			return nil, fmt.Errorf("使用 poco 页面源时必须指定 Poco 引擎（请配置 config.poco.engine）")
-		}
-		engine, err := parsePocoEngine(engineText)
-		if err != nil {
-			return nil, err
-		}
-
-		pocoPort := staticCfg.Poco.Port
-		if pocoPort <= 0 {
-			pocoPort = engine.GetDefaultPort()
-		}
-		if pocoPort <= 0 {
-			return nil, fmt.Errorf("Poco 端口无效，请通过 config.poco.port 指定")
-		}
-		options = append(options, android.WithPoco(engine, pocoPort))
-	}
-
-	return options, nil
-}
-
-// parsePocoEngine 将字符串解析为 Poco 引擎类型。
-func parsePocoEngine(text string) (poco.Engine, error) {
-	raw := strings.TrimSpace(text)
-	normalized := strings.ToUpper(strings.ReplaceAll(strings.ReplaceAll(raw, "-", "_"), " ", "_"))
-	switch normalized {
-	case string(poco.Unity3d), "UNITY", "UNITY3D":
-		return poco.Unity3d, nil
-	case string(poco.UE4):
-		return poco.UE4, nil
-	case string(poco.Cocos2dxJs), "COCOS2DX_JS", "COCOS_JS":
-		return poco.Cocos2dxJs, nil
-	case string(poco.CocosCreator), "COCOS_CREATOR3D":
-		return poco.CocosCreator, nil
-	case string(poco.Egret):
-		return poco.Egret, nil
-	case string(poco.Cocos2dxLua), "COCOS2DX_LUA":
-		return poco.Cocos2dxLua, nil
-	case string(poco.Cocos2dxCPlus), "COCOS2DX_C++", "COCOS2DX_CPLUS", "COCOS2DX_CPP":
-		return poco.Cocos2dxCPlus, nil
-	default:
-		return "", fmt.Errorf("不支持的 Poco 引擎: %s", raw)
 	}
 }
 

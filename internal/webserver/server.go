@@ -64,7 +64,7 @@ type RenderResponse struct {
 
 // PreviewRequest 是预览页面的请求体。
 type PreviewRequest struct {
-	Serial string       `json:"serial"`
+	Serial string        `json:"serial"`
 	Config ConfigPayload `json:"config"`
 }
 
@@ -256,7 +256,7 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pageSourceType, err := resolvePageSourceTypeFromPayload(req.Config)
+	pageSourceType, err := android.ResolvePageSourceType(req.Config.PageSource)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 		return
@@ -337,94 +337,28 @@ func decodePayload(r *http.Request) (ConfigPayload, error) {
 	return cfg, nil
 }
 
-func resolvePageSourceTypeFromPayload(cfg ConfigPayload) (string, error) {
-	pageSource := strings.ToLower(strings.TrimSpace(cfg.PageSource))
-	if pageSource == "" {
-		pageSource = "uia"
-	}
-	switch pageSource {
-	case "uia", "poco":
-		return pageSource, nil
-	default:
-		return "", fmt.Errorf("不支持的页面源: %s（可选: uia, poco）", pageSource)
-	}
-}
-
-func resolveTouchType(cfg ConfigPayload) (android.TouchType, error) {
-	mode := strings.ToLower(strings.TrimSpace(cfg.TouchMode))
-	if mode == "" {
-		mode = "motion"
-	}
-	switch mode {
-	case "motion":
-		return android.TouchTypeMotion, nil
-	case "uia":
-		return android.TouchTypeUIA, nil
-	case "adb":
-		return android.TouchTypeADB, nil
-	default:
-		return "", fmt.Errorf("不支持的触控模式: %s（可选: motion, uia, adb）", mode)
-	}
-}
-
 func resolveDriverOptionsForPreview(cfg ConfigPayload, pageSourceType string) ([]android.AndroidDriverOption, error) {
-	touchType, err := resolveTouchType(cfg)
+	_, touchType, err := android.ResolveTouchMode(cfg.TouchMode)
 	if err != nil {
 		return nil, err
 	}
 
-	options := []android.AndroidDriverOption{
-		android.WithTouch(touchType),
+	engineText := strings.TrimSpace(cfg.Poco.Engine)
+	if pageSourceType == "poco" && engineText == "" {
+		engineText = "UNITY_3D"
 	}
-
-	if cfg.UIA.ServerPort > 0 {
-		options = append(options, android.WithUIAServerPort(cfg.UIA.ServerPort))
-	}
-
-	if pageSourceType == "poco" {
-		engineText := strings.TrimSpace(cfg.Poco.Engine)
-		if engineText == "" {
-			engineText = "UNITY_3D"
-		}
-		engine, err := ParsePocoEngine(engineText)
-		if err != nil {
-			return nil, err
-		}
-		pocoPort := cfg.Poco.Port
-		if pocoPort <= 0 {
-			pocoPort = engine.GetDefaultPort()
-		}
-		if pocoPort <= 0 {
-			return nil, fmt.Errorf("Poco 端口无效，请配置 poco.port")
-		}
-		options = append(options, android.WithPoco(engine, pocoPort))
-	}
-
-	return options, nil
+	return android.BuildDriverOptions(android.DriverBootstrapConfig{
+		PageSource:    cfg.PageSource,
+		TouchMode:     cfg.TouchMode,
+		UIAServerPort: cfg.UIA.ServerPort,
+		PocoEngine:    engineText,
+		PocoPort:      cfg.Poco.Port,
+	}, pageSourceType, touchType)
 }
 
 // ParsePocoEngine 将字符串解析为 Poco 引擎类型（导出供 cmd 包使用）。
 func ParsePocoEngine(text string) (poco.Engine, error) {
-	raw := strings.TrimSpace(text)
-	normalized := strings.ToUpper(strings.ReplaceAll(strings.ReplaceAll(raw, "-", "_"), " ", "_"))
-	switch normalized {
-	case string(poco.Unity3d), "UNITY", "UNITY3D":
-		return poco.Unity3d, nil
-	case string(poco.UE4):
-		return poco.UE4, nil
-	case string(poco.Cocos2dxJs), "COCOS2DX_JS", "COCOS_JS":
-		return poco.Cocos2dxJs, nil
-	case string(poco.CocosCreator), "COCOS_CREATOR3D":
-		return poco.CocosCreator, nil
-	case string(poco.Egret):
-		return poco.Egret, nil
-	case string(poco.Cocos2dxLua), "COCOS2DX_LUA":
-		return poco.Cocos2dxLua, nil
-	case string(poco.Cocos2dxCPlus), "COCOS2DX_C++", "COCOS2DX_CPLUS", "COCOS2DX_CPP":
-		return poco.Cocos2dxCPlus, nil
-	default:
-		return "", fmt.Errorf("不支持的 Poco 引擎: %s", raw)
-	}
+	return android.ParsePocoEngine(text)
 }
 
 // BuildConfigJS 从配置载荷生成 JS 配置脚本（导出供 cmd 包和测试使用）。

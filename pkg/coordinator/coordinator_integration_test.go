@@ -1,6 +1,6 @@
 //go:build integration
 
-package session
+package coordinator
 
 import (
 	"context"
@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"trek/internal/engine/core/types"
 	"trek/internal/engine/decision"
-	"trek/internal/engine/decision/shared/types"
 	enginestate "trek/internal/engine/state"
 	"trek/internal/engine/traversal"
 	"trek/internal/testutil"

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/primitives"
 	"trek/logger"
 	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/android/page"
@@ -32,10 +32,10 @@ var (
 	_ common.IHealthCheck = (*AndroidDriver)(nil)
 	_ common.IDeviceState = (*AndroidDriver)(nil)
 
-	surfaceOrientationRegex     = regexp.MustCompile(`(?m)SurfaceOrientation:\s*(\d+)`)
-	displayOrientationRegex     = regexp.MustCompile(`(?m)orientation=(\d+)`)
-	currentRotationNumberRegex  = regexp.MustCompile(`(?m)mCurrentRotation=(\d+)`)
-	currentRotationEnumRegex    = regexp.MustCompile(`(?m)mCurrentRotation=ROTATION_(\d+)`)
+	surfaceOrientationRegex    = regexp.MustCompile(`(?m)SurfaceOrientation:\s*(\d+)`)
+	displayOrientationRegex    = regexp.MustCompile(`(?m)orientation=(\d+)`)
+	currentRotationNumberRegex = regexp.MustCompile(`(?m)mCurrentRotation=(\d+)`)
+	currentRotationEnumRegex   = regexp.MustCompile(`(?m)mCurrentRotation=ROTATION_(\d+)`)
 )
 
 type TouchType string
@@ -173,19 +173,19 @@ func NewAndroidDriverWith(deviceSerial string, opts ...AndroidDriverOption) (*An
 	return androidDriver, nil
 }
 
-func (a *AndroidDriver) Click(point types.Point) error {
+func (a *AndroidDriver) Click(point primitives.Point) error {
 	return a.touch.Click(point)
 }
 
-func (a *AndroidDriver) LongClick(point types.Point, duration int64) error {
+func (a *AndroidDriver) LongClick(point primitives.Point, duration int64) error {
 	return a.touch.LongClick(point, duration)
 }
 
-func (a *AndroidDriver) Swipe(startPoint types.Point, endPoint types.Point, step int64, duration int64) error {
+func (a *AndroidDriver) Swipe(startPoint primitives.Point, endPoint primitives.Point, step int64, duration int64) error {
 	return a.touch.Swipe(startPoint, endPoint, step, duration)
 }
 
-func (a *AndroidDriver) Pinch(centerPoint types.Point, startDistance float64, endDistance float64, duration int64) error {
+func (a *AndroidDriver) Pinch(centerPoint primitives.Point, startDistance float64, endDistance float64, duration int64) error {
 	return a.touch.Pinch(centerPoint, startDistance, endDistance, duration)
 }
 

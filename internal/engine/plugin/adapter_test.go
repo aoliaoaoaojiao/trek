@@ -2,7 +2,7 @@ package plugin
 
 import (
 	"testing"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 
 	"trek/internal/scripting"
 )

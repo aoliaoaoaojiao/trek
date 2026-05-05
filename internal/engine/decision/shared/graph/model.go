@@ -3,7 +3,7 @@ package graph
 import (
 	"fmt"
 
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 )
 
 type Model struct {

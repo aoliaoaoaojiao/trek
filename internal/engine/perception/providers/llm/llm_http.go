@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 	"trek/internal/engine/perception"
 	"trek/internal/engine/perception/pagecontrol"
 	enginestate "trek/internal/engine/state"

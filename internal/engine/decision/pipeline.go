@@ -2,7 +2,7 @@ package decision
 
 import (
 	"context"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 )
 
 // Perceptor 负责把原始输入转换为统一 Observation。

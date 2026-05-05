@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 	"trek/logger"
 
 	sharedgraph "trek/internal/engine/decision/shared/graph"

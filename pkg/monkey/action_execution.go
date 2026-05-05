@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 	"trek/logger"
 
 	"github.com/beevik/etree"

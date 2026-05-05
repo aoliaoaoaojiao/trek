@@ -342,6 +342,7 @@ func stepResultCtxToMap(ctx StepResultContext) map[string]any {
 
 func pageToMap(page PageSnapshot) map[string]any {
 	result := map[string]any{
+		"name":      page.Name,
 		"page_name": page.Name,
 		"xml":       page.XML,
 		"nodes":     nodesToMaps(page.Nodes),

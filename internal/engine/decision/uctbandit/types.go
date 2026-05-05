@@ -1,6 +1,6 @@
 package uctbandit
 
-import "trek/internal/engine/decision/shared/types"
+import "trek/internal/engine/core/types"
 
 // Candidate 表示一个候选动作及其各项打分。
 type Candidate struct {

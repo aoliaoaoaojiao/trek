@@ -2,7 +2,7 @@ package touch_test
 
 import (
 	"testing"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/primitives"
 	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/android/touch"
 	"trek/pkg/driver/android/utils"
@@ -22,7 +22,7 @@ func TestMotionTouch_Pinch(t *testing.T) {
 		t.Fatalf("NewMotionTouch failed: %v", err)
 	}
 
-	centerPoint := types.Point{
+	centerPoint := primitives.Point{
 		X: 0.5,
 		Y: 0.5,
 	}
@@ -33,7 +33,7 @@ func TestMotionTouch_Pinch(t *testing.T) {
 	// 缂╁皬
 	motionTouch.Pinch(centerPoint, 0.9, 0.3, 3*1000)
 
-	centerPoint2 := types.Point{
+	centerPoint2 := primitives.Point{
 		X: 500,
 		Y: 500,
 	}
@@ -51,24 +51,24 @@ func TestMotionTouch_Swipe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMotionTouch failed: %v", err)
 	}
-	statPoint1 := types.Point{
+	statPoint1 := primitives.Point{
 		X: 0.1,
 		Y: 0.5,
 	}
 
-	endPoint1 := types.Point{
+	endPoint1 := primitives.Point{
 		X: 0.9,
 		Y: 0.5,
 	}
 
 	motionTouch.Swipe(statPoint1, endPoint1, 10, 2*1000)
 
-	statPoint2 := types.Point{
+	statPoint2 := primitives.Point{
 		X: 100,
 		Y: 700,
 	}
 
-	endPoint2 := types.Point{
+	endPoint2 := primitives.Point{
 		X: 100,
 		Y: 200,
 	}
@@ -81,7 +81,7 @@ func TestMotionTouch_Click(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMotionTouch failed: %v", err)
 	}
-	motionTouch.Click(types.Point{
+	motionTouch.Click(primitives.Point{
 		X: 0.147,
 		Y: 0.861,
 	})
@@ -92,7 +92,7 @@ func TestMotionTouch_longClick(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMotionTouch failed: %v", err)
 	}
-	motionTouch.LongClick(types.Point{
+	motionTouch.LongClick(primitives.Point{
 		X: 0.147,
 		Y: 0.861,
 	}, 8000)

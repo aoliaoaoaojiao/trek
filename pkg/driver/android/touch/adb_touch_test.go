@@ -2,13 +2,13 @@ package touch_test
 
 import (
 	"testing"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/primitives"
 	"trek/pkg/driver/android/touch"
 )
 
 func TestADBTouch_Pinch(t *testing.T) {
 	adbTouch := touch.NewADBTouch(device)
-	centerPoint := types.Point{
+	centerPoint := primitives.Point{
 		X: 500,
 		Y: 500,
 	}

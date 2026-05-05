@@ -2,7 +2,7 @@ package plugin
 
 import (
 	"fmt"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 
 	"trek/internal/scripting"
 )

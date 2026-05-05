@@ -4,7 +4,7 @@ package common
 import (
 	"context"
 
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/primitives"
 )
 
 type TouchEventType string
@@ -19,14 +19,14 @@ type TouchEvent struct {
 	FingerID int64
 	Type     TouchEventType
 	WaitTime int64
-	types.Point
+	primitives.Point
 }
 
 type ITouch interface {
-	Click(point types.Point) error
-	LongClick(point types.Point, duration int64) error
-	Swipe(startPoint types.Point, endPoint types.Point, step int64, duration int64) error
-	Pinch(centerPoint types.Point, startDistance float64, endDistance float64, duration int64) error
+	Click(point primitives.Point) error
+	LongClick(point primitives.Point, duration int64) error
+	Swipe(startPoint primitives.Point, endPoint primitives.Point, step int64, duration int64) error
+	Pinch(centerPoint primitives.Point, startDistance float64, endDistance float64, duration int64) error
 	TouchEvent(touchList ...TouchEvent) error
 	Close() error
 }

@@ -6,14 +6,14 @@ import (
 	"math/rand"
 	"strings"
 	"time"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 	"trek/internal/engine/perception"
 	"trek/internal/engine/recovery"
 	enginestate "trek/internal/engine/state"
 	"trek/internal/engine/traversal"
 	"trek/logger"
+	"trek/pkg/coordinator"
 	"trek/pkg/driver/common"
-	"trek/pkg/session"
 )
 
 const (
@@ -78,7 +78,7 @@ type PageNameResolverEx interface {
 
 // GojaPageNameResolver 通过 Goja 插件的 resolvePageName 钩子解析页面名。
 type GojaPageNameResolver interface {
-	ResolvePageNameWithInput(pageName string, input session.ActionInput) (string, error)
+	ResolvePageNameWithInput(pageName string, input coordinator.ActionInput) (string, error)
 }
 
 // Config 是 Smart Monkey Runner 配置。
@@ -186,14 +186,14 @@ type Report struct {
 	Records                     []StepRecord
 }
 
-// Decider 是动作决策接口，*session.Session 可直接满足。
+// Decider 是动作决策接口，*coordinator.Coordinator 可直接满足。
 type Decider interface {
-	NextActionWithInput(pageName string, input session.ActionInput) (*types.ActionCommand, error)
+	NextActionWithInput(pageName string, input coordinator.ActionInput) (*types.ActionCommand, error)
 }
 
 // PageInfoTransformer 是可选接口：允许决策层按 XML/截图自定义页面名与页面内容。
 type PageInfoTransformer interface {
-	TransformPageInfoWithInput(pageName string, input session.ActionInput) (session.PageInfo, error)
+	TransformPageInfoWithInput(pageName string, input coordinator.ActionInput) (coordinator.PageInfo, error)
 }
 
 // WeightedCandidate 表示一个带权重的候选动作。
@@ -204,12 +204,12 @@ type WeightedCandidate struct {
 
 // WeightedDecider 是可选接口，用于返回多候选动作并由 Runner 按权重采样。
 type WeightedDecider interface {
-	NextWeightedActionsWithInput(pageName string, input session.ActionInput) ([]WeightedCandidate, error)
+	NextWeightedActionsWithInput(pageName string, input coordinator.ActionInput) ([]WeightedCandidate, error)
 }
 
 // StepResultObserver 是可选接口，用于接收每步执行后的复盘信息。
 type StepResultObserver interface {
-	OnStepResult(result session.StepResultInput) error
+	OnStepResult(result coordinator.StepResultInput) error
 }
 
 // TraversalOutcomeObserver 是可选接口，用于接收统一动作结果并回写算法在线学习。
@@ -220,7 +220,7 @@ type TraversalOutcomeObserver interface {
 // ContextAwareBlockRecoveryDecider 是可选恢复接口：当 Runner 识别到阻塞时，
 // 由决策层提供恢复动作；未实现时 Runner 使用 BACK 兜底。
 type ContextAwareBlockRecoveryDecider interface {
-	NextBlockRecoveryActionWithContext(ctx enginestate.TraversalContext, input session.ActionInput) (*types.ActionCommand, error)
+	NextBlockRecoveryActionWithContext(ctx enginestate.TraversalContext, input coordinator.ActionInput) (*types.ActionCommand, error)
 }
 
 // RecoveryCandidateProvider 聚合恢复阶段的候选来源。
@@ -489,7 +489,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		}
 		pageName, xml := r.resolvePageInfo(ctx, xml, screenshot)
 
-		beforePage := session.PageSnapshot{
+		beforePage := coordinator.PageSnapshot{
 			PageName:   pageName,
 			XML:        xml,
 			Screenshot: screenshot,
@@ -499,7 +499,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		record.PageName = pageName
 		report.PageVisitCount[pageName]++
 
-		input := session.ActionInput{
+		input := coordinator.ActionInput{
 			XMLDescOfGuiTree: xml,
 			Screenshot:       screenshot,
 		}
@@ -596,7 +596,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	return report, nil
 }
 
-func (r *Runner) capturePageSnapshot(ctx context.Context, pageSource common.IPageSource, fallbackPageName string) *session.PageSnapshot {
+func (r *Runner) capturePageSnapshot(ctx context.Context, pageSource common.IPageSource, fallbackPageName string) *coordinator.PageSnapshot {
 	if pageSource == nil {
 		return nil
 	}
@@ -616,7 +616,7 @@ func (r *Runner) capturePageSnapshot(ctx context.Context, pageSource common.IPag
 	if strings.TrimSpace(nextPageName) == "" {
 		nextPageName = pageName
 	}
-	return &session.PageSnapshot{
+	return &coordinator.PageSnapshot{
 		PageName:   nextPageName,
 		XML:        nextXML,
 		Screenshot: screenshot,
@@ -624,12 +624,12 @@ func (r *Runner) capturePageSnapshot(ctx context.Context, pageSource common.IPag
 	}
 }
 
-func (r *Runner) notifyStepResult(step int, cmd *types.ActionCommand, success bool, errText string, durationMs int64, crash bool, anr bool, before session.PageSnapshot, after *session.PageSnapshot) {
+func (r *Runner) notifyStepResult(step int, cmd *types.ActionCommand, success bool, errText string, durationMs int64, crash bool, anr bool, before coordinator.PageSnapshot, after *coordinator.PageSnapshot) {
 	observer, ok := r.decider.(StepResultObserver)
 	if !ok || observer == nil {
 		return
 	}
-	_ = observer.OnStepResult(session.StepResultInput{
+	_ = observer.OnStepResult(coordinator.StepResultInput{
 		Step:       step,
 		Action:     cmd,
 		Success:    success,
@@ -642,7 +642,7 @@ func (r *Runner) notifyStepResult(step int, cmd *types.ActionCommand, success bo
 	})
 }
 
-func (r *Runner) notifyTraversalOutcome(step int, before session.PageSnapshot, after *session.PageSnapshot, cmd *types.ActionCommand, success bool) {
+func (r *Runner) notifyTraversalOutcome(step int, before coordinator.PageSnapshot, after *coordinator.PageSnapshot, cmd *types.ActionCommand, success bool) {
 	ctx := r.buildTraversalContext(step, before, nil, nil)
 	outcome := r.deriveTraversalOutcome(ctx, cmd, before, after, success)
 	if observer, ok := r.decider.(TraversalOutcomeObserver); ok && observer != nil {
@@ -656,8 +656,8 @@ func (r *Runner) notifyTraversalOutcome(step int, before session.PageSnapshot, a
 func (r *Runner) deriveTraversalOutcome(
 	ctx enginestate.TraversalContext,
 	cmd *types.ActionCommand,
-	before session.PageSnapshot,
-	after *session.PageSnapshot,
+	before coordinator.PageSnapshot,
+	after *coordinator.PageSnapshot,
 	success bool,
 ) traversal.ActionOutcome {
 	if cmd == nil || !success || after == nil {
@@ -693,12 +693,12 @@ func (r *Runner) tryRecover(consecutiveFailures int) {
 	_ = r.driver.ActivateApp(r.cfg.PackageName)
 }
 
-func (r *Runner) nextCommand(pageName string, input session.ActionInput) (*types.ActionCommand, error) {
+func (r *Runner) nextCommand(pageName string, input coordinator.ActionInput) (*types.ActionCommand, error) {
 	cmd, _, err := r.nextCommandWithCandidates(pageName, input)
 	return cmd, err
 }
 
-func (r *Runner) nextCommandWithCandidates(pageName string, input session.ActionInput) (*types.ActionCommand, []WeightedCandidate, error) {
+func (r *Runner) nextCommandWithCandidates(pageName string, input coordinator.ActionInput) (*types.ActionCommand, []WeightedCandidate, error) {
 	if wd, ok := r.decider.(WeightedDecider); ok {
 		candidates, err := wd.NextWeightedActionsWithInput(pageName, input)
 		if err != nil {
@@ -750,7 +750,7 @@ func (r *Runner) resolvePageInfo(ctx context.Context, xml string, screenshot []b
 	pageName := r.resolveBasePageName(ctx, xml, screenshot)
 	// Goja resolvePageName 钩子：允许插件自定义页面名生成
 	if resolver, ok := r.decider.(GojaPageNameResolver); ok && resolver != nil {
-		customName, err := resolver.ResolvePageNameWithInput(pageName, session.ActionInput{
+		customName, err := resolver.ResolvePageNameWithInput(pageName, coordinator.ActionInput{
 			XMLDescOfGuiTree: xml,
 			Screenshot:       screenshot,
 		})
@@ -762,7 +762,7 @@ func (r *Runner) resolvePageInfo(ctx context.Context, xml string, screenshot []b
 	if !ok || transformer == nil {
 		return pageName, xml
 	}
-	pageInfo, err := transformer.TransformPageInfoWithInput(pageName, session.ActionInput{
+	pageInfo, err := transformer.TransformPageInfoWithInput(pageName, coordinator.ActionInput{
 		XMLDescOfGuiTree: xml,
 		Screenshot:       screenshot,
 	})

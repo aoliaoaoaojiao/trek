@@ -1,6 +1,6 @@
 package perception
 
-import "trek/internal/engine/decision/shared/types"
+import "trek/internal/engine/core/types"
 
 const (
 	SourceAlgorithm = "algorithm"

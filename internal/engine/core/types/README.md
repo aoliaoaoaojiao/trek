@@ -1,4 +1,4 @@
-﻿# Types 子域
+# Types 子域
 
 `types` 负责定义引擎共享类型与工具：
 - 核心对象：`Action`、`State`、`Widget`、`Element`、`ActionCommand`
@@ -8,4 +8,3 @@
 设计约束：
 - 只放通用基础能力，避免引入业务编排逻辑
 - 优先保持无副作用、可复用
-

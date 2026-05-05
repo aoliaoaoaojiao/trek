@@ -1,10 +1,8 @@
 package runtime
 
 import (
-	"errors"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 	engineplugin "trek/internal/engine/plugin"
-	"trek/internal/scripting"
 )
 
 type scriptPluginRunner interface {
@@ -139,85 +137,29 @@ func (c *pluginChain) OnDestroy(ctx engineplugin.LifecycleContext) error {
 }
 
 func LoadScriptPlugin(path string) error {
-	plugin, err := engineplugin.LoadFile(path)
-	if err != nil {
-		if errors.Is(err, scripting.ErrPluginNotFound) {
-			mu.Lock()
-			scriptPlugin = nil
-			mu.Unlock()
-			return nil
-		}
-		mu.Lock()
-		scriptPlugin = nil
-		mu.Unlock()
-		return err
-	}
-	mu.Lock()
-	if scriptPlugin != nil {
-		_ = scriptPlugin.OnDestroy(lifecycleCtx)
-	}
-	scriptPlugin = plugin
-	ctx := lifecycleCtx
-	mu.Unlock()
-	_ = plugin.OnInit(ctx)
-	return nil
+	return defaultRuntime.LoadScriptPlugin(path)
 }
 
 func ClearScriptPlugin() {
-	mu.Lock()
-	if scriptPlugin != nil {
-		p := scriptPlugin
-		ctx := lifecycleCtx
-		scriptPlugin = nil
-		mu.Unlock()
-		_ = p.OnDestroy(ctx)
-		return
-	}
-	mu.Unlock()
+	defaultRuntime.ClearScriptPlugin()
 }
 
 func HasScriptPlugin() bool {
-	mu.RLock()
-	defer mu.RUnlock()
-	return scriptPlugin != nil
+	return defaultRuntime.HasScriptPlugin()
 }
 
 func transformPageForDecision(ctx engineplugin.PluginContext) (engineplugin.PageSnapshot, error) {
-	mu.RLock()
-	p := scriptPlugin
-	mu.RUnlock()
-	if p == nil {
-		return ctx.Page, nil
-	}
-	return p.TransformPage(ctx)
+	return defaultRuntime.transformPageForDecision(ctx)
 }
 
 func resolvePageNameFromPlugin(ctx engineplugin.PluginContext) (string, error) {
-	mu.RLock()
-	p := scriptPlugin
-	mu.RUnlock()
-	if p == nil {
-		return "", nil
-	}
-	return p.ResolvePageName(ctx)
+	return defaultRuntime.resolvePageNameFromPlugin(ctx)
 }
 
 func beforeDecide(ctx engineplugin.PluginContext) (*types.ActionCommand, bool, error) {
-	mu.RLock()
-	p := scriptPlugin
-	mu.RUnlock()
-	if p == nil {
-		return nil, false, nil
-	}
-	return p.BeforeDecide(ctx)
+	return defaultRuntime.beforeDecide(ctx)
 }
 
 func afterDecide(ctx engineplugin.PluginContext, cmd *types.ActionCommand) (*types.ActionCommand, bool, error) {
-	mu.RLock()
-	p := scriptPlugin
-	mu.RUnlock()
-	if p == nil {
-		return cmd, false, nil
-	}
-	return p.AfterDecide(ctx, cmd)
+	return defaultRuntime.afterDecide(ctx, cmd)
 }

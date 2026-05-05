@@ -2,7 +2,7 @@ package reuse
 
 import (
 	"sync"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 )
 
 type reuseVisitStats struct {

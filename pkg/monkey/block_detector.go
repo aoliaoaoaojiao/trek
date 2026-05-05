@@ -4,8 +4,8 @@ import (
 	"hash/fnv"
 	"strconv"
 	"strings"
-	"trek/internal/engine/decision/shared/types"
-	"trek/pkg/session"
+	"trek/internal/engine/core/types"
+	"trek/pkg/coordinator"
 )
 
 // blockDetector 检测遍历过程中的卡死模式：滚动无变化、同页面无移动、两状态乒乓、高访问低收益。
@@ -72,7 +72,7 @@ func (d *blockDetector) resolveSkeleton(xml string, screenshot []byte) string {
 	return sig
 }
 
-func (d *blockDetector) Observe(cmd *types.ActionCommand, before session.PageSnapshot, after *session.PageSnapshot) bool {
+func (d *blockDetector) Observe(cmd *types.ActionCommand, before coordinator.PageSnapshot, after *coordinator.PageSnapshot) bool {
 	if d == nil || cmd == nil || after == nil {
 		d.Reset()
 		return false
@@ -248,7 +248,7 @@ func pageSignature(pageName string, xml string) string {
 }
 
 // cachedSignature 优先使用 PageSnapshot 缓存的签名，未缓存时现场计算。
-func cachedSignature(page session.PageSnapshot) string {
+func cachedSignature(page coordinator.PageSnapshot) string {
 	if page.Signature != "" {
 		return page.Signature
 	}
@@ -256,7 +256,7 @@ func cachedSignature(page session.PageSnapshot) string {
 }
 
 // cachedSignaturePtr 对 *PageSnapshot 同理。
-func cachedSignaturePtr(page *session.PageSnapshot) string {
+func cachedSignaturePtr(page *coordinator.PageSnapshot) string {
 	if page == nil {
 		return ""
 	}

@@ -1,38 +1,19 @@
 package runtime
 
 import (
-	"sync"
-
-	"trek/internal/engine/decision"
-	"trek/internal/engine/decision/shared/types"
-	perceptionfusion "trek/internal/engine/perception/fusion"
+	"trek/internal/engine/core/types"
 	engineplugin "trek/internal/engine/plugin"
 )
 
-var mu sync.RWMutex
-
-var engineModel *decision.Model
-var observationMode = perceptionfusion.ModeXMLOnly
-var defaultOrchestrator = newDefaultOrchestrator()
-var scriptPlugin scriptPluginRunner
-var lifecycleCtx engineplugin.LifecycleContext
-
 // SetLifecycleContext 设置插件生命周期上下文，应在加载插件前调用。
 func SetLifecycleContext(ctx engineplugin.LifecycleContext) {
-	mu.Lock()
-	lifecycleCtx = ctx
-	mu.Unlock()
+	defaultRuntime.SetLifecycleContext(ctx)
 }
 
 // NewLifecycleContext 构造生命周期上下文。
 func NewLifecycleContext(packageName string) engineplugin.LifecycleContext {
-	mu.RLock()
-	mode := observationMode
-	mu.RUnlock()
-	return engineplugin.LifecycleContext{
-		PackageName:    packageName,
-		PageSourceType: string(mode),
-	}
+	rt := New(packageName)
+	return rt.NewLifecycleContext()
 }
 
 type ActionRequestOptions struct {
@@ -59,20 +40,10 @@ type StepResultInput struct {
 
 // SetObservationMode 设置感知模式：xml-only / image-only / hybrid。
 func SetObservationMode(mode string) error {
-	parsed, err := perceptionfusion.ParseMode(mode)
-	if err != nil {
-		return err
-	}
-	mu.Lock()
-	observationMode = parsed
-	defaultOrchestrator = newOrchestratorWithMode(observationMode)
-	mu.Unlock()
-	return nil
+	return defaultRuntime.SetObservationMode(mode)
 }
 
 // GetObservationMode 返回当前感知模式。
 func GetObservationMode() string {
-	mu.RLock()
-	defer mu.RUnlock()
-	return string(observationMode)
+	return defaultRuntime.GetObservationMode()
 }

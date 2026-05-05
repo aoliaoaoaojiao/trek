@@ -2,15 +2,15 @@ package monkey
 
 import (
 	"strings"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 	"trek/internal/engine/perception"
 	"trek/internal/engine/recovery"
 	enginestate "trek/internal/engine/state"
 	"trek/logger"
-	"trek/pkg/session"
+	"trek/pkg/coordinator"
 )
 
-func (r *Runner) nextCommandWithRecovery(step int, beforePage session.PageSnapshot, pageName string, input session.ActionInput) (*types.ActionCommand, error) {
+func (r *Runner) nextCommandWithRecovery(step int, beforePage coordinator.PageSnapshot, pageName string, input coordinator.ActionInput) (*types.ActionCommand, error) {
 	r.lastEnhancementAttempt = nil
 	if !r.pendingBlockRecovery {
 		cmd, weighted, err := r.nextCommandWithCandidates(pageName, input)
@@ -142,7 +142,7 @@ func (r *Runner) advanceRecoveryStateOnStep() {
 	}
 }
 
-func (r *Runner) buildTraversalContext(step int, page session.PageSnapshot, pageVisitCount map[string]int, actionCount map[string]int) enginestate.TraversalContext {
+func (r *Runner) buildTraversalContext(step int, page coordinator.PageSnapshot, pageVisitCount map[string]int, actionCount map[string]int) enginestate.TraversalContext {
 	mode := TraversalModeExplore
 	blockReason := ""
 	if r != nil && r.recoveryState != nil {
@@ -171,7 +171,7 @@ func (r *Runner) buildTraversalContext(step int, page session.PageSnapshot, page
 	})
 }
 
-func (r *Runner) recordActionTrace(page session.PageSnapshot, cmd *types.ActionCommand) {
+func (r *Runner) recordActionTrace(page coordinator.PageSnapshot, cmd *types.ActionCommand) {
 	if r == nil || cmd == nil {
 		return
 	}
@@ -204,8 +204,8 @@ func commandTraceKey(cmd *types.ActionCommand) string {
 	return cmd.Act.String()
 }
 
-func (r *Runner) nextBlockRecoveryCommand(pageName string, input session.ActionInput) (*types.ActionCommand, error) {
-	ctx := r.buildTraversalContext(0, session.PageSnapshot{
+func (r *Runner) nextBlockRecoveryCommand(pageName string, input coordinator.ActionInput) (*types.ActionCommand, error) {
+	ctx := r.buildTraversalContext(0, coordinator.PageSnapshot{
 		PageName:   pageName,
 		XML:        input.XMLDescOfGuiTree,
 		Screenshot: input.Screenshot,

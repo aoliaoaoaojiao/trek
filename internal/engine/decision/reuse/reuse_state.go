@@ -1,8 +1,8 @@
 package reuse
 
 import (
+	"trek/internal/engine/core/types"
 	"trek/internal/engine/decision/shared/tool"
-	"trek/internal/engine/decision/shared/types"
 	"trek/logger"
 )
 

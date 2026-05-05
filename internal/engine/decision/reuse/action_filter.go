@@ -2,7 +2,7 @@ package reuse
 
 import (
 	"math"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 )
 
 // ActionFilterValidValuePriority 是 reuse 算法专用的 Q 值优先级过滤器。

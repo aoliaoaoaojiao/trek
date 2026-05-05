@@ -5,33 +5,7 @@ import (
 )
 
 func OnStepResult(input StepResultInput) error {
-	mu.RLock()
-	p := scriptPlugin
-	mu.RUnlock()
-	if p == nil {
-		return nil
-	}
-	before := pageSnapshotFromInput(input.Before)
-	ctx := engineplugin.StepResultContext{
-		PluginContext: engineplugin.PluginContext{
-			Page: before,
-			Runtime: engineplugin.RuntimeContext{
-				PackageName: packageName(),
-			},
-		},
-		Result: engineplugin.StepResult{
-			Step:       input.Step,
-			Action:     engineplugin.FromActionCommand(input.Action),
-			Success:    input.Success,
-			Error:      input.Error,
-			DurationMs: input.DurationMs,
-			Crash:      input.Crash,
-			ANR:        input.ANR,
-			Before:     before,
-			After:      pageSnapshotPtrFromInput(input.After),
-		},
-	}
-	return p.OnStepResult(ctx)
+	return defaultRuntime.OnStepResult(input)
 }
 
 func pageSnapshotFromInput(input PageSnapshotInput) engineplugin.PageSnapshot {

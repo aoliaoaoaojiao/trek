@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 )
 
 func TestBuildActionKeyClickWithResourceID(t *testing.T) {

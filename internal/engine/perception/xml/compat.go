@@ -1,8 +1,8 @@
 package xml
 
 import (
+	"trek/internal/engine/core/types"
 	"trek/internal/engine/decision/shared/elements"
-	"trek/internal/engine/decision/shared/types"
 )
 
 type ElementType = elements.ElementType

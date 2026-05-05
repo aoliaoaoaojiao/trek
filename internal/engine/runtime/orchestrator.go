@@ -3,12 +3,12 @@ package runtime
 import (
 	"context"
 
+	"trek/internal/engine/core/types"
 	"trek/internal/engine/decision"
-	"trek/internal/engine/decision/shared/types"
-	"trek/logger"
 	perceptionfusion "trek/internal/engine/perception/fusion"
 	perceptionvision "trek/internal/engine/perception/vision"
 	xmlperception "trek/internal/engine/perception/xml"
+	"trek/logger"
 )
 
 // Orchestrator 璐熻矗缂栨帓鎰熺煡銆佺瓥鐣ャ€佽鍒掑拰€佽鍒掑拰鎵ц娴佺▼銆?
@@ -122,11 +122,11 @@ func (a *passthroughActuator) Compile(ctx context.Context, obs *decision.Observa
 	return plan.Operate, nil
 }
 
-func newDefaultOrchestrator() *Orchestrator {
-	return newOrchestratorWithMode(observationMode)
+func newOrchestratorWithMode(mode perceptionfusion.Mode) *Orchestrator {
+	return newOrchestratorWithModeAndModelProvider(mode, ensureModel)
 }
 
-func newOrchestratorWithMode(mode perceptionfusion.Mode) *Orchestrator {
+func newOrchestratorWithModeAndModelProvider(mode perceptionfusion.Mode, modelProvider func(pageName string) *decision.Model) *Orchestrator {
 	fusionPerceptor, err := perceptionfusion.NewPerceptor(mode, &xmlObservationPerceptor{}, perceptionvision.NewPerceptor())
 	if err != nil {
 		// 瀹归敊鍥為€€锛氬紓甯告ā寮忛粯璁ら檷绾у埌 XML-only锛岄伩鍏嶄腑鏂幇鏈夋祦绋嬨€?
@@ -140,7 +140,7 @@ func newOrchestratorWithMode(mode perceptionfusion.Mode) *Orchestrator {
 	return &Orchestrator{
 		perceptor: fusionPerceptor,
 		policy: &legacyModelPolicy{
-			modelProvider: ensureModel,
+			modelProvider: modelProvider,
 		},
 		planner:  &firstCandidatePlanner{},
 		actuator: &passthroughActuator{},

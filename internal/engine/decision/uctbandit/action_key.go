@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode"
 
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 )
 
 // BuildActionKey 为动作生成稳定的归一化 key。

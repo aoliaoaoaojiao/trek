@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 	coretypes "trek/internal/engine/core/types"
+	types "trek/internal/engine/core/types"
 	"trek/internal/engine/decision/shared/tool"
-	types "trek/internal/engine/decision/shared/types"
 	"trek/logger"
 
 	"github.com/tidwall/gjson"

@@ -2,7 +2,7 @@ package graph
 
 import (
 	"time"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 	"trek/logger"
 )
 

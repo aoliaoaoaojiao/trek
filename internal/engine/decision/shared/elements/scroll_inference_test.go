@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	coretypes "trek/internal/engine/core/types"
-	types "trek/internal/engine/decision/shared/types"
+	types "trek/internal/engine/core/types"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -72,7 +72,7 @@ func TestInferScrollableElements(t *testing.T) {
 			</node>`,
 			threshold:    3,
 			wantInferred: false, // 根 FrameLayout 只有1个子元素，不满足
-			wantNone:     true, // FrameLayout 推断后也不是 ALL（无 class），保持 NONE
+			wantNone:     true,  // FrameLayout 推断后也不是 ALL（无 class），保持 NONE
 		},
 		{
 			name: "已标记scrollable的ListView保持Vertical不覆盖",
@@ -85,8 +85,8 @@ func TestInferScrollableElements(t *testing.T) {
 			wantNone:  false, // ListView 已标记 Vertical，不应被推断覆盖
 		},
 		{
-			name: "叶子节点不推断",
-			xml:  `<node class="uia.widget.Button" clickable="true" bounds="[0,0][100,200]"/>`,
+			name:         "叶子节点不推断",
+			xml:          `<node class="uia.widget.Button" clickable="true" bounds="[0,0][100,200]"/>`,
 			threshold:    3,
 			wantNone:     true, // 无子节点，不满足推断条件
 			wantInferred: false,

@@ -1,4 +1,4 @@
-package session
+package coordinator
 
 import (
 	"bytes"
@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"trek/internal/engine/core/types"
 	"trek/internal/engine/decision"
-	"trek/internal/engine/decision/shared/types"
 	"trek/internal/engine/memory"
 	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
@@ -32,11 +32,21 @@ func mustPNG(t *testing.T, width int, height int) []byte {
 	return buf.Bytes()
 }
 
-func closeSessionMemoryStore(s *Session) {
+func closeSessionMemoryStore(s *Coordinator) {
 	if s == nil || s.memoryStore == nil {
 		return
 	}
 	_ = s.memoryStore.Close()
+}
+
+func TestCoordinatorOwnsRuntimeFacade(t *testing.T) {
+	coord, err := New(Config{PackageName: "com.demo"})
+	if err != nil {
+		t.Fatalf("创建 Coordinator 失败: %v", err)
+	}
+	if coord.runtime == nil {
+		t.Fatalf("Coordinator 应持有 runtime 门面")
+	}
 }
 
 type mockTraversalAlgorithm struct {

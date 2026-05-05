@@ -3,7 +3,7 @@ package reuse
 import (
 	"math"
 
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 	"trek/logger"
 )
 
@@ -218,4 +218,3 @@ func (a *ModelReusableAgent) updateReuseModel() {
 		modelAction.GetId(),
 		a.getQValueByHash(hash))
 }
-

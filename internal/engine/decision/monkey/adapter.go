@@ -3,7 +3,7 @@ package monkey
 import (
 	"math/rand"
 
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 	"trek/internal/engine/traversal"

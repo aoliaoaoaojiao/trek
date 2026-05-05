@@ -2,8 +2,8 @@ package decision
 
 import (
 	"fmt"
+	"trek/internal/engine/core/types"
 	sharedgraph "trek/internal/engine/decision/shared/graph"
-	"trek/internal/engine/decision/shared/types"
 	"trek/logger"
 )
 

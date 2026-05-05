@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 	enginestate "trek/internal/engine/state"
 )
 

@@ -3,7 +3,7 @@ package pagecontrol
 import (
 	"testing"
 
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 )
 
 func TestParseCandidatesMapsBasicActionTypes(t *testing.T) {

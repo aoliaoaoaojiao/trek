@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/primitives"
 	"trek/pkg/driver/android"
 	"trek/pkg/driver/common"
 	"trek/pkg/driver/common/page/poco"
@@ -51,23 +51,23 @@ func TestBaseTouchEvent(t *testing.T) {
 			}
 			assert.NotEmpty(t, driver.Name())
 
-			err = driver.Click(types.Point{
+			err = driver.Click(primitives.Point{
 				X: 500,
 				Y: 500,
 			})
 			assert.NoError(t, err)
 
-			err = driver.LongClick(types.Point{
+			err = driver.LongClick(primitives.Point{
 				X: 600,
 				Y: 600,
 			}, 1000)
 			assert.NoError(t, err)
 
 			err = driver.Swipe(
-				types.Point{
+				primitives.Point{
 					X: 100, Y: 100,
 				},
-				types.Point{
+				primitives.Point{
 					X: 600, Y: 600,
 				},
 				10, 1000)
@@ -90,14 +90,14 @@ func TestPinch(t *testing.T) {
 			driver, err := android.NewAndroidDriver(
 				android.WithTouch(tt.touchType),
 			)
-			defer driver.Close()
 			if err != nil {
 				t.Fatal(err)
 			}
+			defer driver.Close()
 			assert.NotEmpty(t, driver.Name())
 
 			err = driver.Pinch(
-				types.Point{
+				primitives.Point{
 					X: 500,
 					Y: 500},
 				150,

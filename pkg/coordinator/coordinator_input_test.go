@@ -1,9 +1,9 @@
-package session
+package coordinator
 
 import (
 	"testing"
+	"trek/internal/engine/core/types"
 	"trek/internal/engine/decision"
-	"trek/internal/engine/decision/shared/types"
 	"trek/logger"
 )
 

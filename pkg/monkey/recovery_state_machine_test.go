@@ -3,10 +3,10 @@ package monkey
 import (
 	"context"
 	"testing"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
-	"trek/pkg/session"
+	session "trek/pkg/coordinator"
 )
 
 func TestRecoveryStateMachineEscalatesFromExploreToRecover(t *testing.T) {

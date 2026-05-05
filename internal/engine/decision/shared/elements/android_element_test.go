@@ -2,7 +2,7 @@ package elements
 
 import (
 	"testing"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 
 	"github.com/stretchr/testify/assert"
 )

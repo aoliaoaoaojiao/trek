@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"trek/internal/engine/decision/shared/types"
+	"trek/internal/engine/core/types"
 	"trek/internal/engine/perception"
 )
 

@@ -384,7 +384,7 @@ func TestSessionNextBlockRecoveryActionRejectsRestartActions(t *testing.T) {
 }
 
 func TestSessionBuildMemoryRecoveryCandidates(t *testing.T) {
-	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
+	memoryPath := filepath.Join(t.TempDir(), "recovery.sqlite")
 	store, err := memory.NewStore(memoryPath)
 	if err != nil {
 		t.Fatalf("初始化 memory store 失败: %v", err)
@@ -675,7 +675,7 @@ func TestSessionObserveTraversalOutcomeNoError(t *testing.T) {
 }
 
 func TestSessionRecordRecoveryMemoryOutcome(t *testing.T) {
-	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
+	memoryPath := filepath.Join(t.TempDir(), "recovery.sqlite")
 	session, err := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryMemoryFile: memoryPath,
@@ -731,7 +731,7 @@ func TestSessionRecordRecoveryMemoryOutcome(t *testing.T) {
 }
 
 func TestSessionRecordRecoveryMemoryOutcomeAggregatesCounts(t *testing.T) {
-	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
+	memoryPath := filepath.Join(t.TempDir(), "recovery.sqlite")
 	session, err := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryMemoryFile: memoryPath,
@@ -783,7 +783,7 @@ func TestSessionRecordRecoveryMemoryOutcomeAggregatesCounts(t *testing.T) {
 }
 
 func TestSessionRecordCandidateEnhancementOutcome(t *testing.T) {
-	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
+	memoryPath := filepath.Join(t.TempDir(), "recovery.sqlite")
 	session, err := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryMemoryFile: memoryPath,
@@ -830,7 +830,7 @@ func TestSessionRecordCandidateEnhancementOutcome(t *testing.T) {
 }
 
 func TestSessionBuildKnownFailedRecoveryActions(t *testing.T) {
-	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
+	memoryPath := filepath.Join(t.TempDir(), "recovery.sqlite")
 	session, err := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryMemoryFile: memoryPath,
@@ -868,7 +868,7 @@ func TestSessionBuildKnownFailedRecoveryActions(t *testing.T) {
 }
 
 func TestSessionBuildKnownSuccessfulRecoveryActions(t *testing.T) {
-	memoryPath := filepath.Join(t.TempDir(), "recovery.jsonl")
+	memoryPath := filepath.Join(t.TempDir(), "recovery.sqlite")
 	session, err := NewSession(Config{
 		PackageName:        "com.demo",
 		RecoveryMemoryFile: memoryPath,

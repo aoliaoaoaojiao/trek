@@ -53,7 +53,6 @@ func (recoveryMemoryRow) TableName() string {
 }
 
 // NewStore 创建 Store，并初始化 SQLite 表结构。
-// 若传入旧的 `.jsonl` 路径，会自动切换到同目录 `.sqlite` 文件并尝试迁移历史 jsonl 数据。
 func NewStore(path string) (*Store, error) {
 	dbPath := resolveSQLitePath(path)
 	if err := ensureParentDir(dbPath); err != nil {
@@ -73,9 +72,6 @@ func NewStore(path string) (*Store, error) {
 	store := &Store{
 		path: dbPath,
 		db:   db,
-	}
-	if err := store.importLegacyJSONLIfNeeded(path); err != nil {
-		return nil, err
 	}
 	return store, nil
 }
@@ -191,53 +187,10 @@ func (s *Store) upsertRecordLocked(item RecoveryMemoryRecord) error {
 	return s.db.Save(&next).Error
 }
 
-func (s *Store) importLegacyJSONLIfNeeded(originalPath string) error {
-	originalPath = strings.TrimSpace(originalPath)
-	if originalPath == "" || samePath(originalPath, s.path) {
-		return nil
-	}
-	if !strings.EqualFold(filepath.Ext(originalPath), ".jsonl") {
-		return nil
-	}
-	if _, err := os.Stat(originalPath); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-
-	var count int64
-	if err := s.db.Model(&recoveryMemoryRow{}).Count(&count).Error; err != nil {
-		return err
-	}
-	if count > 0 {
-		return nil
-	}
-
-	legacyRecords, err := loadRecordsFromJSONL(originalPath)
-	if err != nil || len(legacyRecords) == 0 {
-		return err
-	}
-	aggregated := aggregateRecords(legacyRecords)
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		for _, item := range aggregated {
-			row := rowFromRecord(item)
-			if err := tx.Create(&row).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
 func resolveSQLitePath(path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return "recovery_memory.sqlite"
-	}
-	if strings.EqualFold(filepath.Ext(path), ".jsonl") {
-		base := strings.TrimSuffix(path, filepath.Ext(path))
-		return base + ".sqlite"
 	}
 	return path
 }
@@ -407,10 +360,4 @@ func maxInt(left int, right int) int {
 		return left
 	}
 	return right
-}
-
-func samePath(left string, right string) bool {
-	a := strings.ToLower(filepath.Clean(strings.TrimSpace(left)))
-	b := strings.ToLower(filepath.Clean(strings.TrimSpace(right)))
-	return a == b
 }

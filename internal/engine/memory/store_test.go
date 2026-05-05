@@ -9,8 +9,8 @@ import (
 	enginestate "trek/internal/engine/state"
 )
 
-func TestStoreAppendAndReloadFromJSONL(t *testing.T) {
-	filePath := filepath.Join(t.TempDir(), "recovery_memory.jsonl")
+func TestStoreAppendAndReloadFromSQLite(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "recovery_memory.sqlite")
 
 	store, err := NewStore(filePath)
 	if err != nil {
@@ -65,7 +65,7 @@ func TestStoreAppendAndReloadFromJSONL(t *testing.T) {
 }
 
 func TestStoreFindPrefersExactMatch(t *testing.T) {
-	store, err := NewStore(filepath.Join(t.TempDir(), "memory.jsonl"))
+	store, err := NewStore(filepath.Join(t.TempDir(), "memory.sqlite"))
 	if err != nil {
 		t.Fatalf("创建 store 失败: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestStoreFindPrefersExactMatch(t *testing.T) {
 }
 
 func TestStoreAppendOutcomeAggregatesByMemoryKeyAndAction(t *testing.T) {
-	filePath := filepath.Join(t.TempDir(), "recovery_memory.jsonl")
+	filePath := filepath.Join(t.TempDir(), "recovery_memory.sqlite")
 	store, err := NewStore(filePath)
 	if err != nil {
 		t.Fatalf("创建 store 失败: %v", err)

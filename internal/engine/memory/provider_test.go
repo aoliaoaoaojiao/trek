@@ -10,7 +10,7 @@ import (
 )
 
 func TestProviderBuildCandidatesFromStore(t *testing.T) {
-	store, err := NewStore(filepath.Join(t.TempDir(), "memory.jsonl"))
+	store, err := NewStore(filepath.Join(t.TempDir(), "memory.sqlite"))
 	if err != nil {
 		t.Fatalf("创建 store 失败: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestProviderBuildCandidatesFromStore(t *testing.T) {
 }
 
 func TestProviderBoostsCandidateEnhancementInExplore(t *testing.T) {
-	store, err := NewStore(filepath.Join(t.TempDir(), "memory.jsonl"))
+	store, err := NewStore(filepath.Join(t.TempDir(), "memory.sqlite"))
 	if err != nil {
 		t.Fatalf("创建 store 失败: %v", err)
 	}

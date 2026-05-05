@@ -13,6 +13,8 @@ import (
 	"trek/internal/engine/core/types"
 	"trek/internal/engine/decision"
 	"trek/internal/engine/decision/monkey"
+	_ "trek/internal/engine/decision/reuse"
+	_ "trek/internal/engine/decision/uctbandit"
 	"trek/internal/engine/memory"
 	"trek/internal/engine/perception"
 	candidateproviders "trek/internal/engine/perception/providers"

@@ -40,15 +40,19 @@ func (m *Model) SetGraph(graph *Graph) {
 
 // AddAgent adds an agent to the model.
 func (m *Model) AddAgent(deviceID string, algorithmType string, deviceType types.DeviceType) (types.IAgent, error) {
-	var graphListener types.IAgent
 	agentCreator := agentCreators[algorithmType]
-	if agentCreator != nil {
-		created, err := agentCreator(m, deviceType)
-		if err != nil {
-			return nil, fmt.Errorf("创建决策代理失败(algorithm=%s): %w", algorithmType, err)
-		}
-		graphListener = created
+	if agentCreator == nil {
+		return nil, fmt.Errorf("未注册的决策算法: %s", algorithmType)
 	}
+
+	graphListener, err := agentCreator(m, deviceType)
+	if err != nil {
+		return nil, fmt.Errorf("创建决策代理失败(algorithm=%s): %w", algorithmType, err)
+	}
+	if graphListener == nil {
+		return nil, fmt.Errorf("创建决策代理失败(algorithm=%s): agent 为空", algorithmType)
+	}
+
 	m.deviceAgentMap[deviceID] = graphListener
 	m.graph.AddListener(graphListener)
 	return graphListener, nil

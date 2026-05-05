@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -36,6 +37,48 @@ func RootFixturePath(t *testing.T, fixtureName string) string {
 	}
 	rootDir := requireProjectRoot(t)
 	return filepath.Join(rootDir, "testdata", fixtureName)
+}
+
+// ListRootFixtures 返回仓库根目录 testdata 下的图片 fixture 名称列表。
+func ListRootFixtures(t *testing.T) []string {
+	t.Helper()
+	rootDir := requireProjectRoot(t)
+	patterns := []string{
+		filepath.Join(rootDir, "testdata", "*.png"),
+		filepath.Join(rootDir, "testdata", "*.jpg"),
+		filepath.Join(rootDir, "testdata", "*.jpeg"),
+	}
+	seen := make(map[string]struct{}, 8)
+	fixtures := make([]string, 0, 8)
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			t.Fatalf("枚举测试资源失败: pattern=%s err=%v", pattern, err)
+		}
+		for _, match := range matches {
+			name := filepath.Base(match)
+			if _, exists := seen[name]; exists {
+				continue
+			}
+			seen[name] = struct{}{}
+			fixtures = append(fixtures, name)
+		}
+	}
+	sort.Strings(fixtures)
+	if len(fixtures) == 0 {
+		t.Fatal("testdata 下未找到任何图片测试资源")
+	}
+	return fixtures
+}
+
+// FixtureStem 返回去掉扩展名后的 fixture 名称。
+func FixtureStem(fixtureName string) string {
+	fixtureName = strings.TrimSpace(fixtureName)
+	if fixtureName == "" {
+		return ""
+	}
+	ext := filepath.Ext(fixtureName)
+	return strings.TrimSuffix(filepath.Base(fixtureName), ext)
 }
 
 func requireProjectRoot(t *testing.T) string {

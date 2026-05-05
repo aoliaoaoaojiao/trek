@@ -14,27 +14,37 @@ import (
 )
 
 func TestDefaultImageFingerprintNameWithFixture(t *testing.T) {
-	data := testutil.ReadRootFixture(t, testutil.FixtureGameNavigation)
+	for _, fixtureName := range testutil.ListRootFixtures(t) {
+		fixtureName := fixtureName
+		t.Run(testutil.FixtureStem(fixtureName), func(t *testing.T) {
+			data := testutil.ReadRootFixture(t, fixtureName)
 
-	fingerprint := defaultImageFingerprintName(data)
-	if fingerprint == "" {
-		t.Fatal("gocv 页面指纹不应为空")
-	}
-	if !strings.HasPrefix(fingerprint, imageFingerprintPrefix+":") {
-		t.Fatalf("页面指纹前缀错误: %s", fingerprint)
+			fingerprint := defaultImageFingerprintName(data)
+			if fingerprint == "" {
+				t.Fatal("gocv 页面指纹不应为空")
+			}
+			if !strings.HasPrefix(fingerprint, imageFingerprintPrefix+":") {
+				t.Fatalf("页面指纹前缀错误: %s", fingerprint)
+			}
+		})
 	}
 }
 
 func TestDefaultImageFingerprintNameIsStableForSameImage(t *testing.T) {
-	data := testutil.ReadRootFixture(t, testutil.FixtureGameNavigation)
+	for _, fixtureName := range testutil.ListRootFixtures(t) {
+		fixtureName := fixtureName
+		t.Run(testutil.FixtureStem(fixtureName), func(t *testing.T) {
+			data := testutil.ReadRootFixture(t, fixtureName)
 
-	first := defaultImageFingerprintName(data)
-	second := defaultImageFingerprintName(data)
-	if first == "" || second == "" {
-		t.Fatalf("同图指纹不应为空: first=%q second=%q", first, second)
-	}
-	if first != second {
-		t.Fatalf("同图指纹应稳定一致: first=%s second=%s", first, second)
+			first := defaultImageFingerprintName(data)
+			second := defaultImageFingerprintName(data)
+			if first == "" || second == "" {
+				t.Fatalf("同图指纹不应为空: first=%q second=%q", first, second)
+			}
+			if first != second {
+				t.Fatalf("同图指纹应稳定一致: first=%s second=%s", first, second)
+			}
+		})
 	}
 }
 

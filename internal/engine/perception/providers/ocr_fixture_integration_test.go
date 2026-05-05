@@ -48,7 +48,7 @@ func TestOCRIntegration_GameNavigationFixtureAccurateControlBounds(t *testing.T)
 	logOCRRawResponseArtifact(t, provider, enginestate.TraversalContext{
 		PageName:   "GameNavigation",
 		Screenshot: screenshot,
-	})
+	}, testutil.FixtureGameNavigation)
 
 	items, err := provider.BuildCandidates(enginestate.TraversalContext{
 		PageName:   "GameNavigation",
@@ -56,18 +56,47 @@ func TestOCRIntegration_GameNavigationFixtureAccurateControlBounds(t *testing.T)
 	})
 	require.NoError(t, err, "OCR 控件检测失败")
 	require.NotEmpty(t, items, "OCR 应返回至少一个候选")
-	logOverlayArtifact(t, "ocr_game_navigation_overlay.png", items)
+	logOverlayArtifact(t, testutil.FixtureGameNavigation, "ocr_game_navigation_overlay.png", items)
 
 	assertCandidatesHitExpectedControls(t, items, gameNavigationOCRExpectedControls, extractOCRCandidateText)
 }
 
-func logOverlayArtifact(t *testing.T, fileName string, items []perception.Candidate) {
+func TestOCRIntegration_BatchAllFixturesReturnCandidates(t *testing.T) {
+	endpoint, apiKey := testutil.RequireOCREnv(t)
+	for _, fixtureName := range testutil.ListRootFixtures(t) {
+		fixtureName := fixtureName
+		t.Run(testutil.FixtureStem(fixtureName), func(t *testing.T) {
+			screenshot := testutil.ReadRootFixture(t, fixtureName)
+			provider, err := NewOCRHTTPProvider(OCRHTTPProviderConfig{
+				Endpoint: endpoint,
+				APIKey:   apiKey,
+				Timeout:  30 * time.Second,
+			})
+			require.NoError(t, err, "创建 OCR provider 失败")
+
+			ctx := enginestate.TraversalContext{
+				PageName:   testutil.FixtureStem(fixtureName),
+				Screenshot: screenshot,
+			}
+			logOCRRawResponseArtifact(t, provider, ctx, fixtureName)
+
+			items, err := provider.BuildCandidates(ctx)
+			require.NoError(t, err, "OCR 控件检测失败")
+			require.NotEmpty(t, items, "OCR 应返回至少一个候选")
+
+			overlayName := testutil.FixtureStem(fixtureName) + "_ocr_overlay.png"
+			logOverlayArtifact(t, fixtureName, overlayName, items)
+		})
+	}
+}
+
+func logOverlayArtifact(t *testing.T, fixtureName string, fileName string, items []perception.Candidate) {
 	t.Helper()
-	path := testutil.WriteCandidateOverlayPNG(t, testutil.FixtureGameNavigation, fileName, items)
+	path := testutil.WriteCandidateOverlayPNG(t, fixtureName, fileName, items)
 	t.Logf("标注图已输出: %s", path)
 }
 
-func logOCRRawResponseArtifact(t *testing.T, provider *OCRHTTPProvider, ctx enginestate.TraversalContext) {
+func logOCRRawResponseArtifact(t *testing.T, provider *OCRHTTPProvider, ctx enginestate.TraversalContext, fixtureName string) {
 	t.Helper()
 	if provider == nil {
 		return
@@ -96,12 +125,13 @@ func logOCRRawResponseArtifact(t *testing.T, provider *OCRHTTPProvider, ctx engi
 	if json.Valid(body) && json.Indent(&pretty, body, "", "  ") == nil {
 		formatted = pretty.Bytes()
 	}
-	path := testutil.WriteArtifactBytes(t, "ocr_game_navigation_raw.json", formatted)
+	stem := testutil.FixtureStem(fixtureName)
+	path := testutil.WriteArtifactBytes(t, stem+"_ocr_raw.json", formatted)
 	t.Logf("OCR 原始响应已输出: %s (status=%d)", path, resp.StatusCode)
 
 	rawRects := extractRawOCRBoxes(body)
 	if len(rawRects) > 0 {
-		rawOverlayPath := testutil.WritePixelRectOverlayPNG(t, testutil.FixtureGameNavigation, "ocr_game_navigation_http_overlay.png", rawRects)
+		rawOverlayPath := testutil.WritePixelRectOverlayPNG(t, fixtureName, stem+"_ocr_http_overlay.png", rawRects)
 		t.Logf("OCR 原始框标注图已输出: %s", rawOverlayPath)
 	}
 }

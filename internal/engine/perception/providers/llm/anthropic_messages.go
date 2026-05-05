@@ -151,9 +151,10 @@ func (p *AnthropicMessagesProvider) buildRequestPayload(ctx enginestate.Traversa
 	prompt := buildRecoveryPrompt(ctx)
 	userContent := p.buildUserContent(prompt.UserContent, prompt.ScreenshotMediaType, prompt.ScreenshotBase64())
 	payload := map[string]any{
-		"model":      p.model,
-		"max_tokens": p.maxTokens,
-		"system":     prompt.SystemContent + "\n\n必须输出 JSON，且仅返回符合 schema 的候选动作。",
+		"model":       p.model,
+		"max_tokens":  p.maxTokens,
+		"temperature": 0,
+		"system":      prompt.SystemContent + "\n\n必须输出 JSON，且仅返回符合 schema 的候选动作。",
 		"messages": []map[string]any{
 			{
 				"role":    "user",
@@ -168,9 +169,10 @@ func (p *AnthropicMessagesProvider) buildPageControlRequestPayload(ctx enginesta
 	prompt := pagecontrol.BuildPrompt(ctx)
 	userContent := p.buildUserContent(prompt.UserContent, prompt.ScreenshotMediaType, prompt.ScreenshotBase64())
 	payload := map[string]any{
-		"model":      p.model,
-		"max_tokens": p.maxTokens,
-		"system":     prompt.SystemContent + "\n\n必须输出 JSON，且仅返回符合 schema 的控件列表。",
+		"model":       p.model,
+		"max_tokens":  p.maxTokens,
+		"temperature": 0,
+		"system":      prompt.SystemContent + "\n\n必须输出 JSON，且仅返回符合 schema 的控件列表。",
 		"messages": []map[string]any{
 			{
 				"role":    "user",

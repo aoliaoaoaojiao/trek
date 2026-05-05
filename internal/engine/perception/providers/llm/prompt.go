@@ -198,7 +198,7 @@ func recoveryCandidateSchema() map[string]any {
 					"type": "object",
 					"properties": map[string]any{
 						"intent":      map[string]any{"type": "string", "description": "动作意图描述"},
-						"action_type": map[string]any{"type": "string", "enum": []string{"BACK", "CLICK", "LONG_CLICK", "SCROLL_TOP_DOWN", "SCROLL_BOTTOM_UP", "SCROLL_LEFT_RIGHT", "SCROLL_RIGHT_LEFT", "SCROLL_BOTTOM_UP_N", "ACTIVATE"}},
+						"action_type": map[string]any{"type": "string", "enum": []string{"BACK", "CLICK", "LONG_CLICK", "INPUT", "SCROLL_TOP_DOWN", "SCROLL_BOTTOM_UP", "SCROLL_LEFT_RIGHT", "SCROLL_RIGHT_LEFT", "SCROLL_BOTTOM_UP_N", "ACTIVATE"}},
 						"point": map[string]any{
 							"type":        "object",
 							"description": "目标元素中心点的归一化坐标，x 水平 [0,1]，y 垂直 [0,1]",

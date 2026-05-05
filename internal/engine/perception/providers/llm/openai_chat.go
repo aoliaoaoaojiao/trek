@@ -144,6 +144,8 @@ func (p *OpenAIChatProvider) buildRequestPayload(ctx enginestate.TraversalContex
 
 	payload := map[string]any{
 		"model": p.model,
+		// 页面控件检测更适合稳定输出，固定为低随机性。
+		"temperature": 0,
 		"messages": []map[string]any{
 			{
 				"role":    "system",
@@ -183,6 +185,8 @@ func (p *OpenAIChatProvider) buildPageControlRequestPayload(ctx enginestate.Trav
 	}
 	payload := map[string]any{
 		"model": p.model,
+		// 页面控件检测更适合稳定输出，固定为低随机性。
+		"temperature": 0,
 		"messages": []map[string]any{
 			{
 				"role":    "system",

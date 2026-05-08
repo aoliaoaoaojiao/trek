@@ -49,7 +49,9 @@ func regionFingerprintBytes(img image.Image, bounds image.Rectangle) []byte {
 	for y := 0; y < fingerprintHeight; y++ {
 		var row byte
 		for x := 0; x < fingerprintWidth-1; x++ {
-			if sampled[y][x] > sampled[y][x+1] {
+			left := sampled[y*fingerprintWidth+x]
+			right := sampled[y*fingerprintWidth+x+1]
+			if left > right {
 				row |= 1 << uint(7-x)
 			}
 		}
@@ -60,7 +62,7 @@ func regionFingerprintBytes(img image.Image, bounds image.Rectangle) []byte {
 	for y := 0; y < fingerprintHeight; y++ {
 		var row byte
 		for x := 0; x < fingerprintWidth-1; x++ {
-			if sampled[y][x] >= avgThreshold {
+			if sampled[y*fingerprintWidth+x] >= avgThreshold {
 				row |= 1 << uint(7-x)
 			}
 		}
@@ -74,7 +76,7 @@ func fingerprintRegions(bounds image.Rectangle, custom []ImageFingerprintRegion)
 
 	for _, region := range custom {
 		rect := normalizeFingerprintRegion(bounds, region)
-		if validFingerprintRect(rect, bounds) {
+		if validFingerprintRect(rect, bounds) && !containsRect(regions, rect) {
 			regions = append(regions, rect)
 		}
 	}
@@ -85,7 +87,7 @@ func fingerprintRegions(bounds image.Rectangle, custom []ImageFingerprintRegion)
 	// 中间内容区更贴近滚动列表、卡片流、对话区等实际变化区域，
 	// 组合进去后能降低“整图结构相近但局部内容变化”被误判为同页的概率。
 	content := insetByRatio(bounds, 0.08, 0.18, 0.08, 0.12)
-	if validFingerprintRect(content, bounds) {
+	if validFingerprintRect(content, bounds) && !containsRect(regions, content) {
 		regions = append(regions, content)
 	}
 
@@ -128,6 +130,15 @@ func validFingerprintRect(rect, parent image.Rectangle) bool {
 	return rect.Dx() >= fingerprintWidth && rect.Dy() >= fingerprintHeight
 }
 
+func containsRect(rects []image.Rectangle, target image.Rectangle) bool {
+	for _, rect := range rects {
+		if rect == target {
+			return true
+		}
+	}
+	return false
+}
+
 func clamp01(value float64) float64 {
 	if value < 0 {
 		return 0
@@ -139,17 +150,17 @@ func clamp01(value float64) float64 {
 }
 
 // sampleGrayGrid 按目标网格做双线性采样，兼顾缩放稳定性与实现成本。
-func sampleGrayGrid(img image.Image, bounds image.Rectangle, width, height int) [][]uint8 {
-	grid := make([][]uint8, height)
+// 返回一维平铺数组，减少热点路径里的小对象分配。
+func sampleGrayGrid(img image.Image, bounds image.Rectangle, width, height int) []uint8 {
+	grid := make([]uint8, width*height)
 	srcWidth := bounds.Dx()
 	srcHeight := bounds.Dy()
 
 	for y := 0; y < height; y++ {
-		grid[y] = make([]uint8, width)
 		for x := 0; x < width; x++ {
 			fx := sampleCoord(x, width, srcWidth)
 			fy := sampleCoord(y, height, srcHeight)
-			grid[y][x] = bilinearGrayAt(img, bounds, fx, fy)
+			grid[y*width+x] = bilinearGrayAt(img, bounds, fx, fy)
 		}
 	}
 
@@ -189,12 +200,12 @@ func minInt(a, b int) int {
 	return b
 }
 
-func averageGray(sampled [][]uint8, width, height int) uint8 {
+func averageGray(sampled []uint8, width, height int) uint8 {
 	var sum uint64
 	var count uint64
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
-			sum += uint64(sampled[y][x])
+			sum += uint64(sampled[y*fingerprintWidth+x])
 			count++
 		}
 	}

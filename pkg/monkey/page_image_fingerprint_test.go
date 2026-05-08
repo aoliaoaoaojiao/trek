@@ -91,6 +91,17 @@ func TestFingerprintRegionsUsesCustomRegions(t *testing.T) {
 	}
 }
 
+func TestFingerprintRegionsDeduplicatesSameRegion(t *testing.T) {
+	bounds := image.Rect(0, 0, 1000, 2000)
+	regions := fingerprintRegions(bounds, []ImageFingerprintRegion{
+		{Left: 0.2, Top: 0.3, Right: 0.8, Bottom: 0.7},
+		{Left: 0.2, Top: 0.3, Right: 0.8, Bottom: 0.7},
+	})
+	if len(regions) != 2 {
+		t.Fatalf("重复 ROI 应去重，实际区域数: %d", len(regions))
+	}
+}
+
 func mustMutateGameNavigationFixture(t *testing.T, src []byte) []byte {
 	t.Helper()
 	img, err := png.Decode(bytes.NewReader(src))

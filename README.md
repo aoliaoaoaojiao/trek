@@ -84,12 +84,6 @@ ANTHROPIC_MODEL=mimo-v2.5
 # ADB（可选）
 # ADB_PATH=C:\Android\platform-tools\adb.exe
 
-# OpenCV / gocv（image_fingerprint 可选）
-# OPENCV_DIR=C:\opencv\build
-# OPENCV_BIN=C:\opencv\build\x64\vc16\bin
-# OPENCV_INCLUDE=C:\opencv\build\include
-# OPENCV_LIB=C:\opencv\build\x64\vc16\lib
-# OPENCV_LIB_NAME=opencv_world4100
 ```
 
 ### 4. 运行遍历
@@ -135,6 +129,19 @@ const config = {
 当 `page_control_strategy` 为 `ocr` 或 `llm` 时，Trek 会自动启用截图采集；如果当前步骤拿不到 dump，会继续尝试走“截图 -> 控件区域 -> 伪 XML”链路，而不是直接中断该步。
 
 其中 `llm` 现已使用专门的“控件检测 schema”，要求模型直接返回控件区域列表（`controls`），不再复用恢复动作建议的 `candidates` schema。页面控件提示词独立存放在 Markdown 文档中，并通过 Go `embed` 加载，便于单独维护。控件输出以基础交互类型 `action_type` 为主，例如 `click`、`drag`、`swipe_*`、`input`；可选的 `control_type` 仅作为语义补充。控件 `bounds` 优先使用对象格式 `{left,top,right,bottom}`，同时兼容四元数组 `[left, top, right, bottom]`。
+
+如果页面名策略使用 `image_fingerprint`，还可以额外指定一个或多个局部指纹区域（坐标范围均为 `0~1`）：
+
+```js
+const config = {
+  page_name_strategy: "image_fingerprint",
+  image_fingerprint_regions: [
+    { left: 0.12, top: 0.22, right: 0.88, bottom: 0.78 },
+  ],
+}
+```
+
+这些区域会和整图指纹一起参与计算，比较适合滚动列表、对话区、卡片流等“局部内容变化明显、整体结构较稳定”的页面。
 
 同样支持在 JS 中配置恢复相关调参（示例）：
 
@@ -197,47 +204,6 @@ trek run --package com.example.app --probe-page-name
 ```bash
 trek web
 ```
-
-## GoCV / OpenCV 配置
-
-`image_fingerprint` 的 `gocv` 实现依赖 OpenCV，本质上分两层：
-
-- 编译期：需要头文件和 `.lib`
-- 运行期：需要 `opencv_world*.dll`
-
-推荐通过环境变量统一指定：
-
-- `OPENCV_DIR`：OpenCV 安装根目录或 `build` 目录
-- `OPENCV_BIN`：运行时库目录，Windows 常用 DLL 目录
-- `OPENCV_INCLUDE`：头文件目录
-- `OPENCV_LIB`：编译期 `.lib` 目录；Linux/macOS 也可作为运行时共享库目录
-- `OPENCV_LIB_NAME`：链接库名，不带 `.lib`，如 `opencv_world4100`
-
-如果只设置 `OPENCV_DIR`，脚本会默认尝试：
-
-- `include = <OPENCV_DIR>\include`
-- `lib = <OPENCV_DIR>\lib`
-- `bin = <OPENCV_DIR>\bin`
-
-Windows 下可直接用仓库脚本构建：
-
-```powershell
-.\scripts\go_with_gocv.ps1 test -tags gocv ./pkg/monkey
-.\scripts\go_with_gocv.ps1 build -tags gocv ./cmd/...
-```
-
-运行期如果设置了 OpenCV 目录，Trek 会按平台自动注入动态库搜索路径：
-
-- Windows：把目录加入 `PATH`
-- Linux：把目录加入 `LD_LIBRARY_PATH`
-- macOS：把目录加入 `DYLD_LIBRARY_PATH`
-
-运行时目录解析顺序为：
-
-1. `OPENCV_BIN`
-2. `OPENCV_LIB`
-3. `OPENCV_DIR/lib`
-4. `OPENCV_DIR/bin`
 
 ## OCR 配置
 

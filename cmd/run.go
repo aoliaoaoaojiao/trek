@@ -218,6 +218,7 @@ func runMonkey(logLevelStr string, opts struct {
 		HighValuePageVisitLimit:           highValuePageVisitLimit,
 		CandidateRiskDropThreshold:        candidateRiskDropThreshold,
 		CandidateMinFusionScore:           candidateMinFusionScore,
+		ImageFingerprintRegions:           buildImageFingerprintRegionsConfig(staticCfg),
 	}
 
 	if opts.probePageName {
@@ -315,4 +316,20 @@ func buildEffectiveTouchAreasConfig(staticCfg scripting.StaticConfig, packageNam
 		area.PackageName = strings.TrimSpace(packageName)
 	}
 	return []monkey.EffectiveTouchArea{area}
+}
+
+func buildImageFingerprintRegionsConfig(staticCfg scripting.StaticConfig) []monkey.ImageFingerprintRegion {
+	if len(staticCfg.ImageFingerprintRegions) == 0 {
+		return nil
+	}
+	regions := make([]monkey.ImageFingerprintRegion, 0, len(staticCfg.ImageFingerprintRegions))
+	for _, region := range staticCfg.ImageFingerprintRegions {
+		regions = append(regions, monkey.ImageFingerprintRegion{
+			Left:   region.Left,
+			Top:    region.Top,
+			Right:  region.Right,
+			Bottom: region.Bottom,
+		})
+	}
+	return regions
 }

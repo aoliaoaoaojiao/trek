@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	// FixtureGameNavigation 是导航页示例截图，供 OCR / LLM / gocv 相关测试复用。
+	// FixtureGameNavigation 是导航页示例截图，供 OCR / LLM / 页面指纹相关测试复用。
 	FixtureGameNavigation = "game_navigation.png"
 )
 

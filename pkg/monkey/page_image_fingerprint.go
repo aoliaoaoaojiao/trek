@@ -4,7 +4,7 @@ import "strings"
 
 const imageFingerprintPrefix = "IMGPage"
 
-func resolveImageFingerprintPageName(screenshot []byte, custom func([]byte) string) string {
+func resolveImageFingerprintPageName(screenshot []byte, custom func([]byte) string, regions []ImageFingerprintRegion) string {
 	if len(screenshot) == 0 {
 		return ""
 	}
@@ -13,5 +13,5 @@ func resolveImageFingerprintPageName(screenshot []byte, custom func([]byte) stri
 			return name
 		}
 	}
-	return strings.TrimSpace(defaultImageFingerprintName(screenshot))
+	return strings.TrimSpace(defaultImageFingerprintNameWithRegions(screenshot, regions))
 }

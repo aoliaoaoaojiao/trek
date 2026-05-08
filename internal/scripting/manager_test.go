@@ -195,6 +195,24 @@ func TestLoadStaticConfigReadsPageNameStrategy(t *testing.T) {
 	}
 }
 
+func TestLoadStaticConfigReadsImageFingerprintRegions(t *testing.T) {
+	cfg, err := LoadStaticConfig(`const config = {
+  image_fingerprint_regions: [
+    { left: 0.1, top: 0.2, right: 0.9, bottom: 0.8 }
+  ]
+}`)
+	if err != nil {
+		t.Fatalf("加载静态配置失败: %v", err)
+	}
+	if len(cfg.ImageFingerprintRegions) != 1 {
+		t.Fatalf("图片指纹 ROI 数量不符合预期: %+v", cfg.ImageFingerprintRegions)
+	}
+	got := cfg.ImageFingerprintRegions[0]
+	if got.Left != 0.1 || got.Top != 0.2 || got.Right != 0.9 || got.Bottom != 0.8 {
+		t.Fatalf("图片指纹 ROI 配置不符合预期: %+v", got)
+	}
+}
+
 func TestLoadStaticConfigReadsPageControlStrategy(t *testing.T) {
 	cfg, err := LoadStaticConfig(`const config = {
   page_control_strategy: "ocr"

@@ -22,6 +22,7 @@ type StaticConfig struct {
 	PageSource                        string
 	TouchMode                         string
 	PageNameStrategy                  string
+	ImageFingerprintRegions           []StaticTouchRange
 	PageControlStrategy               string
 	Algorithm                         string
 	Plugins                           []string
@@ -197,6 +198,20 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 	}
 	if strategyValue := obj.Get("pageNameStrategy"); cfg.PageNameStrategy == "" && !isEmptyJSValue(strategyValue) {
 		cfg.PageNameStrategy = strings.TrimSpace(strategyValue.String())
+	}
+	if regionsValue := obj.Get("image_fingerprint_regions"); !isEmptyJSValue(regionsValue) {
+		regions, err := parseStaticTouchRanges(regionsValue, vm, "image_fingerprint_regions")
+		if err != nil {
+			return cfg, err
+		}
+		cfg.ImageFingerprintRegions = regions
+	}
+	if regionsValue := obj.Get("imageFingerprintRegions"); len(cfg.ImageFingerprintRegions) == 0 && !isEmptyJSValue(regionsValue) {
+		regions, err := parseStaticTouchRanges(regionsValue, vm, "imageFingerprintRegions")
+		if err != nil {
+			return cfg, err
+		}
+		cfg.ImageFingerprintRegions = regions
 	}
 	if strategyValue := obj.Get("page_control_strategy"); !isEmptyJSValue(strategyValue) {
 		cfg.PageControlStrategy = strings.TrimSpace(strategyValue.String())
@@ -427,4 +442,52 @@ func floatFromJSValue(v goja.Value) (float64, error) {
 		return 0, errors.New("值不能为 NaN")
 	}
 	return f, nil
+}
+
+func parseStaticTouchRanges(value goja.Value, vm *goja.Runtime, fieldName string) ([]StaticTouchRange, error) {
+	arrObj := value.ToObject(vm)
+	ranges := make([]StaticTouchRange, 0, len(arrObj.Keys()))
+	for _, key := range arrObj.Keys() {
+		item := arrObj.Get(key)
+		if isEmptyJSValue(item) {
+			continue
+		}
+		itemObj := item.ToObject(vm)
+		if itemObj == nil {
+			continue
+		}
+		left, err := floatFromField(itemObj, "left")
+		if err != nil {
+			return nil, fmt.Errorf("%s[%s].left 非法: %w", fieldName, key, err)
+		}
+		top, err := floatFromField(itemObj, "top")
+		if err != nil {
+			return nil, fmt.Errorf("%s[%s].top 非法: %w", fieldName, key, err)
+		}
+		right, err := floatFromField(itemObj, "right")
+		if err != nil {
+			return nil, fmt.Errorf("%s[%s].right 非法: %w", fieldName, key, err)
+		}
+		bottom, err := floatFromField(itemObj, "bottom")
+		if err != nil {
+			return nil, fmt.Errorf("%s[%s].bottom 非法: %w", fieldName, key, err)
+		}
+		r := StaticTouchRange{Left: left, Top: top, Right: right, Bottom: bottom}
+		if r.Left < 0 || r.Left > 1 || r.Top < 0 || r.Top > 1 || r.Right < 0 || r.Right > 1 || r.Bottom < 0 || r.Bottom > 1 {
+			return nil, fmt.Errorf("%s[%s] 必须在 0~1 范围内", fieldName, key)
+		}
+		if r.Right <= r.Left || r.Bottom <= r.Top {
+			return nil, fmt.Errorf("%s[%s] 要求 right>left 且 bottom>top", fieldName, key)
+		}
+		ranges = append(ranges, r)
+	}
+	return ranges, nil
+}
+
+func floatFromField(obj *goja.Object, key string) (float64, error) {
+	value := obj.Get(key)
+	if isEmptyJSValue(value) {
+		return 0, errors.New("值不能为空")
+	}
+	return floatFromJSValue(value)
 }

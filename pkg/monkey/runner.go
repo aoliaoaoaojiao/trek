@@ -126,6 +126,7 @@ type Config struct {
 	CandidateRiskDropThreshold        float64
 	CandidateMinFusionScore           float64
 	ImageSignatureFunc                func([]byte) string
+	ImageFingerprintRegions           []ImageFingerprintRegion
 }
 
 type EffectiveTouchArea struct {
@@ -136,6 +137,13 @@ type EffectiveTouchArea struct {
 }
 
 type EffectiveTouchRange struct {
+	Left   float64
+	Top    float64
+	Right  float64
+	Bottom float64
+}
+
+type ImageFingerprintRegion struct {
 	Left   float64
 	Top    float64
 	Right  float64

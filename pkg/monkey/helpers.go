@@ -95,6 +95,9 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.CandidateMinFusionScore == 0 {
 		cfg.CandidateMinFusionScore = defaultCandidateMinFusionScore
 	}
+	if cfg.ImageSimilaritySSIMThreshold <= 0 || cfg.ImageSimilaritySSIMThreshold > 1 {
+		cfg.ImageSimilaritySSIMThreshold = defaultImageSimilaritySSIMThreshold
+	}
 	if len(cfg.EffectiveTouchAreas) > 0 {
 		filtered := make([]EffectiveTouchArea, 0, len(cfg.EffectiveTouchAreas))
 		for _, area := range cfg.EffectiveTouchAreas {

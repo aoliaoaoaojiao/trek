@@ -14,8 +14,9 @@ import (
 
 // rootCmd 是 trek CLI 的根命令，不带子命令时显示帮助。
 var rootCmd = &cobra.Command{
-	Use:   "trek",
-	Short: "Trek — Android UI 自动化测试引擎",
+	Use:          "trek",
+	SilenceUsage: true,
+	Short:        "Trek — Android UI 自动化测试引擎",
 	Long: `Trek 是一个 Android UI 自动化测试引擎（Smart Monkey），
 通过感知-决策-执行闭环在真机上自主遍历应用。
 

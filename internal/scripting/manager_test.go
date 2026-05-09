@@ -213,6 +213,21 @@ func TestLoadStaticConfigReadsImageFingerprintRegions(t *testing.T) {
 	}
 }
 
+func TestLoadStaticConfigReadsImageSimilaritySSIMThreshold(t *testing.T) {
+	cfg, err := LoadStaticConfig(`const config = {
+  image_similarity_ssim_threshold: 0.982
+}`)
+	if err != nil {
+		t.Fatalf("加载静态配置失败: %v", err)
+	}
+	if !cfg.ImageSimilaritySSIMThreshold.IsSet() {
+		t.Fatal("image_similarity_ssim_threshold 应被解析")
+	}
+	if got := cfg.ImageSimilaritySSIMThreshold.Get(); got != 0.982 {
+		t.Fatalf("image_similarity_ssim_threshold 不符合预期: %.6f", got)
+	}
+}
+
 func TestLoadStaticConfigReadsPageControlStrategy(t *testing.T) {
 	cfg, err := LoadStaticConfig(`const config = {
   page_control_strategy: "ocr"

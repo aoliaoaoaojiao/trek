@@ -23,6 +23,7 @@ type StaticConfig struct {
 	TouchMode                         string
 	PageNameStrategy                  string
 	ImageFingerprintRegions           []StaticTouchRange
+	ImageSimilaritySSIMThreshold      coretypes.Optional[float64]
 	PageControlStrategy               string
 	Algorithm                         string
 	Plugins                           []string
@@ -213,6 +214,7 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 		}
 		cfg.ImageFingerprintRegions = regions
 	}
+	cfg.ImageSimilaritySSIMThreshold = optionalFloat(obj, "image_similarity_ssim_threshold", "imageSimilaritySSIMThreshold")
 	if strategyValue := obj.Get("page_control_strategy"); !isEmptyJSValue(strategyValue) {
 		cfg.PageControlStrategy = strings.TrimSpace(strategyValue.String())
 	}

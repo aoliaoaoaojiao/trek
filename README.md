@@ -135,13 +135,19 @@ const config = {
 ```js
 const config = {
   page_name_strategy: "image_fingerprint",
+  image_similarity_ssim_threshold: 0.985,
   image_fingerprint_regions: [
     { left: 0.12, top: 0.22, right: 0.88, bottom: 0.78 },
   ],
 }
 ```
 
-这些区域会和整图指纹一起参与计算，比较适合滚动列表、对话区、卡片流等“局部内容变化明显、整体结构较稳定”的页面。
+其中：
+
+- `image_fingerprint_regions`：指定需要重点比较的局部区域
+- `image_similarity_ssim_threshold`：控制截图二次确认的灵敏度，越接近 `1` 越严格
+
+这些配置比较适合滚动列表、对话区、卡片流等“局部内容变化明显、整体结构较稳定”的页面。
 
 同样支持在 JS 中配置恢复相关调参（示例）：
 

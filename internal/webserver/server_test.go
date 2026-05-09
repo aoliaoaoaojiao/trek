@@ -8,6 +8,10 @@ import (
 	"testing"
 )
 
+func ptr[T any](v T) *T {
+	return &v
+}
+
 func TestBuildConfigJS_Default(t *testing.T) {
 	js, err := BuildConfigJS(ConfigPayload{})
 	if err != nil {
@@ -102,5 +106,44 @@ func TestBuildConfigJS_WithEffectiveTouchArea(t *testing.T) {
 	}
 	if !strings.Contains(js, `left: 0.043`) {
 		t.Fatalf("未输出 left: %s", js)
+	}
+}
+
+func TestBuildConfigJS_WithAdvancedFields(t *testing.T) {
+	cfg := ConfigPayload{
+		PageSource:                   "uia",
+		TouchMode:                    "motion",
+		PageControl:                  "ocr",
+		Algorithm:                    "uctbandit",
+		CaptureScreenshot:            ptr(true),
+		KeepStepRecords:              ptr(false),
+		ScrollInferThreshold:         ptr(5),
+		ImageSimilaritySSIMThreshold: ptr(0.985),
+		RecoveryCooldownSteps:        ptr(2),
+		LLMTimeoutMs:                 ptr(15000),
+	}
+	cfg.UCTBandit.ActionCooldownPenalty = ptr(0.75)
+	cfg.UCTBandit.RecentActionWindow = ptr(8)
+
+	js, err := BuildConfigJS(cfg)
+	if err != nil {
+		t.Fatalf("buildConfigJS 高级字段失败: %v", err)
+	}
+	for _, expected := range []string{
+		`page_control_strategy: "ocr"`,
+		`algorithm: "uctbandit"`,
+		`capture_screenshot: true`,
+		`keep_step_records: false`,
+		`scroll_infer_threshold: 5`,
+		`image_similarity_ssim_threshold: 0.985`,
+		`recovery_cooldown_steps: 2`,
+		`llm_timeout_ms: 15000`,
+		`uct_bandit: {`,
+		`action_cooldown_penalty: 0.75`,
+		`recent_action_window: 8`,
+	} {
+		if !strings.Contains(js, expected) {
+			t.Fatalf("未输出字段 %q: %s", expected, js)
+		}
 	}
 }

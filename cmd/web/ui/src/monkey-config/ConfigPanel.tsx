@@ -1,10 +1,31 @@
 import { useState } from "react"
 
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
-import type { ActionType, DeviceOption, PageActionRule, PageNameStrategy } from "./types"
+import type { DeviceOption, PageNameStrategy } from "./types"
 
-type ConfigTab = "base" | "action" | "preview"
+type ConfigTab = "base" | "page" | "recovery" | "uct" | "preview"
+type SelectOption = {
+  value: string
+  label: string
+}
+
+const emptySelectValue = "__empty__"
 
 type Props = {
   configTab: ConfigTab
@@ -19,13 +40,20 @@ type Props = {
   onRefreshDevices: () => void
   usedSerial: string
   currentPackageName: string
-  currentPageName: string
   pageSource: "uia" | "poco"
   setPageSource: (value: "uia" | "poco") => void
   pageNameStrategy: PageNameStrategy
   setPageNameStrategy: (value: PageNameStrategy) => void
   touchMode: "motion" | "uia" | "adb"
   setTouchMode: (value: "motion" | "uia" | "adb") => void
+  pageControlStrategy: "" | "raw" | "ocr" | "llm"
+  setPageControlStrategy: (value: "" | "raw" | "ocr" | "llm") => void
+  algorithm: "" | "reuse" | "uctbandit" | "random"
+  setAlgorithm: (value: "" | "reuse" | "uctbandit" | "random") => void
+  captureScreenshotMode: "" | "true" | "false"
+  setCaptureScreenshotMode: (value: "" | "true" | "false") => void
+  keepStepRecordsMode: "" | "true" | "false"
+  setKeepStepRecordsMode: (value: "" | "true" | "false") => void
   uiaPort: string
   setUiaPort: (value: string) => void
   fileLevel: string
@@ -34,6 +62,44 @@ type Props = {
   setPocoEngine: (value: string) => void
   pocoPort: string
   setPocoPort: (value: string) => void
+  scrollInferThreshold: string
+  setScrollInferThreshold: (value: string) => void
+  imageSimilarityThreshold: string
+  setImageSimilarityThreshold: (value: string) => void
+  llmTimeoutMs: string
+  setLLMTimeoutMs: (value: string) => void
+  llmMaxCalls: string
+  setLLMMaxCalls: (value: string) => void
+  llmWindowSteps: string
+  setLLMWindowSteps: (value: string) => void
+  recoveryCooldownSteps: string
+  setRecoveryCooldownSteps: (value: string) => void
+  recoveryTwoStateLoopThreshold: string
+  setRecoveryTwoStateLoopThreshold: (value: string) => void
+  recoveryHighVisitThreshold: string
+  setRecoveryHighVisitThreshold: (value: string) => void
+  recoveryLowRewardWindow: string
+  setRecoveryLowRewardWindow: (value: string) => void
+  candidateAmbiguityTopGapThreshold: string
+  setCandidateAmbiguityTopGapThreshold: (value: string) => void
+  highValuePageVisitLimit: string
+  setHighValuePageVisitLimit: (value: string) => void
+  candidateRiskDropThreshold: string
+  setCandidateRiskDropThreshold: (value: string) => void
+  candidateMinFusionScore: string
+  setCandidateMinFusionScore: (value: string) => void
+  uctTwoStateLoopPenalty: string
+  setUctTwoStateLoopPenalty: (value: string) => void
+  uctEdgeRepeatPenalty: string
+  setUctEdgeRepeatPenalty: (value: string) => void
+  uctEdgeRepeatThreshold: string
+  setUctEdgeRepeatThreshold: (value: string) => void
+  uctActionCooldownPenalty: string
+  setUctActionCooldownPenalty: (value: string) => void
+  uctRecentActionWindow: string
+  setUctRecentActionWindow: (value: string) => void
+  uctLoopEscapeExploreBoost: string
+  setUctLoopEscapeExploreBoost: (value: string) => void
   skipAll: boolean
   setSkipAll: (value: boolean) => void
   rangeLeftInput: string
@@ -46,29 +112,12 @@ type Props = {
   setRangeBottomInput: (value: string) => void
   rangeLog: string
   onResetRange: () => void
-  actionType: ActionType
-  setActionType: (value: ActionType) => void
-  actionPath: string
-  setActionPath: (value: string) => void
-  actionX: string
-  setActionX: (value: string) => void
-  actionY: string
-  setActionY: (value: string) => void
-  actionStartX: string
-  setActionStartX: (value: string) => void
-  actionStartY: string
-  setActionStartY: (value: string) => void
-  actionEndX: string
-  setActionEndX: (value: string) => void
-  actionEndY: string
-  setActionEndY: (value: string) => void
-  actionRules: PageActionRule[]
-  actionLog: string
-  onAddActionRule: () => void
-  outputPath: string
-  setOutputPath: (value: string) => void
   onCopyConfig: () => void
-  onSaveConfig: () => void
+  onOpenSavePreview: () => void
+  onSaveToFile: () => void
+  onDownloadConfig: () => void
+  savePreviewOpen: boolean
+  setSavePreviewOpen: (value: boolean) => void
   status: string
   error: string
   resultText: string
@@ -79,6 +128,26 @@ export function ConfigPanel(props: Props) {
   const [importOpen, setImportOpen] = useState(false)
   const [importText, setImportText] = useState("")
   const [importStatus, setImportStatus] = useState("")
+
+  const renderSelect = (
+    value: string,
+    onValueChange: (value: string) => void,
+    placeholder: string,
+    options: SelectOption[]
+  ) => (
+    <Select value={value === "" ? emptySelectValue : value} onValueChange={(next) => onValueChange(next === emptySelectValue ? "" : next)}>
+      <SelectTrigger className="w-full bg-background px-3 py-2">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value === "" ? emptySelectValue : option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
 
   const handleImportFile = (file: File | undefined) => {
     if (file === undefined) {
@@ -110,6 +179,9 @@ export function ConfigPanel(props: Props) {
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-base font-semibold">配置</h2>
         <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" onClick={props.onOpenSavePreview} disabled={props.loading}>
+            导出配置
+          </Button>
           <Button type="button" variant="outline" onClick={() => setImportOpen(true)} disabled={props.loading}>
             导入配置
           </Button>
@@ -159,12 +231,47 @@ export function ConfigPanel(props: Props) {
           </div>
         </div>
       ) : null}
+      <Dialog open={props.savePreviewOpen} onOpenChange={props.setSavePreviewOpen}>
+        <DialogContent className="max-w-4xl p-0 sm:max-w-4xl">
+          <DialogHeader className="px-6 pt-6">
+            <DialogTitle>配置导出</DialogTitle>
+            <DialogDescription>
+              先确认生成结果，再选择下载配置或保存到文件。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 px-6 pb-4">
+            {props.status !== "" ? <p className="text-sm text-emerald-700">{props.status}</p> : null}
+            {props.error !== "" ? <p className="text-sm text-red-700">{props.error}</p> : null}
+            <div>
+              <label className="text-sm font-medium">生成结果</label>
+              <textarea className="mt-2 min-h-[420px] w-full rounded-md border bg-background p-3 font-mono text-sm" readOnly value={props.resultText} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={props.onCopyConfig} disabled={props.resultText.trim() === ""}>
+              复制配置
+            </Button>
+            <Button variant="outline" onClick={props.onDownloadConfig} disabled={props.resultText.trim() === ""}>
+              下载配置
+            </Button>
+            <Button onClick={props.onSaveToFile} disabled={props.loading || props.resultText.trim() === ""}>
+              保存到文件
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <div className="mb-3 flex gap-2">
         <Button type="button" variant={props.configTab === "base" ? "default" : "outline"} onClick={() => props.setConfigTab("base")}>
-          基础配置
+          基础运行
         </Button>
-        <Button type="button" variant={props.configTab === "action" ? "default" : "outline"} onClick={() => props.setConfigTab("action")}>
-          动作配置
+        <Button type="button" variant={props.configTab === "page" ? "default" : "outline"} onClick={() => props.setConfigTab("page")}>
+          页面识别
+        </Button>
+        <Button type="button" variant={props.configTab === "recovery" ? "default" : "outline"} onClick={() => props.setConfigTab("recovery")}>
+          恢复策略
+        </Button>
+        <Button type="button" variant={props.configTab === "uct" ? "default" : "outline"} onClick={() => props.setConfigTab("uct")}>
+          决策算法
         </Button>
         <Button type="button" variant={props.configTab === "preview" ? "default" : "outline"} onClick={() => props.setConfigTab("preview")}>
           预览配置
@@ -175,18 +282,20 @@ export function ConfigPanel(props: Props) {
           <div className="flex flex-col gap-1 text-sm md:col-span-2">
             <label>设备列表</label>
             <div className="flex items-center gap-2">
-              <select
-                className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2"
-                value={props.deviceSerial}
-                onChange={(e) => props.setDeviceSerial(e.target.value)}
-              >
-                <option value="">不指定（由系统自动选择）</option>
-                {props.deviceOptions.map((item) => (
-                  <option key={item.serial} value={item.serial}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
+              <div className="min-w-0 flex-1">
+                {renderSelect(
+                  props.deviceSerial,
+                  props.setDeviceSerial,
+                  "选择设备",
+                  [
+                    { value: "", label: "不指定（由系统自动选择）" },
+                    ...props.deviceOptions.map((item) => ({
+                      value: item.serial,
+                      label: item.label,
+                    })),
+                  ]
+                )}
+              </div>
               <Button type="button" variant="outline" onClick={props.onRefreshDevices} disabled={props.loadingDevices}>
                 {props.loadingDevices ? "刷新中" : "刷新"}
               </Button>
@@ -201,34 +310,27 @@ export function ConfigPanel(props: Props) {
           </label>
           <label className="flex flex-col gap-1 text-sm">
             页面源
-            <select className="rounded-md border bg-background px-3 py-2" value={props.pageSource} onChange={(e) => props.setPageSource(e.target.value as "uia" | "poco")}>
-              <option value="uia">uia</option>
-              <option value="poco">poco</option>
-            </select>
+            {renderSelect(props.pageSource, (value) => props.setPageSource(value as "uia" | "poco"), "选择页面源", [
+              { value: "uia", label: "uia" },
+              { value: "poco", label: "poco" },
+            ])}
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            页面名策略
-            <select
-              className="rounded-md border bg-background px-3 py-2"
-              value={props.pageNameStrategy}
-              onChange={(e) => props.setPageNameStrategy(e.target.value as PageNameStrategy)}
-            >
-              <option value="">不指定（按页面源自动）</option>
-              <option value="structure_fingerprint">structure_fingerprint（结构指纹）</option>
-              <option value="uia_activity_first">uia_activity_first（UIA 优先 Activity）</option>
-              <option value="xml_only">xml_only（XML 指纹）</option>
-              <option value="xml_fingerprint">xml_fingerprint（XML 指纹）</option>
-              <option value="activity_only">activity_only（仅 Activity）</option>
-              <option value="image_fingerprint">image_fingerprint（图片指纹）</option>
-            </select>
+            控件获取策略
+            {renderSelect(props.pageControlStrategy, (value) => props.setPageControlStrategy(value as "" | "raw" | "ocr" | "llm"), "选择控件获取策略", [
+              { value: "", label: "不指定（按默认）" },
+              { value: "raw", label: "raw" },
+              { value: "ocr", label: "ocr" },
+              { value: "llm", label: "llm" },
+            ])}
           </label>
           <label className="flex flex-col gap-1 text-sm">
             触控模式
-            <select className="rounded-md border bg-background px-3 py-2" value={props.touchMode} onChange={(e) => props.setTouchMode(e.target.value as "motion" | "uia" | "adb")}>
-              <option value="motion">motion</option>
-              <option value="uia">uia</option>
-              <option value="adb">adb</option>
-            </select>
+            {renderSelect(props.touchMode, (value) => props.setTouchMode(value as "motion" | "uia" | "adb"), "选择触控模式", [
+              { value: "motion", label: "motion" },
+              { value: "uia", label: "uia" },
+              { value: "adb", label: "adb" },
+            ])}
           </label>
           <label className="flex flex-col gap-1 text-sm">
             UIA 端口
@@ -236,27 +338,43 @@ export function ConfigPanel(props: Props) {
           </label>
           <label className="flex flex-col gap-1 text-sm">
             日志文件级别
-            <select className="rounded-md border bg-background px-3 py-2" value={props.fileLevel} onChange={(e) => props.setFileLevel(e.target.value)}>
-              <option value="">空（不输出）</option>
-              <option value="debug">debug</option>
-              <option value="info">info</option>
-              <option value="warn">warn</option>
-              <option value="error">error</option>
-            </select>
+            {renderSelect(props.fileLevel, props.setFileLevel, "选择日志级别", [
+              { value: "", label: "空（不输出）" },
+              { value: "debug", label: "debug" },
+              { value: "info", label: "info" },
+              { value: "warn", label: "warn" },
+              { value: "error", label: "error" },
+            ])}
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            截图采集
+            {renderSelect(props.captureScreenshotMode, (value) => props.setCaptureScreenshotMode(value as "" | "true" | "false"), "选择截图采集", [
+              { value: "", label: "不指定" },
+              { value: "true", label: "开启" },
+              { value: "false", label: "关闭" },
+            ])}
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            步骤记录
+            {renderSelect(props.keepStepRecordsMode, (value) => props.setKeepStepRecordsMode(value as "" | "true" | "false"), "选择步骤记录", [
+              { value: "", label: "不指定" },
+              { value: "true", label: "保留" },
+              { value: "false", label: "关闭" },
+            ])}
           </label>
           {props.pageSource === "poco" ? (
             <>
               <label className="flex flex-col gap-1 text-sm">
                 Poco 引擎
-                <select className="rounded-md border bg-background px-3 py-2" value={props.pocoEngine} onChange={(e) => props.setPocoEngine(e.target.value)}>
-                  <option value="UNITY_3D">UNITY_3D</option>
-                  <option value="UE4">UE4</option>
-                  <option value="COCOS2DX_JS">COCOS2DX_JS</option>
-                  <option value="COCOS_CREATOR">COCOS_CREATOR</option>
-                  <option value="EGRET">EGRET</option>
-                  <option value="COCOS2DX_LUA">COCOS2DX_LUA</option>
-                  <option value="COCOS2DX_CPLUS">COCOS2DX_CPLUS</option>
-                </select>
+                {renderSelect(props.pocoEngine, props.setPocoEngine, "选择 Poco 引擎", [
+                  { value: "UNITY_3D", label: "UNITY_3D" },
+                  { value: "UE4", label: "UE4" },
+                  { value: "COCOS2DX_JS", label: "COCOS2DX_JS" },
+                  { value: "COCOS_CREATOR", label: "COCOS_CREATOR" },
+                  { value: "EGRET", label: "EGRET" },
+                  { value: "COCOS2DX_LUA", label: "COCOS2DX_LUA" },
+                  { value: "COCOS2DX_CPLUS", label: "COCOS2DX_CPLUS" },
+                ])}
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 Poco 端口
@@ -264,24 +382,52 @@ export function ConfigPanel(props: Props) {
               </label>
             </>
           ) : null}
+          <label className="flex items-center gap-2 text-sm md:col-span-2">
+            <input type="checkbox" checked={props.skipAll} onChange={(e) => props.setSkipAll(e.target.checked)} />
+            跳过模型动作
+          </label>
+        </div>
+      ) : null}
+      {props.configTab === "page" ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <label className="flex flex-col gap-1 text-sm">
+            页面名策略
+            {renderSelect(props.pageNameStrategy, (value) => props.setPageNameStrategy(value as PageNameStrategy), "选择页面名策略", [
+              { value: "", label: "不指定（按页面源自动）" },
+              { value: "structure_fingerprint", label: "structure_fingerprint（结构指纹）" },
+              { value: "uia_activity_first", label: "uia_activity_first（UIA 优先 Activity）" },
+              { value: "xml_only", label: "xml_only（XML 指纹）" },
+              { value: "xml_fingerprint", label: "xml_fingerprint（XML 指纹）" },
+              { value: "activity_only", label: "activity_only（仅 Activity）" },
+              { value: "image_fingerprint", label: "image_fingerprint（图片指纹）" },
+            ])}
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            滚动识别阈值
+            <input className="rounded-md border bg-background px-3 py-2" type="number" step="1" value={props.scrollInferThreshold} onChange={(e) => props.setScrollInferThreshold(e.target.value)} placeholder="默认空" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm md:col-span-2">
+            图片相似度 SSIM 阈值
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} max={1} step="0.001" value={props.imageSimilarityThreshold} onChange={(e) => props.setImageSimilarityThreshold(e.target.value)} placeholder="例如 0.985" />
+          </label>
           <div className="md:col-span-2 rounded-md border bg-background p-3">
             <p className="mb-2 text-sm font-medium">有效触控区域</p>
             <div className="mb-3 grid grid-cols-1 gap-2 rounded-md border p-2 text-xs md:grid-cols-2">
               <label className="flex flex-col gap-1">
                 左边界
-                <input className="rounded border bg-background px-2 py-1 font-mono" value={props.rangeLeftInput} onChange={(event) => props.setRangeLeftInput(event.target.value)} />
+                <input className="rounded border bg-background px-2 py-1 font-mono" type="number" min={0} max={1} step="0.001" value={props.rangeLeftInput} onChange={(event) => props.setRangeLeftInput(event.target.value)} />
               </label>
               <label className="flex flex-col gap-1">
                 上边界
-                <input className="rounded border bg-background px-2 py-1 font-mono" value={props.rangeTopInput} onChange={(event) => props.setRangeTopInput(event.target.value)} />
+                <input className="rounded border bg-background px-2 py-1 font-mono" type="number" min={0} max={1} step="0.001" value={props.rangeTopInput} onChange={(event) => props.setRangeTopInput(event.target.value)} />
               </label>
               <label className="flex flex-col gap-1">
                 右边界
-                <input className="rounded border bg-background px-2 py-1 font-mono" value={props.rangeRightInput} onChange={(event) => props.setRangeRightInput(event.target.value)} />
+                <input className="rounded border bg-background px-2 py-1 font-mono" type="number" min={0} max={1} step="0.001" value={props.rangeRightInput} onChange={(event) => props.setRangeRightInput(event.target.value)} />
               </label>
               <label className="flex flex-col gap-1">
                 下边界
-                <input className="rounded border bg-background px-2 py-1 font-mono" value={props.rangeBottomInput} onChange={(event) => props.setRangeBottomInput(event.target.value)} />
+                <input className="rounded border bg-background px-2 py-1 font-mono" type="number" min={0} max={1} step="0.001" value={props.rangeBottomInput} onChange={(event) => props.setRangeBottomInput(event.target.value)} />
               </label>
               <div className="flex flex-wrap gap-2 md:col-span-2">
                 <Button type="button" size="sm" variant="outline" onClick={props.onResetRange}>
@@ -294,88 +440,125 @@ export function ConfigPanel(props: Props) {
               <p className="break-all font-mono text-[11px] text-muted-foreground md:col-span-2">范围状态: {props.rangeLog}</p>
             </div>
           </div>
-          <label className="flex items-center gap-2 text-sm md:col-span-2">
-            <input type="checkbox" checked={props.skipAll} onChange={(e) => props.setSkipAll(e.target.checked)} />
-            跳过模型动作
+        </div>
+      ) : null}
+      {props.configTab === "recovery" ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <label className="flex flex-col gap-1 text-sm">
+            LLM 超时(ms)
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.llmTimeoutMs} onChange={(e) => props.setLLMTimeoutMs(e.target.value)} placeholder="默认空" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            LLM 最大调用次数
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.llmMaxCalls} onChange={(e) => props.setLLMMaxCalls(e.target.value)} placeholder="默认空" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            LLM 统计窗口步数
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.llmWindowSteps} onChange={(e) => props.setLLMWindowSteps(e.target.value)} placeholder="默认空" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            恢复冷却步数
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.recoveryCooldownSteps} onChange={(e) => props.setRecoveryCooldownSteps(e.target.value)} placeholder="默认空" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            双态循环阈值
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.recoveryTwoStateLoopThreshold} onChange={(e) => props.setRecoveryTwoStateLoopThreshold(e.target.value)} placeholder="默认空" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            高访问阈值
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.recoveryHighVisitThreshold} onChange={(e) => props.setRecoveryHighVisitThreshold(e.target.value)} placeholder="默认空" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            低奖励窗口
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.recoveryLowRewardWindow} onChange={(e) => props.setRecoveryLowRewardWindow(e.target.value)} placeholder="默认空" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            候选歧义 Top Gap
+            <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.01" value={props.candidateAmbiguityTopGapThreshold} onChange={(e) => props.setCandidateAmbiguityTopGapThreshold(e.target.value)} placeholder="默认空" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            高价值页面访问上限
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.highValuePageVisitLimit} onChange={(e) => props.setHighValuePageVisitLimit(e.target.value)} placeholder="默认空" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            候选风险下降阈值
+            <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.candidateRiskDropThreshold} onChange={(e) => props.setCandidateRiskDropThreshold(e.target.value)} placeholder="默认空" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm md:col-span-2">
+            候选最小融合分数
+            <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.candidateMinFusionScore} onChange={(e) => props.setCandidateMinFusionScore(e.target.value)} placeholder="默认空" />
           </label>
         </div>
       ) : null}
-      {props.configTab === "action" ? (
-        <div className="mt-2 rounded-md border bg-background p-3">
-          <p className="mb-3 text-sm font-medium">动作配置</p>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <label className="flex flex-col gap-1 text-sm">
-              页面名（当前界面）
-              <input className="rounded-md border bg-background px-3 py-2 font-mono" value={props.currentPageName} readOnly placeholder="点击当前界面后自动填充" />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              动作类型
-              <select className="rounded-md border bg-background px-3 py-2 font-mono" value={props.actionType} onChange={(event) => props.setActionType(event.target.value as ActionType)}>
-                <option value="click">点击</option>
-                <option value="scroll">滑动</option>
-                <option value="long_press">长按</option>
-                <option value="custom_touch">自定义触控</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-sm md:col-span-2">
-              path（可选；与坐标至少填一个）
-              <input className="rounded-md border bg-background px-3 py-2 font-mono" value={props.actionPath} onChange={(event) => props.setActionPath(event.target.value)} placeholder="/hierarchy/..." />
-            </label>
-            {props.actionType === "scroll" ? (
-              <>
-                <label className="flex flex-col gap-1 text-sm">
-                  开始坐标X
-                  <input className="rounded-md border bg-background px-3 py-2 font-mono" value={props.actionStartX} onChange={(event) => props.setActionStartX(event.target.value)} />
-                </label>
-                <label className="flex flex-col gap-1 text-sm">
-                  开始坐标Y
-                  <input className="rounded-md border bg-background px-3 py-2 font-mono" value={props.actionStartY} onChange={(event) => props.setActionStartY(event.target.value)} />
-                </label>
-                <label className="flex flex-col gap-1 text-sm">
-                  结束坐标X
-                  <input className="rounded-md border bg-background px-3 py-2 font-mono" value={props.actionEndX} onChange={(event) => props.setActionEndX(event.target.value)} />
-                </label>
-                <label className="flex flex-col gap-1 text-sm">
-                  结束坐标Y
-                  <input className="rounded-md border bg-background px-3 py-2 font-mono" value={props.actionEndY} onChange={(event) => props.setActionEndY(event.target.value)} />
-                </label>
-              </>
-            ) : (
-              <>
-                <label className="flex flex-col gap-1 text-sm">
-                  坐标X
-                  <input className="rounded-md border bg-background px-3 py-2 font-mono" value={props.actionX} onChange={(event) => props.setActionX(event.target.value)} />
-                </label>
-                <label className="flex flex-col gap-1 text-sm">
-                  坐标Y
-                  <input className="rounded-md border bg-background px-3 py-2 font-mono" value={props.actionY} onChange={(event) => props.setActionY(event.target.value)} />
-                </label>
-              </>
-            )}
-            <div className="md:col-span-2">
-              <Button type="button" size="sm" variant="outline" onClick={props.onAddActionRule}>
-                添加动作
-              </Button>
+      {props.configTab === "uct" ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <label className="flex flex-col gap-1 text-sm md:col-span-2">
+            决策算法
+            {renderSelect(props.algorithm, (value) => props.setAlgorithm(value as "" | "reuse" | "uctbandit" | "random"), "选择决策算法", [
+              { value: "", label: "不指定（使用默认）" },
+              { value: "reuse", label: "reuse" },
+              { value: "uctbandit", label: "uctbandit" },
+              { value: "random", label: "random" },
+            ])}
+          </label>
+          {props.algorithm === "uctbandit" ? (
+            <>
+              <p className="text-sm text-muted-foreground md:col-span-2">
+                当前已选择 `uctbandit`，下面显示该算法专属调参。
+              </p>
+              <label className="flex flex-col gap-1 text-sm">
+                双态循环惩罚
+                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctTwoStateLoopPenalty} onChange={(e) => props.setUctTwoStateLoopPenalty(e.target.value)} placeholder="默认空" />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                边重复惩罚
+                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctEdgeRepeatPenalty} onChange={(e) => props.setUctEdgeRepeatPenalty(e.target.value)} placeholder="默认空" />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                边重复阈值
+                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.uctEdgeRepeatThreshold} onChange={(e) => props.setUctEdgeRepeatThreshold(e.target.value)} placeholder="默认空" />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                动作冷却惩罚
+                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctActionCooldownPenalty} onChange={(e) => props.setUctActionCooldownPenalty(e.target.value)} placeholder="默认空" />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                最近动作窗口
+                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.uctRecentActionWindow} onChange={(e) => props.setUctRecentActionWindow(e.target.value)} placeholder="默认空" />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                脱环探索增益
+                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctLoopEscapeExploreBoost} onChange={(e) => props.setUctLoopEscapeExploreBoost(e.target.value)} placeholder="默认空" />
+              </label>
+            </>
+          ) : null}
+          {props.algorithm === "reuse" ? (
+            <div className="rounded-md border bg-background p-3 text-sm text-muted-foreground md:col-span-2">
+              `reuse` 当前没有额外的专属参数，使用通用遍历与恢复配置即可。
             </div>
-            <p className="break-all font-mono text-[11px] text-muted-foreground md:col-span-2">{props.actionLog}</p>
-            <div className="md:col-span-2 rounded border p-2">
-              <p className="mb-1 text-sm font-medium">页面动作配置</p>
-              <textarea className="min-h-40 w-full rounded-md border bg-background p-2 font-mono text-xs" readOnly value={JSON.stringify(props.actionRules, null, 2)} />
+          ) : null}
+          {props.algorithm === "random" ? (
+            <div className="rounded-md border bg-background p-3 text-sm text-muted-foreground md:col-span-2">
+              `random` 当前没有额外的专属参数，主要用于随机探索或对比实验。
             </div>
-          </div>
+          ) : null}
+          {props.algorithm === "" ? (
+            <div className="rounded-md border bg-background p-3 text-sm text-muted-foreground md:col-span-2">
+              先选择一个决策算法，再显示对应的算法专属配置项。
+            </div>
+          ) : null}
         </div>
       ) : null}
       {props.configTab === "preview" ? (
         <div className="mt-2 rounded-md border bg-background p-3">
-          <label className="flex flex-col gap-1 text-sm">
-            输出路径
-            <input className="rounded-md border bg-background px-3 py-2" value={props.outputPath} onChange={(e) => props.setOutputPath(e.target.value)} />
-          </label>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button onClick={props.onCopyConfig} disabled={props.resultText.trim() === ""}>
               复制配置
             </Button>
-            <Button variant="outline" onClick={props.onSaveConfig} disabled={props.loading}>
+            <Button variant="outline" onClick={props.onDownloadConfig} disabled={props.resultText.trim() === ""}>
+              下载配置
+            </Button>
+            <Button variant="outline" onClick={props.onSaveToFile} disabled={props.loading}>
               保存到文件
             </Button>
           </div>

@@ -40,6 +40,7 @@ const (
 	defaultHighValuePageVisitLimit                 = 2
 	defaultCandidateRiskDropThreshold              = 2.1
 	defaultCandidateMinFusionScore                 = -0.3
+	defaultImageSimilaritySSIMThreshold            = 0.995
 	maxRecentTraceEntries                          = 8
 )
 
@@ -127,6 +128,7 @@ type Config struct {
 	CandidateMinFusionScore           float64
 	ImageSignatureFunc                func([]byte) string
 	ImageFingerprintRegions           []ImageFingerprintRegion
+	ImageSimilaritySSIMThreshold      float64
 }
 
 type EffectiveTouchArea struct {
@@ -329,7 +331,7 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 		driver:                 driver,
 		cfg:                    cfg,
 		rng:                    rand.New(rand.NewSource(time.Now().UnixNano())),
-		blockDetector:          newBlockDetector(cfg.BlockNoChangeThreshold, cfg.TwoStateLoopThreshold, cfg.HighVisitThreshold, cfg.LowRewardWindow).withImageSignatureFunc(cfg.ImageSignatureFunc),
+		blockDetector:          newBlockDetector(cfg.BlockNoChangeThreshold, cfg.TwoStateLoopThreshold, cfg.HighVisitThreshold, cfg.LowRewardWindow).withImageSignatureFunc(cfg.ImageSignatureFunc).withImageSimilarity(cfg.ImageSimilaritySSIMThreshold, cfg.ImageFingerprintRegions),
 		recoveryState:          newRecoveryStateMachineWithCooldown(cfg.RecoveryCooldownSteps),
 		candidateEnhanceBudget: enhanceBudget,
 		lastEnhancementStep:    -1,

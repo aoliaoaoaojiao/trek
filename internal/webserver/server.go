@@ -25,11 +25,28 @@ import (
 
 // ConfigPayload 是 web 配置界面的 JSON 请求体结构。
 type ConfigPayload struct {
-	PageSource       string `json:"page_source"`
-	PageNameStrategy string `json:"page_name_strategy"`
-	TouchMode        string `json:"touch_mode"`
-	SkipAll          bool   `json:"skip_all_actions_from_model"`
-	UIA              struct {
+	PageSource                        string   `json:"page_source"`
+	PageNameStrategy                  string   `json:"page_name_strategy"`
+	TouchMode                         string   `json:"touch_mode"`
+	SkipAll                           bool     `json:"skip_all_actions_from_model"`
+	PageControl                       string   `json:"page_control_strategy"`
+	Algorithm                         string   `json:"algorithm"`
+	CaptureScreenshot                 *bool    `json:"capture_screenshot"`
+	KeepStepRecords                   *bool    `json:"keep_step_records"`
+	ScrollInferThreshold              *int     `json:"scroll_infer_threshold"`
+	ImageSimilaritySSIMThreshold      *float64 `json:"image_similarity_ssim_threshold"`
+	LLMTimeoutMs                      *int     `json:"llm_timeout_ms"`
+	LLMMaxCalls                       *int     `json:"llm_max_calls"`
+	LLMWindowSteps                    *int     `json:"llm_window_steps"`
+	RecoveryCooldownSteps             *int     `json:"recovery_cooldown_steps"`
+	RecoveryTwoStateLoopThreshold     *int     `json:"recovery_two_state_loop_threshold"`
+	RecoveryHighVisitThreshold        *int     `json:"recovery_high_visit_threshold"`
+	RecoveryLowRewardWindow           *int     `json:"recovery_low_reward_window"`
+	CandidateAmbiguityTopGapThreshold *float64 `json:"candidate_ambiguity_top_gap_threshold"`
+	HighValuePageVisitLimit           *int     `json:"high_value_page_visit_limit"`
+	CandidateRiskDropThreshold        *float64 `json:"candidate_risk_drop_threshold"`
+	CandidateMinFusionScore           *float64 `json:"candidate_min_fusion_score"`
+	UIA                               struct {
 		ServerPort int `json:"server_port"`
 	} `json:"uia"`
 	Poco struct {
@@ -39,6 +56,14 @@ type ConfigPayload struct {
 	Log struct {
 		FileLevel string `json:"file_level"`
 	} `json:"log"`
+	UCTBandit struct {
+		TwoStateLoopPenalty    *float64 `json:"two_state_loop_penalty"`
+		EdgeRepeatPenalty      *float64 `json:"edge_repeat_penalty"`
+		EdgeRepeatThreshold    *int     `json:"edge_repeat_threshold"`
+		ActionCooldownPenalty  *float64 `json:"action_cooldown_penalty"`
+		RecentActionWindow     *int     `json:"recent_action_window"`
+		LoopEscapeExploreBoost *float64 `json:"loop_escape_explore_boost"`
+	} `json:"uct_bandit"`
 	EffectiveTouchArea struct {
 		Serial      string `json:"serial"`
 		PackageName string `json:"package_name"`
@@ -387,6 +412,22 @@ func BuildConfigJS(cfg ConfigPayload) (string, error) {
 			return "", fmt.Errorf("page_name_strategy 不合法: %s", pageNameStrategy)
 		}
 	}
+	pageControlStrategy := strings.ToLower(strings.TrimSpace(cfg.PageControl))
+	if pageControlStrategy != "" {
+		switch pageControlStrategy {
+		case "raw", "ocr", "llm":
+		default:
+			return "", fmt.Errorf("page_control_strategy 不合法: %s", pageControlStrategy)
+		}
+	}
+	algorithm := strings.ToLower(strings.TrimSpace(cfg.Algorithm))
+	if algorithm != "" {
+		switch algorithm {
+		case "reuse", "uctbandit", "random":
+		default:
+			return "", fmt.Errorf("algorithm 不合法: %s", algorithm)
+		}
+	}
 
 	if cfg.UIA.ServerPort < 0 || cfg.Poco.Port < 0 {
 		return "", fmt.Errorf("端口不能为负数")
@@ -422,8 +463,59 @@ func BuildConfigJS(cfg ConfigPayload) (string, error) {
 		b.WriteString(fmt.Sprintf("  page_name_strategy: %q,\n", pageNameStrategy))
 	}
 	b.WriteString(fmt.Sprintf("  touch_mode: %q,\n", touchMode))
+	if pageControlStrategy != "" {
+		b.WriteString(fmt.Sprintf("  page_control_strategy: %q,\n", pageControlStrategy))
+	}
+	if algorithm != "" {
+		b.WriteString(fmt.Sprintf("  algorithm: %q,\n", algorithm))
+	}
 	if cfg.SkipAll {
 		b.WriteString("  skip_all_actions_from_model: true,\n")
+	}
+	if cfg.CaptureScreenshot != nil {
+		b.WriteString(fmt.Sprintf("  capture_screenshot: %t,\n", *cfg.CaptureScreenshot))
+	}
+	if cfg.KeepStepRecords != nil {
+		b.WriteString(fmt.Sprintf("  keep_step_records: %t,\n", *cfg.KeepStepRecords))
+	}
+	if cfg.ScrollInferThreshold != nil {
+		b.WriteString(fmt.Sprintf("  scroll_infer_threshold: %d,\n", *cfg.ScrollInferThreshold))
+	}
+	if cfg.ImageSimilaritySSIMThreshold != nil {
+		b.WriteString(fmt.Sprintf("  image_similarity_ssim_threshold: %s,\n", strconv.FormatFloat(*cfg.ImageSimilaritySSIMThreshold, 'f', -1, 64)))
+	}
+	if cfg.LLMTimeoutMs != nil {
+		b.WriteString(fmt.Sprintf("  llm_timeout_ms: %d,\n", *cfg.LLMTimeoutMs))
+	}
+	if cfg.LLMMaxCalls != nil {
+		b.WriteString(fmt.Sprintf("  llm_max_calls: %d,\n", *cfg.LLMMaxCalls))
+	}
+	if cfg.LLMWindowSteps != nil {
+		b.WriteString(fmt.Sprintf("  llm_window_steps: %d,\n", *cfg.LLMWindowSteps))
+	}
+	if cfg.RecoveryCooldownSteps != nil {
+		b.WriteString(fmt.Sprintf("  recovery_cooldown_steps: %d,\n", *cfg.RecoveryCooldownSteps))
+	}
+	if cfg.RecoveryTwoStateLoopThreshold != nil {
+		b.WriteString(fmt.Sprintf("  recovery_two_state_loop_threshold: %d,\n", *cfg.RecoveryTwoStateLoopThreshold))
+	}
+	if cfg.RecoveryHighVisitThreshold != nil {
+		b.WriteString(fmt.Sprintf("  recovery_high_visit_threshold: %d,\n", *cfg.RecoveryHighVisitThreshold))
+	}
+	if cfg.RecoveryLowRewardWindow != nil {
+		b.WriteString(fmt.Sprintf("  recovery_low_reward_window: %d,\n", *cfg.RecoveryLowRewardWindow))
+	}
+	if cfg.CandidateAmbiguityTopGapThreshold != nil {
+		b.WriteString(fmt.Sprintf("  candidate_ambiguity_top_gap_threshold: %s,\n", strconv.FormatFloat(*cfg.CandidateAmbiguityTopGapThreshold, 'f', -1, 64)))
+	}
+	if cfg.HighValuePageVisitLimit != nil {
+		b.WriteString(fmt.Sprintf("  high_value_page_visit_limit: %d,\n", *cfg.HighValuePageVisitLimit))
+	}
+	if cfg.CandidateRiskDropThreshold != nil {
+		b.WriteString(fmt.Sprintf("  candidate_risk_drop_threshold: %s,\n", strconv.FormatFloat(*cfg.CandidateRiskDropThreshold, 'f', -1, 64)))
+	}
+	if cfg.CandidateMinFusionScore != nil {
+		b.WriteString(fmt.Sprintf("  candidate_min_fusion_score: %s,\n", strconv.FormatFloat(*cfg.CandidateMinFusionScore, 'f', -1, 64)))
 	}
 
 	if cfg.UIA.ServerPort > 0 {
@@ -453,6 +545,34 @@ func BuildConfigJS(cfg ConfigPayload) (string, error) {
 		default:
 			return "", fmt.Errorf("log.file_level 仅支持 debug/info/warn/error")
 		}
+	}
+
+	if cfg.UCTBandit.TwoStateLoopPenalty != nil ||
+		cfg.UCTBandit.EdgeRepeatPenalty != nil ||
+		cfg.UCTBandit.EdgeRepeatThreshold != nil ||
+		cfg.UCTBandit.ActionCooldownPenalty != nil ||
+		cfg.UCTBandit.RecentActionWindow != nil ||
+		cfg.UCTBandit.LoopEscapeExploreBoost != nil {
+		b.WriteString("  uct_bandit: {\n")
+		if cfg.UCTBandit.TwoStateLoopPenalty != nil {
+			b.WriteString(fmt.Sprintf("    two_state_loop_penalty: %s,\n", strconv.FormatFloat(*cfg.UCTBandit.TwoStateLoopPenalty, 'f', -1, 64)))
+		}
+		if cfg.UCTBandit.EdgeRepeatPenalty != nil {
+			b.WriteString(fmt.Sprintf("    edge_repeat_penalty: %s,\n", strconv.FormatFloat(*cfg.UCTBandit.EdgeRepeatPenalty, 'f', -1, 64)))
+		}
+		if cfg.UCTBandit.EdgeRepeatThreshold != nil {
+			b.WriteString(fmt.Sprintf("    edge_repeat_threshold: %d,\n", *cfg.UCTBandit.EdgeRepeatThreshold))
+		}
+		if cfg.UCTBandit.ActionCooldownPenalty != nil {
+			b.WriteString(fmt.Sprintf("    action_cooldown_penalty: %s,\n", strconv.FormatFloat(*cfg.UCTBandit.ActionCooldownPenalty, 'f', -1, 64)))
+		}
+		if cfg.UCTBandit.RecentActionWindow != nil {
+			b.WriteString(fmt.Sprintf("    recent_action_window: %d,\n", *cfg.UCTBandit.RecentActionWindow))
+		}
+		if cfg.UCTBandit.LoopEscapeExploreBoost != nil {
+			b.WriteString(fmt.Sprintf("    loop_escape_explore_boost: %s,\n", strconv.FormatFloat(*cfg.UCTBandit.LoopEscapeExploreBoost, 'f', -1, 64)))
+		}
+		b.WriteString("  },\n")
 	}
 
 	areaSerial := strings.TrimSpace(cfg.EffectiveTouchArea.Serial)

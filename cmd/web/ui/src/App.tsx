@@ -12,12 +12,10 @@ import { ScreenshotPanel } from "@/monkey-config/ScreenshotPanel"
 import { API_BASE, DEV_API_BASE, postJSON } from "@/monkey-config/api"
 import { copyText, parseDumpTree } from "@/monkey-config/utils"
 import type {
-  ActionType,
   ClickPoint,
   ConfigPayload,
   DeviceOption,
   EffectiveRange,
-  PageActionRule,
   PageNameStrategy,
   PartialConfigPayload,
 } from "@/monkey-config/types"
@@ -29,6 +27,7 @@ const pageNameStrategies: PageNameStrategy[] = [
   "xml_fingerprint",
   "structure_fingerprint",
   "activity_only",
+  "image_fingerprint",
 ]
 
 function isPageNameStrategy(value: unknown): value is PageNameStrategy {
@@ -56,6 +55,38 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
 }
 
+function parseOptionalNumber(raw: string): number | null {
+  const text = raw.trim()
+  if (text === "") {
+    return null
+  }
+  const value = Number(text)
+  if (Number.isNaN(value)) {
+    return null
+  }
+  return value
+}
+
+function boolModeToValue(mode: "" | "true" | "false"): boolean | null {
+  if (mode === "true") {
+    return true
+  }
+  if (mode === "false") {
+    return false
+  }
+  return null
+}
+
+function boolValueToMode(value: boolean | null | undefined): "" | "true" | "false" {
+  if (value === true) {
+    return "true"
+  }
+  if (value === false) {
+    return "false"
+  }
+  return ""
+}
+
 export function App() {
   const [pageSource, setPageSource] = useState<"uia" | "poco">("uia")
   const [pageNameStrategy, setPageNameStrategy] = useState<PageNameStrategy>("structure_fingerprint")
@@ -64,17 +95,38 @@ export function App() {
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([])
   const [loadingDevices, setLoadingDevices] = useState(false)
   const [skipAll, setSkipAll] = useState(false)
+  const [pageControlStrategy, setPageControlStrategy] = useState<"" | "raw" | "ocr" | "llm">("")
+  const [algorithm, setAlgorithm] = useState<"" | "reuse" | "uctbandit" | "random">("")
+  const [captureScreenshotMode, setCaptureScreenshotMode] = useState<"" | "true" | "false">("")
+  const [keepStepRecordsMode, setKeepStepRecordsMode] = useState<"" | "true" | "false">("")
   const [uiaPort, setUiaPort] = useState("")
   const [pocoEngine, setPocoEngine] = useState("UNITY_3D")
   const [pocoPort, setPocoPort] = useState("")
   const [fileLevel, setFileLevel] = useState("info")
-  const [outputPath, setOutputPath] = useState("./config.generated.js")
+  const [scrollInferThreshold, setScrollInferThreshold] = useState("")
+  const [imageSimilarityThreshold, setImageSimilarityThreshold] = useState("")
+  const [llmTimeoutMs, setLLMTimeoutMs] = useState("")
+  const [llmMaxCalls, setLLMMaxCalls] = useState("")
+  const [llmWindowSteps, setLLMWindowSteps] = useState("")
+  const [recoveryCooldownSteps, setRecoveryCooldownSteps] = useState("")
+  const [recoveryTwoStateLoopThreshold, setRecoveryTwoStateLoopThreshold] = useState("")
+  const [recoveryHighVisitThreshold, setRecoveryHighVisitThreshold] = useState("")
+  const [recoveryLowRewardWindow, setRecoveryLowRewardWindow] = useState("")
+  const [candidateAmbiguityTopGapThreshold, setCandidateAmbiguityTopGapThreshold] = useState("")
+  const [highValuePageVisitLimit, setHighValuePageVisitLimit] = useState("")
+  const [candidateRiskDropThreshold, setCandidateRiskDropThreshold] = useState("")
+  const [candidateMinFusionScore, setCandidateMinFusionScore] = useState("")
+  const [uctTwoStateLoopPenalty, setUctTwoStateLoopPenalty] = useState("")
+  const [uctEdgeRepeatPenalty, setUctEdgeRepeatPenalty] = useState("")
+  const [uctEdgeRepeatThreshold, setUctEdgeRepeatThreshold] = useState("")
+  const [uctActionCooldownPenalty, setUctActionCooldownPenalty] = useState("")
+  const [uctRecentActionWindow, setUctRecentActionWindow] = useState("")
+  const [uctLoopEscapeExploreBoost, setUctLoopEscapeExploreBoost] = useState("")
   const [resultText, setResultText] = useState("")
   const [xmlPreview, setXmlPreview] = useState("")
   const [screenshotBase64, setScreenshotBase64] = useState("")
   const [usedSerial, setUsedSerial] = useState("")
   const [currentPackageName, setCurrentPackageName] = useState("")
-  const [currentPageName, setCurrentPageName] = useState("")
   const [status, setStatus] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
@@ -89,17 +141,8 @@ export function App() {
   const [rangeRightInput, setRangeRightInput] = useState("1")
   const [rangeBottomInput, setRangeBottomInput] = useState("1")
   const [rangeLog, setRangeLog] = useState("当前范围仅内存生效（不持久化）")
-  const [configTab, setConfigTab] = useState<"base" | "action" | "preview">("base")
-  const [actionType, setActionType] = useState<ActionType>("click")
-  const [actionPath, setActionPath] = useState("")
-  const [actionX, setActionX] = useState("")
-  const [actionY, setActionY] = useState("")
-  const [actionStartX, setActionStartX] = useState("")
-  const [actionStartY, setActionStartY] = useState("")
-  const [actionEndX, setActionEndX] = useState("")
-  const [actionEndY, setActionEndY] = useState("")
-  const [actionRules, setActionRules] = useState<PageActionRule[]>([])
-  const [actionLog, setActionLog] = useState("暂无页面动作配置")
+  const [configTab, setConfigTab] = useState<"base" | "page" | "recovery" | "uct" | "preview">("base")
+  const [savePreviewOpen, setSavePreviewOpen] = useState(false)
 
   const fetchDevices = async () => {
     setLoadingDevices(true)
@@ -177,16 +220,77 @@ export function App() {
       page_name_strategy: pageNameStrategy,
       touch_mode: touchMode,
       skip_all_actions_from_model: skipAll,
+      page_control_strategy: pageControlStrategy,
+      algorithm,
+      capture_screenshot: boolModeToValue(captureScreenshotMode),
+      keep_step_records: boolModeToValue(keepStepRecordsMode),
+      scroll_infer_threshold: parseOptionalNumber(scrollInferThreshold),
+      image_similarity_ssim_threshold: parseOptionalNumber(imageSimilarityThreshold),
+      llm_timeout_ms: parseOptionalNumber(llmTimeoutMs),
+      llm_max_calls: parseOptionalNumber(llmMaxCalls),
+      llm_window_steps: parseOptionalNumber(llmWindowSteps),
+      recovery_cooldown_steps: parseOptionalNumber(recoveryCooldownSteps),
+      recovery_two_state_loop_threshold: parseOptionalNumber(recoveryTwoStateLoopThreshold),
+      recovery_high_visit_threshold: parseOptionalNumber(recoveryHighVisitThreshold),
+      recovery_low_reward_window: parseOptionalNumber(recoveryLowRewardWindow),
+      candidate_ambiguity_top_gap_threshold: parseOptionalNumber(candidateAmbiguityTopGapThreshold),
+      high_value_page_visit_limit: parseOptionalNumber(highValuePageVisitLimit),
+      candidate_risk_drop_threshold: parseOptionalNumber(candidateRiskDropThreshold),
+      candidate_min_fusion_score: parseOptionalNumber(candidateMinFusionScore),
       uia: { server_port: Number(uiaPort || 0) },
       poco: { engine: pocoEngine, port: Number(pocoPort || 0) },
       log: { file_level: fileLevel },
+      uct_bandit: {
+        two_state_loop_penalty: parseOptionalNumber(uctTwoStateLoopPenalty),
+        edge_repeat_penalty: parseOptionalNumber(uctEdgeRepeatPenalty),
+        edge_repeat_threshold: parseOptionalNumber(uctEdgeRepeatThreshold),
+        action_cooldown_penalty: parseOptionalNumber(uctActionCooldownPenalty),
+        recent_action_window: parseOptionalNumber(uctRecentActionWindow),
+        loop_escape_explore_boost: parseOptionalNumber(uctLoopEscapeExploreBoost),
+      },
       effective_touch_area: {
         serial: usedSerial || deviceSerial || "",
         package_name: currentPackageName || "",
         range: effectiveRange,
       },
     }),
-    [currentPackageName, deviceSerial, effectiveRange, fileLevel, pageNameStrategy, pageSource, pocoEngine, pocoPort, skipAll, touchMode, uiaPort, usedSerial]
+    [
+      algorithm,
+      candidateAmbiguityTopGapThreshold,
+      candidateMinFusionScore,
+      candidateRiskDropThreshold,
+      captureScreenshotMode,
+      currentPackageName,
+      deviceSerial,
+      effectiveRange,
+      fileLevel,
+      highValuePageVisitLimit,
+      imageSimilarityThreshold,
+      keepStepRecordsMode,
+      llmMaxCalls,
+      llmTimeoutMs,
+      llmWindowSteps,
+      pageControlStrategy,
+      pageNameStrategy,
+      pageSource,
+      pocoEngine,
+      pocoPort,
+      recoveryCooldownSteps,
+      recoveryHighVisitThreshold,
+      recoveryLowRewardWindow,
+      recoveryTwoStateLoopThreshold,
+      scrollInferThreshold,
+      skipAll,
+      touchMode,
+      uctActionCooldownPenalty,
+      uctEdgeRepeatPenalty,
+      uctEdgeRepeatThreshold,
+      uctLoopEscapeExploreBoost,
+      uctRecentActionWindow,
+      uctTwoStateLoopPenalty,
+      uiaPort,
+      usedSerial,
+    ]
   )
 
   useEffect(() => {
@@ -363,9 +467,27 @@ export function App() {
     ) {
       setTouchMode(imported.touch_mode)
     }
+    if (
+      imported.page_control_strategy === "" ||
+      imported.page_control_strategy === "raw" ||
+      imported.page_control_strategy === "ocr" ||
+      imported.page_control_strategy === "llm"
+    ) {
+      setPageControlStrategy(imported.page_control_strategy ?? "")
+    }
+    if (
+      imported.algorithm === "" ||
+      imported.algorithm === "reuse" ||
+      imported.algorithm === "uctbandit" ||
+      imported.algorithm === "random"
+    ) {
+      setAlgorithm(imported.algorithm ?? "")
+    }
     if (typeof imported.skip_all_actions_from_model === "boolean") {
       setSkipAll(imported.skip_all_actions_from_model)
     }
+    setCaptureScreenshotMode(boolValueToMode(imported.capture_screenshot))
+    setKeepStepRecordsMode(boolValueToMode(imported.keep_step_records))
     if (typeof imported.uia?.server_port === "number") {
       setUiaPort(imported.uia.server_port > 0 ? String(imported.uia.server_port) : "")
     }
@@ -378,6 +500,25 @@ export function App() {
     if (typeof imported.log?.file_level === "string") {
       setFileLevel(imported.log.file_level.trim())
     }
+    setScrollInferThreshold(imported.scroll_infer_threshold != null ? String(imported.scroll_infer_threshold) : "")
+    setImageSimilarityThreshold(imported.image_similarity_ssim_threshold != null ? String(imported.image_similarity_ssim_threshold) : "")
+    setLLMTimeoutMs(imported.llm_timeout_ms != null ? String(imported.llm_timeout_ms) : "")
+    setLLMMaxCalls(imported.llm_max_calls != null ? String(imported.llm_max_calls) : "")
+    setLLMWindowSteps(imported.llm_window_steps != null ? String(imported.llm_window_steps) : "")
+    setRecoveryCooldownSteps(imported.recovery_cooldown_steps != null ? String(imported.recovery_cooldown_steps) : "")
+    setRecoveryTwoStateLoopThreshold(imported.recovery_two_state_loop_threshold != null ? String(imported.recovery_two_state_loop_threshold) : "")
+    setRecoveryHighVisitThreshold(imported.recovery_high_visit_threshold != null ? String(imported.recovery_high_visit_threshold) : "")
+    setRecoveryLowRewardWindow(imported.recovery_low_reward_window != null ? String(imported.recovery_low_reward_window) : "")
+    setCandidateAmbiguityTopGapThreshold(imported.candidate_ambiguity_top_gap_threshold != null ? String(imported.candidate_ambiguity_top_gap_threshold) : "")
+    setHighValuePageVisitLimit(imported.high_value_page_visit_limit != null ? String(imported.high_value_page_visit_limit) : "")
+    setCandidateRiskDropThreshold(imported.candidate_risk_drop_threshold != null ? String(imported.candidate_risk_drop_threshold) : "")
+    setCandidateMinFusionScore(imported.candidate_min_fusion_score != null ? String(imported.candidate_min_fusion_score) : "")
+    setUctTwoStateLoopPenalty(imported.uct_bandit?.two_state_loop_penalty != null ? String(imported.uct_bandit.two_state_loop_penalty) : "")
+    setUctEdgeRepeatPenalty(imported.uct_bandit?.edge_repeat_penalty != null ? String(imported.uct_bandit.edge_repeat_penalty) : "")
+    setUctEdgeRepeatThreshold(imported.uct_bandit?.edge_repeat_threshold != null ? String(imported.uct_bandit.edge_repeat_threshold) : "")
+    setUctActionCooldownPenalty(imported.uct_bandit?.action_cooldown_penalty != null ? String(imported.uct_bandit.action_cooldown_penalty) : "")
+    setUctRecentActionWindow(imported.uct_bandit?.recent_action_window != null ? String(imported.uct_bandit.recent_action_window) : "")
+    setUctLoopEscapeExploreBoost(imported.uct_bandit?.loop_escape_explore_boost != null ? String(imported.uct_bandit.loop_escape_explore_boost) : "")
     if (typeof imported.effective_touch_area?.serial === "string") {
       setDeviceSerial(imported.effective_touch_area.serial.trim())
       setUsedSerial(imported.effective_touch_area.serial.trim())
@@ -416,24 +557,69 @@ export function App() {
     setError("")
   }
 
-  const handleSave = async () => {
+  const renderConfigText = async () => {
+    const rendered = await postJSON<{ js: string }>("/api/render", payload)
+    setResultText(rendered.js)
+    return rendered.js
+  }
+
+  const handleOpenSavePreview = async () => {
     setLoading(true)
     setStatus("")
     setError("")
     try {
-      const rendered = await postJSON<{ js: string }>("/api/render", payload)
-      setResultText(rendered.js)
+      await renderConfigText()
+      setSavePreviewOpen(true)
+      setStatus("已生成配置预览")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "生成预览失败")
+    } finally {
+      setLoading(false)
+    }
+  }
 
+  const handleSaveToFile = async () => {
+    setLoading(true)
+    setStatus("")
+    setError("")
+    try {
+      if (resultText.trim() === "") {
+        await renderConfigText()
+      }
       const saved = await postJSON<{ output_path: string; message: string }>(
         "/api/save",
         {
           config: payload,
-          output_path: outputPath,
+          output_path: "./config.generated.js",
         }
       )
       setStatus(`${saved.message}: ${saved.output_path}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存失败")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDownloadConfig = async () => {
+    setLoading(true)
+    setStatus("")
+    setError("")
+    try {
+      const text = resultText.trim() === "" ? await renderConfigText() : resultText
+      const fileName = "config.generated.js"
+      const blob = new Blob([text], { type: "application/javascript;charset=utf-8" })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = url
+      anchor.download = fileName
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(url)
+      setStatus(`已下载配置: ${fileName}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "下载失败")
     } finally {
       setLoading(false)
     }
@@ -459,7 +645,6 @@ export function App() {
       )
       setUsedSerial(data.used_serial || "")
       setCurrentPackageName(data.package_name || "")
-      setCurrentPageName(data.page_name || "")
       setXmlPreview(data.xml)
       setScreenshotBase64(data.screenshot_base64)
       setStatus(`预览已刷新，当前设备序列号: ${data.used_serial || "未知"}`)
@@ -506,45 +691,6 @@ export function App() {
     console.info("[trek-web] click-point", message)
   }
 
-  const handleAddActionRule = () => {
-    const page = currentPageName.trim()
-    if (page === "") {
-      setActionLog("添加失败：请先点击当前界面获取页面名")
-      return
-    }
-    const path = actionPath.trim()
-    const toNum = (raw: string) => {
-      const n = Number(raw)
-      return Number.isNaN(n) ? null : n
-    }
-    let rule: PageActionRule | null = null
-    if (actionType === "scroll") {
-      const sx = toNum(actionStartX)
-      const sy = toNum(actionStartY)
-      const ex = toNum(actionEndX)
-      const ey = toNum(actionEndY)
-      if (sx === null || sy === null || ex === null || ey === null) {
-        setActionLog("添加失败：滑动必须填写开始/结束坐标")
-        return
-      }
-      rule = { page_name: page, action_type: actionType, path: path || undefined, start: { x: sx, y: sy }, end: { x: ex, y: ey } }
-    } else {
-      const x = toNum(actionX)
-      const y = toNum(actionY)
-      if (path === "" && (x === null || y === null)) {
-        setActionLog("添加失败：path 和 坐标必须至少填写一个")
-        return
-      }
-      rule = { page_name: page, action_type: actionType, path: path || undefined }
-      if (x !== null && y !== null) {
-        rule.point = { x, y }
-      }
-    }
-    const next = [...actionRules, rule]
-    setActionRules(next)
-    setActionLog(`已添加动作，当前共 ${next.length} 条`)
-  }
-
   const renderConfigPanel = () => (
     <ConfigPanel
       configTab={configTab}
@@ -559,13 +705,20 @@ export function App() {
       onRefreshDevices={() => void fetchDevices()}
       usedSerial={usedSerial}
       currentPackageName={currentPackageName}
-      currentPageName={currentPageName}
       pageSource={pageSource}
       setPageSource={setPageSource}
       pageNameStrategy={pageNameStrategy}
       setPageNameStrategy={setPageNameStrategy}
       touchMode={touchMode}
       setTouchMode={setTouchMode}
+      pageControlStrategy={pageControlStrategy}
+      setPageControlStrategy={setPageControlStrategy}
+      algorithm={algorithm}
+      setAlgorithm={setAlgorithm}
+      captureScreenshotMode={captureScreenshotMode}
+      setCaptureScreenshotMode={setCaptureScreenshotMode}
+      keepStepRecordsMode={keepStepRecordsMode}
+      setKeepStepRecordsMode={setKeepStepRecordsMode}
       uiaPort={uiaPort}
       setUiaPort={setUiaPort}
       fileLevel={fileLevel}
@@ -574,6 +727,44 @@ export function App() {
       setPocoEngine={setPocoEngine}
       pocoPort={pocoPort}
       setPocoPort={setPocoPort}
+      scrollInferThreshold={scrollInferThreshold}
+      setScrollInferThreshold={setScrollInferThreshold}
+      imageSimilarityThreshold={imageSimilarityThreshold}
+      setImageSimilarityThreshold={setImageSimilarityThreshold}
+      llmTimeoutMs={llmTimeoutMs}
+      setLLMTimeoutMs={setLLMTimeoutMs}
+      llmMaxCalls={llmMaxCalls}
+      setLLMMaxCalls={setLLMMaxCalls}
+      llmWindowSteps={llmWindowSteps}
+      setLLMWindowSteps={setLLMWindowSteps}
+      recoveryCooldownSteps={recoveryCooldownSteps}
+      setRecoveryCooldownSteps={setRecoveryCooldownSteps}
+      recoveryTwoStateLoopThreshold={recoveryTwoStateLoopThreshold}
+      setRecoveryTwoStateLoopThreshold={setRecoveryTwoStateLoopThreshold}
+      recoveryHighVisitThreshold={recoveryHighVisitThreshold}
+      setRecoveryHighVisitThreshold={setRecoveryHighVisitThreshold}
+      recoveryLowRewardWindow={recoveryLowRewardWindow}
+      setRecoveryLowRewardWindow={setRecoveryLowRewardWindow}
+      candidateAmbiguityTopGapThreshold={candidateAmbiguityTopGapThreshold}
+      setCandidateAmbiguityTopGapThreshold={setCandidateAmbiguityTopGapThreshold}
+      highValuePageVisitLimit={highValuePageVisitLimit}
+      setHighValuePageVisitLimit={setHighValuePageVisitLimit}
+      candidateRiskDropThreshold={candidateRiskDropThreshold}
+      setCandidateRiskDropThreshold={setCandidateRiskDropThreshold}
+      candidateMinFusionScore={candidateMinFusionScore}
+      setCandidateMinFusionScore={setCandidateMinFusionScore}
+      uctTwoStateLoopPenalty={uctTwoStateLoopPenalty}
+      setUctTwoStateLoopPenalty={setUctTwoStateLoopPenalty}
+      uctEdgeRepeatPenalty={uctEdgeRepeatPenalty}
+      setUctEdgeRepeatPenalty={setUctEdgeRepeatPenalty}
+      uctEdgeRepeatThreshold={uctEdgeRepeatThreshold}
+      setUctEdgeRepeatThreshold={setUctEdgeRepeatThreshold}
+      uctActionCooldownPenalty={uctActionCooldownPenalty}
+      setUctActionCooldownPenalty={setUctActionCooldownPenalty}
+      uctRecentActionWindow={uctRecentActionWindow}
+      setUctRecentActionWindow={setUctRecentActionWindow}
+      uctLoopEscapeExploreBoost={uctLoopEscapeExploreBoost}
+      setUctLoopEscapeExploreBoost={setUctLoopEscapeExploreBoost}
       skipAll={skipAll}
       setSkipAll={setSkipAll}
       rangeLeftInput={rangeLeftInput}
@@ -586,29 +777,12 @@ export function App() {
       setRangeBottomInput={setRangeBottomInput}
       rangeLog={rangeLog}
       onResetRange={handleClearRange}
-      actionType={actionType}
-      setActionType={setActionType}
-      actionPath={actionPath}
-      setActionPath={setActionPath}
-      actionX={actionX}
-      setActionX={setActionX}
-      actionY={actionY}
-      setActionY={setActionY}
-      actionStartX={actionStartX}
-      setActionStartX={setActionStartX}
-      actionStartY={actionStartY}
-      setActionStartY={setActionStartY}
-      actionEndX={actionEndX}
-      setActionEndX={setActionEndX}
-      actionEndY={actionEndY}
-      setActionEndY={setActionEndY}
-      actionRules={actionRules}
-      actionLog={actionLog}
-      onAddActionRule={handleAddActionRule}
-      outputPath={outputPath}
-      setOutputPath={setOutputPath}
       onCopyConfig={() => void handleCopyConfig()}
-      onSaveConfig={() => void handleSave()}
+      onOpenSavePreview={() => void handleOpenSavePreview()}
+      onSaveToFile={() => void handleSaveToFile()}
+      onDownloadConfig={() => void handleDownloadConfig()}
+      savePreviewOpen={savePreviewOpen}
+      setSavePreviewOpen={setSavePreviewOpen}
       status={status}
       error={error}
       resultText={resultText}

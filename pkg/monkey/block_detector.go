@@ -27,6 +27,8 @@ type blockDetector struct {
 	pageVisitCount            map[string]int
 	lastReason                string
 	imageSignatureFunc        func(screenshot []byte) string // 可选，XML 不可用时用图片签名替代
+	imageFingerprintRegions   []ImageFingerprintRegion
+	imageSimilarityThreshold  float64
 }
 
 func newBlockDetector(noChangeThreshold int, twoStateLoopThreshold int, highVisitThreshold int, lowRewardWindow int) *blockDetector {
@@ -55,6 +57,12 @@ func newBlockDetector(noChangeThreshold int, twoStateLoopThreshold int, highVisi
 
 func (d *blockDetector) withImageSignatureFunc(f func([]byte) string) *blockDetector {
 	d.imageSignatureFunc = f
+	return d
+}
+
+func (d *blockDetector) withImageSimilarity(threshold float64, regions []ImageFingerprintRegion) *blockDetector {
+	d.imageSimilarityThreshold = threshold
+	d.imageFingerprintRegions = append([]ImageFingerprintRegion(nil), regions...)
 	return d
 }
 
@@ -96,7 +104,7 @@ func (d *blockDetector) Observe(cmd *types.ActionCommand, before coordinator.Pag
 	}
 
 	// 滚动无变化：骨架相同即为同一界面（内容可变，如动态加载）
-	if cmd.IsScrollAction() && beforeSkeleton != "" && beforeSkeleton == afterSkeleton {
+	if cmd.IsScrollAction() && beforeSkeleton != "" && beforeSkeleton == afterSkeleton && d.isVisuallyUnchanged(before.Screenshot, after.Screenshot) {
 		d.consecutiveNoChangeScroll++
 	} else {
 		d.consecutiveNoChangeScroll = 0
@@ -109,7 +117,7 @@ func (d *blockDetector) Observe(cmd *types.ActionCommand, before coordinator.Pag
 	// 同页面无移动：骨架和内容都相同才算"什么都没发生"
 	if !isBlockDetectorIgnoredAction(cmd.Act) && !cmd.IsScrollAction() && beforeSkeleton != "" && beforeSkeleton == afterSkeleton {
 		beforeContent := cachedSignature(before)
-		if beforeContent == afterContent {
+		if beforeContent == afterContent && d.isVisuallyUnchanged(before.Screenshot, after.Screenshot) {
 			d.consecutiveSamePageNoMove++
 		} else {
 			d.consecutiveSamePageNoMove = 0
@@ -154,6 +162,20 @@ func (d *blockDetector) Observe(cmd *types.ActionCommand, before coordinator.Pag
 	}
 
 	return triggerNoChangeScroll || triggerSamePageNoMove || triggerTwoStateLoop || triggerHighVisitLowGain
+}
+
+func (d *blockDetector) isVisuallyUnchanged(beforeScreenshot, afterScreenshot []byte) bool {
+	if d == nil {
+		return true
+	}
+	if len(beforeScreenshot) == 0 || len(afterScreenshot) == 0 {
+		return true
+	}
+	score, err := ComputeImageSSIMWithRegions(beforeScreenshot, afterScreenshot, d.imageFingerprintRegions)
+	if err != nil {
+		return true
+	}
+	return score >= d.imageSimilarityThreshold
 }
 
 func (d *blockDetector) Reset() {

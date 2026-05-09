@@ -219,6 +219,7 @@ func runMonkey(logLevelStr string, opts struct {
 		CandidateRiskDropThreshold:        candidateRiskDropThreshold,
 		CandidateMinFusionScore:           candidateMinFusionScore,
 		ImageFingerprintRegions:           buildImageFingerprintRegionsConfig(staticCfg),
+		ImageSimilaritySSIMThreshold:      staticCfg.ImageSimilaritySSIMThreshold.OrDefault(0),
 	}
 
 	if opts.probePageName {

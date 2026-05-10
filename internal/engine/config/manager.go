@@ -211,6 +211,21 @@ func (m *Manager) GetUCTBanditConfig() coretypes.UCTBanditStaticConfig {
 	}
 }
 
+func (m *Manager) GetReuseConfig() coretypes.ReuseStaticConfig {
+	if m == nil {
+		return coretypes.ReuseStaticConfig{}
+	}
+	reuseCfg := m.staticConfig.Reuse
+	return coretypes.ReuseStaticConfig{
+		Epsilon:                reuseCfg.Epsilon,
+		Gamma:                  reuseCfg.Gamma,
+		NStep:                  reuseCfg.NStep,
+		ModelSavePath:          reuseCfg.ModelSavePath,
+		EnableModelPersistence: reuseCfg.EnableModelPersistence,
+		ResetModelOnStart:      reuseCfg.ResetModelOnStart,
+	}
+}
+
 func (m *CustomAction) ToActionCommand() *coretypes.ActionCommand {
 	operate := m.StatefulAction.ToOperate()
 	operate.Text = m.Text

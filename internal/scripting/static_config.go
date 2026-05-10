@@ -47,6 +47,7 @@ type StaticConfig struct {
 	Log                               StaticLogConfig
 	EffectiveTouchArea                *StaticEffectiveTouchArea
 	UCTBandit                         StaticUCTBanditConfig
+	Reuse                             StaticReuseConfig
 }
 
 type StaticLogConfig struct {
@@ -82,6 +83,15 @@ type StaticUCTBanditConfig struct {
 	ActionCooldownPenalty  coretypes.Optional[float64]
 	RecentActionWindow     coretypes.Optional[int]
 	LoopEscapeExploreBoost coretypes.Optional[float64]
+}
+
+type StaticReuseConfig struct {
+	Epsilon                coretypes.Optional[float64]
+	Gamma                  coretypes.Optional[float64]
+	NStep                  coretypes.Optional[int]
+	ModelSavePath          string
+	EnableModelPersistence coretypes.Optional[bool]
+	ResetModelOnStart      coretypes.Optional[bool]
 }
 
 func LoadStaticConfigFile(path string) (StaticConfig, error) {
@@ -359,6 +369,20 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 		cfg.UCTBandit.RecentActionWindow = optionalIntFromObj(uctBanditObj, "recent_action_window")
 		cfg.UCTBandit.LoopEscapeExploreBoost = optionalFloatFromObj(uctBanditObj, "loop_escape_explore_boost")
 	}
+	if reuseValue := obj.Get("reuse"); !isEmptyJSValue(reuseValue) {
+		reuseObj := reuseValue.ToObject(vm)
+		cfg.Reuse.Epsilon = optionalFloatFromObj(reuseObj, "epsilon")
+		cfg.Reuse.Gamma = optionalFloatFromObj(reuseObj, "gamma")
+		cfg.Reuse.NStep = optionalIntFromObj(reuseObj, "n_step")
+		cfg.Reuse.EnableModelPersistence = optionalBoolFromObj(reuseObj, "enable_model_persistence")
+		cfg.Reuse.ResetModelOnStart = optionalBoolFromObj(reuseObj, "reset_model_on_start")
+		if modelSavePathValue := reuseObj.Get("model_save_path"); !isEmptyJSValue(modelSavePathValue) {
+			cfg.Reuse.ModelSavePath = strings.TrimSpace(modelSavePathValue.String())
+		}
+		if modelSavePathValue := reuseObj.Get("modelSavePath"); cfg.Reuse.ModelSavePath == "" && !isEmptyJSValue(modelSavePathValue) {
+			cfg.Reuse.ModelSavePath = strings.TrimSpace(modelSavePathValue.String())
+		}
+	}
 	return cfg, nil
 }
 
@@ -444,6 +468,14 @@ func floatFromJSValue(v goja.Value) (float64, error) {
 		return 0, errors.New("值不能为 NaN")
 	}
 	return f, nil
+}
+
+// optionalBoolFromObj 从嵌套 JS 对象中解析布尔可选值（单键）。
+func optionalBoolFromObj(obj *goja.Object, key string) coretypes.Optional[bool] {
+	if value := obj.Get(key); !isEmptyJSValue(value) {
+		return coretypes.Some(value.ToBoolean())
+	}
+	return coretypes.NoneOf[bool]()
 }
 
 func parseStaticTouchRanges(value goja.Value, vm *goja.Runtime, fieldName string) ([]StaticTouchRange, error) {

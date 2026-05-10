@@ -147,3 +147,36 @@ func TestBuildConfigJS_WithAdvancedFields(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildConfigJS_WithReuseFields(t *testing.T) {
+	cfg := ConfigPayload{
+		PageSource: "uia",
+		TouchMode:  "motion",
+		Algorithm:  "reuse",
+	}
+	cfg.Reuse.Epsilon = ptr(0.08)
+	cfg.Reuse.Gamma = ptr(0.9)
+	cfg.Reuse.NStep = ptr(7)
+	cfg.Reuse.ModelSavePath = "./data/demo_reuse.model"
+	cfg.Reuse.EnableModelPersistence = ptr(true)
+	cfg.Reuse.ResetModelOnStart = ptr(false)
+
+	js, err := BuildConfigJS(cfg)
+	if err != nil {
+		t.Fatalf("buildConfigJS reuse 字段失败: %v", err)
+	}
+	for _, expected := range []string{
+		`algorithm: "reuse"`,
+		`reuse: {`,
+		`epsilon: 0.08`,
+		`gamma: 0.9`,
+		`n_step: 7`,
+		`model_save_path: "./data/demo_reuse.model"`,
+		`enable_model_persistence: true`,
+		`reset_model_on_start: false`,
+	} {
+		if !strings.Contains(js, expected) {
+			t.Fatalf("未输出字段 %q: %s", expected, js)
+		}
+	}
+}

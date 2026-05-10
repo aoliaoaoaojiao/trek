@@ -31,6 +31,14 @@ export type ConfigPayload = {
     recent_action_window: number | null
     loop_escape_explore_boost: number | null
   }
+  reuse: {
+    epsilon: number | null
+    gamma: number | null
+    n_step: number | null
+    model_save_path: string
+    enable_model_persistence: boolean | null
+    reset_model_on_start: boolean | null
+  }
   effective_touch_area: {
     serial: string
     package_name: string
@@ -70,6 +78,14 @@ export type PartialConfigPayload = Partial<{
     action_cooldown_penalty: number | null
     recent_action_window: number | null
     loop_escape_explore_boost: number | null
+  }>
+  reuse: Partial<{
+    epsilon: number | null
+    gamma: number | null
+    n_step: number | null
+    model_save_path: string
+    enable_model_persistence: boolean | null
+    reset_model_on_start: boolean | null
   }>
   effective_touch_area: Partial<{
     serial: string

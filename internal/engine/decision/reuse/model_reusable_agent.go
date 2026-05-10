@@ -2,6 +2,8 @@ package reuse
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"sync"
 
 	"trek/internal/engine/core/types"
@@ -44,16 +46,19 @@ type ModelReusableAgent struct {
 	currentStateBlockTimes          int
 	algorithmType                   string
 
-	alpha           float64
-	epsilon         float64
-	rewardCache     []float64
-	previousActions []types.IAction
-	reuseModel      ActionPageStatistics
-	reuseQValue     ActionQValue
-	qValueFilter    types.IStatefulActionFilter
-	modelSavePath   string
-	reuseModelLock  sync.Mutex
-	visitStats      reuseVisitStats
+	alpha                  float64
+	epsilon                float64
+	gamma                  float64
+	nStep                  int
+	rewardCache            []float64
+	previousActions        []types.IAction
+	reuseModel             ActionPageStatistics
+	reuseQValue            ActionQValue
+	qValueFilter           types.IStatefulActionFilter
+	modelSavePath          string
+	enableModelPersistence bool
+	reuseModelLock         sync.Mutex
+	visitStats             reuseVisitStats
 
 	stopChan chan struct{}
 	stopOnce sync.Once
@@ -75,6 +80,8 @@ func NewModelReusableAgent(model *sharedgraph.Model) *ModelReusableAgent {
 		model:                           model,
 		alpha:                           SarsaRLDefaultAlpha,
 		epsilon:                         SarsaRLDefaultEpsilon,
+		gamma:                           SarsaRLDefaultGamma,
+		nStep:                           SarsaNStep,
 		rewardCache:                     make([]float64, 0),
 		previousActions:                 make([]types.IAction, 0),
 		reuseModel:                      make(ActionPageStatistics),
@@ -82,7 +89,8 @@ func NewModelReusableAgent(model *sharedgraph.Model) *ModelReusableAgent {
 		visitStats: reuseVisitStats{
 			visitedPages: make(map[string]struct{}),
 		},
-		stopChan: make(chan struct{}),
+		enableModelPersistence: true,
+		stopChan:               make(chan struct{}),
 	}
 	agent.qValueFilter = NewActionFilterValidValuePriority(func(action *types.StatefulAction) float64 {
 		return agent.getQValueByHash(action.Hash())
@@ -317,6 +325,14 @@ func (a *ModelReusableAgent) GetEpsilon() float64 {
 	return a.epsilon
 }
 
+func (a *ModelReusableAgent) GetGamma() float64 {
+	return a.gamma
+}
+
+func (a *ModelReusableAgent) GetNStep() int {
+	return a.nStep
+}
+
 func (a *ModelReusableAgent) SetAlpha(alpha float64) {
 	a.alpha = alpha
 }
@@ -325,10 +341,36 @@ func (a *ModelReusableAgent) SetEpsilon(epsilon float64) {
 	a.epsilon = epsilon
 }
 
+func (a *ModelReusableAgent) SetGamma(gamma float64) {
+	a.gamma = gamma
+}
+
+func (a *ModelReusableAgent) SetNStep(nStep int) {
+	a.nStep = nStep
+}
+
 func (a *ModelReusableAgent) SetModelSavePath(path string) {
 	a.modelSavePath = path
 }
 
 func (a *ModelReusableAgent) GetModelSavePath() string {
 	return a.modelSavePath
+}
+
+func (a *ModelReusableAgent) SetEnableModelPersistence(enable bool) {
+	a.enableModelPersistence = enable
+}
+
+func (a *ModelReusableAgent) GetEnableModelPersistence() bool {
+	return a.enableModelPersistence
+}
+
+func (a *ModelReusableAgent) ResetModelFile() error {
+	if strings.TrimSpace(a.modelSavePath) == "" {
+		return nil
+	}
+	if err := os.Remove(a.modelSavePath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }

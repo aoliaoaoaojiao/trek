@@ -25,7 +25,18 @@ type UCTBanditStaticConfig struct {
 	LoopEscapeExploreBoost Optional[float64]
 }
 
+// ReuseStaticConfig 保存 Reuse 算法的静态配置覆盖项。
+type ReuseStaticConfig struct {
+	Epsilon                Optional[float64]
+	Gamma                  Optional[float64]
+	NStep                  Optional[int]
+	ModelSavePath          string
+	EnableModelPersistence Optional[bool]
+	ResetModelOnStart      Optional[bool]
+}
+
 // StaticConfigProvider 抽象静态配置访问，用于 uctbandit agent 获取配置覆盖。
 type StaticConfigProvider interface {
 	GetUCTBanditConfig() UCTBanditStaticConfig
+	GetReuseConfig() ReuseStaticConfig
 }

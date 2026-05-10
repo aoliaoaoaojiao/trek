@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -19,7 +19,7 @@ import {
 
 import type { DeviceOption, PageNameStrategy } from "./types"
 
-type ConfigTab = "base" | "page" | "recovery" | "uct" | "preview"
+type ConfigTab = "base" | "page" | "recovery" | "uct"
 type SelectOption = {
   value: string
   label: string
@@ -100,6 +100,18 @@ type Props = {
   setUctRecentActionWindow: (value: string) => void
   uctLoopEscapeExploreBoost: string
   setUctLoopEscapeExploreBoost: (value: string) => void
+  reuseEpsilon: string
+  setReuseEpsilon: (value: string) => void
+  reuseGamma: string
+  setReuseGamma: (value: string) => void
+  reuseNStep: string
+  setReuseNStep: (value: string) => void
+  reuseModelSavePath: string
+  setReuseModelSavePath: (value: string) => void
+  reuseEnableModelPersistenceMode: "" | "true" | "false"
+  setReuseEnableModelPersistenceMode: (value: "" | "true" | "false") => void
+  reuseResetModelOnStartMode: "" | "true" | "false"
+  setReuseResetModelOnStartMode: (value: "" | "true" | "false") => void
   skipAll: boolean
   setSkipAll: (value: boolean) => void
   rangeLeftInput: string
@@ -113,8 +125,6 @@ type Props = {
   rangeLog: string
   onResetRange: () => void
   onCopyConfig: () => void
-  onOpenSavePreview: () => void
-  onSaveToFile: () => void
   onDownloadConfig: () => void
   savePreviewOpen: boolean
   setSavePreviewOpen: (value: boolean) => void
@@ -128,6 +138,16 @@ export function ConfigPanel(props: Props) {
   const [importOpen, setImportOpen] = useState(false)
   const [importText, setImportText] = useState("")
   const [importStatus, setImportStatus] = useState("")
+
+  useEffect(() => {
+    const openImportDialog = () => {
+      setImportOpen(true)
+    }
+    document.addEventListener("trek-open-import-config", openImportDialog)
+    return () => {
+      document.removeEventListener("trek-open-import-config", openImportDialog)
+    }
+  }, [])
 
   const renderSelect = (
     value: string,
@@ -178,17 +198,6 @@ export function ConfigPanel(props: Props) {
     <>
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-base font-semibold">配置</h2>
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" onClick={props.onOpenSavePreview} disabled={props.loading}>
-            导出配置
-          </Button>
-          <Button type="button" variant="outline" onClick={() => setImportOpen(true)} disabled={props.loading}>
-            导入配置
-          </Button>
-          <Button variant="outline" onClick={props.onRefreshCurrentPage} disabled={props.loading}>
-            当前界面
-          </Button>
-        </div>
       </div>
       {importOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
@@ -247,15 +256,12 @@ export function ConfigPanel(props: Props) {
               <textarea className="mt-2 min-h-[420px] w-full rounded-md border bg-background p-3 font-mono text-sm" readOnly value={props.resultText} />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="mx-0 mb-0 rounded-b-xl px-6 py-4">
             <Button variant="outline" onClick={props.onCopyConfig} disabled={props.resultText.trim() === ""}>
               复制配置
             </Button>
-            <Button variant="outline" onClick={props.onDownloadConfig} disabled={props.resultText.trim() === ""}>
+            <Button onClick={props.onDownloadConfig} disabled={props.resultText.trim() === ""}>
               下载配置
-            </Button>
-            <Button onClick={props.onSaveToFile} disabled={props.loading || props.resultText.trim() === ""}>
-              保存到文件
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -272,9 +278,6 @@ export function ConfigPanel(props: Props) {
         </Button>
         <Button type="button" variant={props.configTab === "uct" ? "default" : "outline"} onClick={() => props.setConfigTab("uct")}>
           决策算法
-        </Button>
-        <Button type="button" variant={props.configTab === "preview" ? "default" : "outline"} onClick={() => props.setConfigTab("preview")}>
-          预览配置
         </Button>
       </div>
       {props.configTab === "base" ? (
@@ -533,9 +536,43 @@ export function ConfigPanel(props: Props) {
             </>
           ) : null}
           {props.algorithm === "reuse" ? (
-            <div className="rounded-md border bg-background p-3 text-sm text-muted-foreground md:col-span-2">
-              `reuse` 当前没有额外的专属参数，使用通用遍历与恢复配置即可。
-            </div>
+            <>
+              <p className="text-sm text-muted-foreground md:col-span-2">
+                当前已选择 `reuse`，下面显示该算法的经验复用与学习参数。
+              </p>
+              <label className="flex flex-col gap-1 text-sm">
+                探索率 epsilon
+                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} max={1} step="0.001" value={props.reuseEpsilon} onChange={(e) => props.setReuseEpsilon(e.target.value)} placeholder="例如 0.05" />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                折扣因子 gamma
+                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} max={1} step="0.001" value={props.reuseGamma} onChange={(e) => props.setReuseGamma(e.target.value)} placeholder="例如 0.8" />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                N-Step 步数
+                <input className="rounded-md border bg-background px-3 py-2" type="number" min={1} step="1" value={props.reuseNStep} onChange={(e) => props.setReuseNStep(e.target.value)} placeholder="例如 5" />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                模型保存路径
+                <input className="rounded-md border bg-background px-3 py-2 font-mono" value={props.reuseModelSavePath} onChange={(e) => props.setReuseModelSavePath(e.target.value)} placeholder="例如 ./data/reuse.model" />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                启用模型持久化
+                {renderSelect(props.reuseEnableModelPersistenceMode, (value) => props.setReuseEnableModelPersistenceMode(value as "" | "true" | "false"), "选择是否持久化", [
+                  { value: "", label: "不指定（使用默认）" },
+                  { value: "true", label: "开启" },
+                  { value: "false", label: "关闭" },
+                ])}
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                启动时重置模型
+                {renderSelect(props.reuseResetModelOnStartMode, (value) => props.setReuseResetModelOnStartMode(value as "" | "true" | "false"), "选择是否重置", [
+                  { value: "", label: "不指定（使用默认）" },
+                  { value: "true", label: "开启" },
+                  { value: "false", label: "关闭" },
+                ])}
+              </label>
+            </>
           ) : null}
           {props.algorithm === "random" ? (
             <div className="rounded-md border bg-background p-3 text-sm text-muted-foreground md:col-span-2">
@@ -547,27 +584,6 @@ export function ConfigPanel(props: Props) {
               先选择一个决策算法，再显示对应的算法专属配置项。
             </div>
           ) : null}
-        </div>
-      ) : null}
-      {props.configTab === "preview" ? (
-        <div className="mt-2 rounded-md border bg-background p-3">
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button onClick={props.onCopyConfig} disabled={props.resultText.trim() === ""}>
-              复制配置
-            </Button>
-            <Button variant="outline" onClick={props.onDownloadConfig} disabled={props.resultText.trim() === ""}>
-              下载配置
-            </Button>
-            <Button variant="outline" onClick={props.onSaveToFile} disabled={props.loading}>
-              保存到文件
-            </Button>
-          </div>
-          {props.status !== "" ? <p className="mt-2 text-sm text-emerald-700">{props.status}</p> : null}
-          {props.error !== "" ? <p className="mt-2 text-sm text-red-700">{props.error}</p> : null}
-          <div className="mt-3">
-            <label className="text-sm font-medium">生成结果</label>
-            <textarea className="mt-2 min-h-[520px] w-full rounded-md border bg-background p-3 font-mono text-sm" readOnly value={props.resultText} />
-          </div>
         </div>
       ) : null}
     </>

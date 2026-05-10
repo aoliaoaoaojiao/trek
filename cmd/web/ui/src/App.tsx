@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react"
 import type { MouseEvent } from "react"
 
+import { Button } from "@/components/ui/button"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -9,7 +10,7 @@ import {
 import { ConfigPanel } from "@/monkey-config/ConfigPanel"
 import { DumpPanel } from "@/monkey-config/DumpPanel"
 import { ScreenshotPanel } from "@/monkey-config/ScreenshotPanel"
-import { API_BASE, DEV_API_BASE, postJSON } from "@/monkey-config/api"
+import { API_BASE, postJSON } from "@/monkey-config/api"
 import { copyText, parseDumpTree } from "@/monkey-config/utils"
 import type {
   ClickPoint,
@@ -96,7 +97,7 @@ export function App() {
   const [loadingDevices, setLoadingDevices] = useState(false)
   const [skipAll, setSkipAll] = useState(false)
   const [pageControlStrategy, setPageControlStrategy] = useState<"" | "raw" | "ocr" | "llm">("")
-  const [algorithm, setAlgorithm] = useState<"" | "reuse" | "uctbandit" | "random">("")
+  const [algorithm, setAlgorithm] = useState<"" | "reuse" | "uctbandit" | "random">("reuse")
   const [captureScreenshotMode, setCaptureScreenshotMode] = useState<"" | "true" | "false">("")
   const [keepStepRecordsMode, setKeepStepRecordsMode] = useState<"" | "true" | "false">("")
   const [uiaPort, setUiaPort] = useState("")
@@ -122,6 +123,12 @@ export function App() {
   const [uctActionCooldownPenalty, setUctActionCooldownPenalty] = useState("")
   const [uctRecentActionWindow, setUctRecentActionWindow] = useState("")
   const [uctLoopEscapeExploreBoost, setUctLoopEscapeExploreBoost] = useState("")
+  const [reuseEpsilon, setReuseEpsilon] = useState("")
+  const [reuseGamma, setReuseGamma] = useState("")
+  const [reuseNStep, setReuseNStep] = useState("")
+  const [reuseModelSavePath, setReuseModelSavePath] = useState("")
+  const [reuseEnableModelPersistenceMode, setReuseEnableModelPersistenceMode] = useState<"" | "true" | "false">("")
+  const [reuseResetModelOnStartMode, setReuseResetModelOnStartMode] = useState<"" | "true" | "false">("")
   const [resultText, setResultText] = useState("")
   const [xmlPreview, setXmlPreview] = useState("")
   const [screenshotBase64, setScreenshotBase64] = useState("")
@@ -141,7 +148,7 @@ export function App() {
   const [rangeRightInput, setRangeRightInput] = useState("1")
   const [rangeBottomInput, setRangeBottomInput] = useState("1")
   const [rangeLog, setRangeLog] = useState("当前范围仅内存生效（不持久化）")
-  const [configTab, setConfigTab] = useState<"base" | "page" | "recovery" | "uct" | "preview">("base")
+  const [configTab, setConfigTab] = useState<"base" | "page" | "recovery" | "uct">("base")
   const [savePreviewOpen, setSavePreviewOpen] = useState(false)
 
   const fetchDevices = async () => {
@@ -248,6 +255,14 @@ export function App() {
         recent_action_window: parseOptionalNumber(uctRecentActionWindow),
         loop_escape_explore_boost: parseOptionalNumber(uctLoopEscapeExploreBoost),
       },
+      reuse: {
+        epsilon: parseOptionalNumber(reuseEpsilon),
+        gamma: parseOptionalNumber(reuseGamma),
+        n_step: parseOptionalNumber(reuseNStep),
+        model_save_path: reuseModelSavePath.trim(),
+        enable_model_persistence: boolModeToValue(reuseEnableModelPersistenceMode),
+        reset_model_on_start: boolModeToValue(reuseResetModelOnStartMode),
+      },
       effective_touch_area: {
         serial: usedSerial || deviceSerial || "",
         package_name: currentPackageName || "",
@@ -279,6 +294,12 @@ export function App() {
       recoveryHighVisitThreshold,
       recoveryLowRewardWindow,
       recoveryTwoStateLoopThreshold,
+      reuseEnableModelPersistenceMode,
+      reuseEpsilon,
+      reuseGamma,
+      reuseModelSavePath,
+      reuseNStep,
+      reuseResetModelOnStartMode,
       scrollInferThreshold,
       skipAll,
       touchMode,
@@ -292,38 +313,6 @@ export function App() {
       usedSerial,
     ]
   )
-
-  useEffect(() => {
-    if (configTab !== "preview") {
-      return
-    }
-    let ignored = false
-    const renderConfig = async () => {
-      setLoading(true)
-      setStatus("")
-      setError("")
-      try {
-        const data = await postJSON<{ js: string }>("/api/render", payload)
-        if (ignored) {
-          return
-        }
-        setResultText(data.js)
-        setStatus("已生成配置")
-      } catch (err) {
-        if (!ignored) {
-          setError(err instanceof Error ? err.message : "生成失败")
-        }
-      } finally {
-        if (!ignored) {
-          setLoading(false)
-        }
-      }
-    }
-    void renderConfig()
-    return () => {
-      ignored = true
-    }
-  }, [configTab, payload])
 
   const selectedBounds = selectedDumpNode?.bounds ?? null
   const absoluteSpace = useMemo(
@@ -519,6 +508,12 @@ export function App() {
     setUctActionCooldownPenalty(imported.uct_bandit?.action_cooldown_penalty != null ? String(imported.uct_bandit.action_cooldown_penalty) : "")
     setUctRecentActionWindow(imported.uct_bandit?.recent_action_window != null ? String(imported.uct_bandit.recent_action_window) : "")
     setUctLoopEscapeExploreBoost(imported.uct_bandit?.loop_escape_explore_boost != null ? String(imported.uct_bandit.loop_escape_explore_boost) : "")
+    setReuseEpsilon(imported.reuse?.epsilon != null ? String(imported.reuse.epsilon) : "")
+    setReuseGamma(imported.reuse?.gamma != null ? String(imported.reuse.gamma) : "")
+    setReuseNStep(imported.reuse?.n_step != null ? String(imported.reuse.n_step) : "")
+    setReuseModelSavePath(typeof imported.reuse?.model_save_path === "string" ? imported.reuse.model_save_path : "")
+    setReuseEnableModelPersistenceMode(boolValueToMode(imported.reuse?.enable_model_persistence))
+    setReuseResetModelOnStartMode(boolValueToMode(imported.reuse?.reset_model_on_start))
     if (typeof imported.effective_touch_area?.serial === "string") {
       setDeviceSerial(imported.effective_touch_area.serial.trim())
       setUsedSerial(imported.effective_touch_area.serial.trim())
@@ -573,29 +568,6 @@ export function App() {
       setStatus("已生成配置预览")
     } catch (err) {
       setError(err instanceof Error ? err.message : "生成预览失败")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleSaveToFile = async () => {
-    setLoading(true)
-    setStatus("")
-    setError("")
-    try {
-      if (resultText.trim() === "") {
-        await renderConfigText()
-      }
-      const saved = await postJSON<{ output_path: string; message: string }>(
-        "/api/save",
-        {
-          config: payload,
-          output_path: "./config.generated.js",
-        }
-      )
-      setStatus(`${saved.message}: ${saved.output_path}`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "保存失败")
     } finally {
       setLoading(false)
     }
@@ -765,6 +737,18 @@ export function App() {
       setUctRecentActionWindow={setUctRecentActionWindow}
       uctLoopEscapeExploreBoost={uctLoopEscapeExploreBoost}
       setUctLoopEscapeExploreBoost={setUctLoopEscapeExploreBoost}
+      reuseEpsilon={reuseEpsilon}
+      setReuseEpsilon={setReuseEpsilon}
+      reuseGamma={reuseGamma}
+      setReuseGamma={setReuseGamma}
+      reuseNStep={reuseNStep}
+      setReuseNStep={setReuseNStep}
+      reuseModelSavePath={reuseModelSavePath}
+      setReuseModelSavePath={setReuseModelSavePath}
+      reuseEnableModelPersistenceMode={reuseEnableModelPersistenceMode}
+      setReuseEnableModelPersistenceMode={setReuseEnableModelPersistenceMode}
+      reuseResetModelOnStartMode={reuseResetModelOnStartMode}
+      setReuseResetModelOnStartMode={setReuseResetModelOnStartMode}
       skipAll={skipAll}
       setSkipAll={setSkipAll}
       rangeLeftInput={rangeLeftInput}
@@ -778,8 +762,6 @@ export function App() {
       rangeLog={rangeLog}
       onResetRange={handleClearRange}
       onCopyConfig={() => void handleCopyConfig()}
-      onOpenSavePreview={() => void handleOpenSavePreview()}
-      onSaveToFile={() => void handleSaveToFile()}
       onDownloadConfig={() => void handleDownloadConfig()}
       savePreviewOpen={savePreviewOpen}
       setSavePreviewOpen={setSavePreviewOpen}
@@ -792,11 +774,20 @@ export function App() {
   return (
     <div className="mx-auto flex min-h-svh w-[calc(100vw-2rem)] max-w-[1800px] flex-col gap-4 p-4 lg:p-6">
       <section className="rounded-xl border bg-card p-4">
-        <h1 className="text-xl font-semibold">Trek 配置 JS 生成器</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          开发模式连接 {DEV_API_BASE}，生产模式自动使用
-          <code className="mx-1">window.location.host</code> 作为后端地址。
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-xl font-semibold">Trek 配置生成器</h1>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => void handleOpenSavePreview()} disabled={loading}>
+              导出配置
+            </Button>
+            <Button type="button" variant="outline" onClick={() => document.dispatchEvent(new Event("trek-open-import-config"))} disabled={loading}>
+              导入配置
+            </Button>
+            <Button type="button" variant="outline" onClick={() => void handleRefreshPreview()} disabled={loading}>
+              抓取当前设备界面
+            </Button>
+          </div>
+        </div>
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:hidden">

@@ -64,6 +64,14 @@ type ConfigPayload struct {
 		RecentActionWindow     *int     `json:"recent_action_window"`
 		LoopEscapeExploreBoost *float64 `json:"loop_escape_explore_boost"`
 	} `json:"uct_bandit"`
+	Reuse struct {
+		Epsilon                *float64 `json:"epsilon"`
+		Gamma                  *float64 `json:"gamma"`
+		NStep                  *int     `json:"n_step"`
+		ModelSavePath          string   `json:"model_save_path"`
+		EnableModelPersistence *bool    `json:"enable_model_persistence"`
+		ResetModelOnStart      *bool    `json:"reset_model_on_start"`
+	} `json:"reuse"`
 	EffectiveTouchArea struct {
 		Serial      string `json:"serial"`
 		PackageName string `json:"package_name"`
@@ -571,6 +579,34 @@ func BuildConfigJS(cfg ConfigPayload) (string, error) {
 		}
 		if cfg.UCTBandit.LoopEscapeExploreBoost != nil {
 			b.WriteString(fmt.Sprintf("    loop_escape_explore_boost: %s,\n", strconv.FormatFloat(*cfg.UCTBandit.LoopEscapeExploreBoost, 'f', -1, 64)))
+		}
+		b.WriteString("  },\n")
+	}
+
+	if cfg.Reuse.Epsilon != nil ||
+		cfg.Reuse.Gamma != nil ||
+		cfg.Reuse.NStep != nil ||
+		strings.TrimSpace(cfg.Reuse.ModelSavePath) != "" ||
+		cfg.Reuse.EnableModelPersistence != nil ||
+		cfg.Reuse.ResetModelOnStart != nil {
+		b.WriteString("  reuse: {\n")
+		if cfg.Reuse.Epsilon != nil {
+			b.WriteString(fmt.Sprintf("    epsilon: %s,\n", strconv.FormatFloat(*cfg.Reuse.Epsilon, 'f', -1, 64)))
+		}
+		if cfg.Reuse.Gamma != nil {
+			b.WriteString(fmt.Sprintf("    gamma: %s,\n", strconv.FormatFloat(*cfg.Reuse.Gamma, 'f', -1, 64)))
+		}
+		if cfg.Reuse.NStep != nil {
+			b.WriteString(fmt.Sprintf("    n_step: %d,\n", *cfg.Reuse.NStep))
+		}
+		if modelSavePath := strings.TrimSpace(cfg.Reuse.ModelSavePath); modelSavePath != "" {
+			b.WriteString(fmt.Sprintf("    model_save_path: %q,\n", modelSavePath))
+		}
+		if cfg.Reuse.EnableModelPersistence != nil {
+			b.WriteString(fmt.Sprintf("    enable_model_persistence: %t,\n", *cfg.Reuse.EnableModelPersistence))
+		}
+		if cfg.Reuse.ResetModelOnStart != nil {
+			b.WriteString(fmt.Sprintf("    reset_model_on_start: %t,\n", *cfg.Reuse.ResetModelOnStart))
 		}
 		b.WriteString("  },\n")
 	}

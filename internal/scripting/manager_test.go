@@ -427,3 +427,37 @@ func TestLoadStaticConfigReadsUCTBanditSettings(t *testing.T) {
 		t.Fatalf("loop_escape_explore_boost 不符合预期: %+v", cfg.UCTBandit)
 	}
 }
+
+func TestLoadStaticConfigReadsReuseSettings(t *testing.T) {
+	cfg, err := LoadStaticConfig(`const config = {
+  reuse: {
+    epsilon: 0.08,
+    gamma: 0.9,
+    n_step: 7,
+    model_save_path: "./data/demo_reuse.model",
+    enable_model_persistence: true,
+    reset_model_on_start: false
+  }
+}`)
+	if err != nil {
+		t.Fatalf("加载静态配置失败: %v", err)
+	}
+	if !cfg.Reuse.Epsilon.IsSet() || cfg.Reuse.Epsilon.Get() != 0.08 {
+		t.Fatalf("epsilon 不符合预期: %+v", cfg.Reuse)
+	}
+	if !cfg.Reuse.Gamma.IsSet() || cfg.Reuse.Gamma.Get() != 0.9 {
+		t.Fatalf("gamma 不符合预期: %+v", cfg.Reuse)
+	}
+	if !cfg.Reuse.NStep.IsSet() || cfg.Reuse.NStep.Get() != 7 {
+		t.Fatalf("n_step 不符合预期: %+v", cfg.Reuse)
+	}
+	if cfg.Reuse.ModelSavePath != "./data/demo_reuse.model" {
+		t.Fatalf("model_save_path 不符合预期: %+v", cfg.Reuse)
+	}
+	if !cfg.Reuse.EnableModelPersistence.IsSet() || !cfg.Reuse.EnableModelPersistence.Get() {
+		t.Fatalf("enable_model_persistence 不符合预期: %+v", cfg.Reuse)
+	}
+	if !cfg.Reuse.ResetModelOnStart.IsSet() || cfg.Reuse.ResetModelOnStart.Get() {
+		t.Fatalf("reset_model_on_start 不符合预期: %+v", cfg.Reuse)
+	}
+}

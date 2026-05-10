@@ -21,7 +21,7 @@ func (a *ModelReusableAgent) UpdateStrategy() {
 			currentQValue := a.getQValue(a.previousActions[i])
 			currentRewardValue := a.rewardCache[i]
 
-			value = currentRewardValue + SarsaRLDefaultGamma*value
+			value = currentRewardValue + a.gamma*value
 
 			if i == 0 {
 				a.setQValue(a.previousActions[i], currentQValue+a.alpha*(value-currentQValue))
@@ -33,7 +33,7 @@ func (a *ModelReusableAgent) UpdateStrategy() {
 
 	a.previousActions = append(a.previousActions, a.newAction)
 
-	if len(a.previousActions) > SarsaNStep {
+	if len(a.previousActions) > a.nStep {
 		//a.previousActions[0]
 		a.previousActions = a.previousActions[1:]
 
@@ -103,7 +103,7 @@ func (a *ModelReusableAgent) computeRewardOfLatestAction() float64 {
 
 	a.rewardCache = append(a.rewardCache, rewardValue)
 
-	if len(a.rewardCache) > SarsaNStep {
+	if len(a.rewardCache) > a.nStep {
 		//removedReward := a.rewardCache[0]
 		a.rewardCache = a.rewardCache[1:]
 	}

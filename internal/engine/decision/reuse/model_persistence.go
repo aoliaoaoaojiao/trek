@@ -14,6 +14,10 @@ type reuseModelSnapshot struct {
 }
 
 func (a *ModelReusableAgent) LoadReuseModel() {
+	if !a.enableModelPersistence {
+		logger.Infof("reuse model persistence disabled, skip load")
+		return
+	}
 	logger.Infof("begin load model: %s", a.modelSavePath)
 
 	a.reuseModelLock.Lock()
@@ -50,6 +54,9 @@ func (a *ModelReusableAgent) LoadReuseModel() {
 }
 
 func (a *ModelReusableAgent) SaveReuseModel() error {
+	if !a.enableModelPersistence {
+		return nil
+	}
 	outputFilePath := a.modelSavePath
 	logger.Infof("save model to path: %s", outputFilePath)
 

@@ -245,7 +245,7 @@ export function ConfigPanel(props: Props) {
           <DialogHeader className="px-6 pt-6">
             <DialogTitle>配置导出</DialogTitle>
             <DialogDescription>
-              先确认生成结果，再选择下载配置或保存到文件。
+              先确认生成结果，再选择复制配置或下载配置。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 px-6 pb-4">
@@ -319,15 +319,6 @@ export function ConfigPanel(props: Props) {
             ])}
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            控件获取策略
-            {renderSelect(props.pageControlStrategy, (value) => props.setPageControlStrategy(value as "" | "raw" | "ocr" | "llm"), "选择控件获取策略", [
-              { value: "", label: "不指定（按默认）" },
-              { value: "raw", label: "raw" },
-              { value: "ocr", label: "ocr" },
-              { value: "llm", label: "llm" },
-            ])}
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
             触控模式
             {renderSelect(props.touchMode, (value) => props.setTouchMode(value as "motion" | "uia" | "adb"), "选择触控模式", [
               { value: "motion", label: "motion" },
@@ -337,12 +328,12 @@ export function ConfigPanel(props: Props) {
           </label>
           <label className="flex flex-col gap-1 text-sm">
             UIA 端口
-            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} value={props.uiaPort} onChange={(e) => props.setUiaPort(e.target.value)} placeholder="默认空" />
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} value={props.uiaPort} onChange={(e) => props.setUiaPort(e.target.value)} placeholder="留空=使用驱动默认端口" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             日志文件级别
             {renderSelect(props.fileLevel, props.setFileLevel, "选择日志级别", [
-              { value: "", label: "空（不输出）" },
+              { value: "", label: "关闭文件日志输出" },
               { value: "debug", label: "debug" },
               { value: "info", label: "info" },
               { value: "warn", label: "warn" },
@@ -352,7 +343,7 @@ export function ConfigPanel(props: Props) {
           <label className="flex flex-col gap-1 text-sm">
             截图采集
             {renderSelect(props.captureScreenshotMode, (value) => props.setCaptureScreenshotMode(value as "" | "true" | "false"), "选择截图采集", [
-              { value: "", label: "不指定" },
+              { value: "", label: "自动（按内置规则决定）" },
               { value: "true", label: "开启" },
               { value: "false", label: "关闭" },
             ])}
@@ -360,7 +351,7 @@ export function ConfigPanel(props: Props) {
           <label className="flex flex-col gap-1 text-sm">
             步骤记录
             {renderSelect(props.keepStepRecordsMode, (value) => props.setKeepStepRecordsMode(value as "" | "true" | "false"), "选择步骤记录", [
-              { value: "", label: "不指定" },
+              { value: "", label: "自动（使用内置默认行为）" },
               { value: "true", label: "保留" },
               { value: "false", label: "关闭" },
             ])}
@@ -381,7 +372,7 @@ export function ConfigPanel(props: Props) {
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 Poco 端口
-                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} value={props.pocoPort} onChange={(e) => props.setPocoPort(e.target.value)} placeholder="默认空（走引擎默认端口）" />
+                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} value={props.pocoPort} onChange={(e) => props.setPocoPort(e.target.value)} placeholder="留空=按引擎默认端口（如 UNITY_3D 为 5001）" />
               </label>
             </>
           ) : null}
@@ -394,27 +385,38 @@ export function ConfigPanel(props: Props) {
       {props.configTab === "page" ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm">
+            页面理解策略
+            <span className="text-xs text-muted-foreground">控制页面控件信息来自原始节点、OCR 还是 LLM 理解</span>
+            {renderSelect(props.pageControlStrategy, (value) => props.setPageControlStrategy(value as "" | "raw" | "ocr" | "llm"), "选择页面理解策略", [
+              { value: "", label: "自动（使用内置默认策略）" },
+              { value: "raw", label: "raw" },
+              { value: "ocr", label: "ocr" },
+              { value: "llm", label: "llm" },
+            ])}
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
             页面名策略
+            <span className="text-xs text-muted-foreground">默认：使用 `structure_fingerprint`</span>
             {renderSelect(props.pageNameStrategy, (value) => props.setPageNameStrategy(value as PageNameStrategy), "选择页面名策略", [
-              { value: "", label: "不指定（按页面源自动）" },
+              { value: "", label: "自动（默认 structure_fingerprint）" },
               { value: "structure_fingerprint", label: "structure_fingerprint（结构指纹）" },
-              { value: "uia_activity_first", label: "uia_activity_first（UIA 优先 Activity）" },
-              { value: "xml_only", label: "xml_only（XML 指纹）" },
-              { value: "xml_fingerprint", label: "xml_fingerprint（XML 指纹）" },
               { value: "activity_only", label: "activity_only（仅 Activity）" },
               { value: "image_fingerprint", label: "image_fingerprint（图片指纹）" },
             ])}
           </label>
           <label className="flex flex-col gap-1 text-sm">
             滚动识别阈值
-            <input className="rounded-md border bg-background px-3 py-2" type="number" step="1" value={props.scrollInferThreshold} onChange={(e) => props.setScrollInferThreshold(e.target.value)} placeholder="默认空" />
+            <span className="text-xs text-muted-foreground">默认：5，设为 0 表示禁用滚动推断</span>
+            <input className="rounded-md border bg-background px-3 py-2" type="number" step="1" value={props.scrollInferThreshold} onChange={(e) => props.setScrollInferThreshold(e.target.value)} placeholder="留空=使用默认值 5" />
           </label>
           <label className="flex flex-col gap-1 text-sm md:col-span-2">
             图片相似度 SSIM 阈值
-            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} max={1} step="0.001" value={props.imageSimilarityThreshold} onChange={(e) => props.setImageSimilarityThreshold(e.target.value)} placeholder="例如 0.985" />
+            <span className="text-xs text-muted-foreground">默认：0.995，取值范围 0~1，越接近 1 越严格</span>
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} max={1} step="0.001" value={props.imageSimilarityThreshold} onChange={(e) => props.setImageSimilarityThreshold(e.target.value)} placeholder="留空=使用默认值 0.995" />
           </label>
           <div className="md:col-span-2 rounded-md border bg-background p-3">
             <p className="mb-2 text-sm font-medium">有效触控区域</p>
+            <p className="mb-3 text-xs text-muted-foreground">默认整图：left=0，top=0，right=1，bottom=1</p>
             <div className="mb-3 grid grid-cols-1 gap-2 rounded-md border p-2 text-xs md:grid-cols-2">
               <label className="flex flex-col gap-1">
                 左边界
@@ -449,47 +451,58 @@ export function ConfigPanel(props: Props) {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm">
             LLM 超时(ms)
-            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.llmTimeoutMs} onChange={(e) => props.setLLMTimeoutMs(e.target.value)} placeholder="默认空" />
+            <span className="text-xs text-muted-foreground">默认：15000，仅在 `page_control_strategy=llm` 时用于页面理解请求超时</span>
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.llmTimeoutMs} onChange={(e) => props.setLLMTimeoutMs(e.target.value)} placeholder="留空=使用默认值 15000" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             LLM 最大调用次数
-            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.llmMaxCalls} onChange={(e) => props.setLLMMaxCalls(e.target.value)} placeholder="默认空" />
+            <span className="text-xs text-muted-foreground">默认：0，兼容保留字段，当前不参与内置恢复决策</span>
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.llmMaxCalls} onChange={(e) => props.setLLMMaxCalls(e.target.value)} placeholder="留空=使用默认值 0" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             LLM 统计窗口步数
-            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.llmWindowSteps} onChange={(e) => props.setLLMWindowSteps(e.target.value)} placeholder="默认空" />
+            <span className="text-xs text-muted-foreground">默认：0，兼容保留字段，当前不参与内置恢复决策</span>
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.llmWindowSteps} onChange={(e) => props.setLLMWindowSteps(e.target.value)} placeholder="留空=使用默认值 0" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             恢复冷却步数
-            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.recoveryCooldownSteps} onChange={(e) => props.setRecoveryCooldownSteps(e.target.value)} placeholder="默认空" />
+            <span className="text-xs text-muted-foreground">默认：2，恢复成功后在接下来 N 步内暂停再次触发恢复</span>
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.recoveryCooldownSteps} onChange={(e) => props.setRecoveryCooldownSteps(e.target.value)} placeholder="留空=使用默认值 2" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             双态循环阈值
-            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.recoveryTwoStateLoopThreshold} onChange={(e) => props.setRecoveryTwoStateLoopThreshold(e.target.value)} placeholder="默认空" />
+            <span className="text-xs text-muted-foreground">默认：2，用于检测 A→B→A→B 这类来回循环并触发恢复</span>
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.recoveryTwoStateLoopThreshold} onChange={(e) => props.setRecoveryTwoStateLoopThreshold(e.target.value)} placeholder="留空=使用默认值 2" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             高访问阈值
-            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.recoveryHighVisitThreshold} onChange={(e) => props.setRecoveryHighVisitThreshold(e.target.value)} placeholder="默认空" />
+            <span className="text-xs text-muted-foreground">默认：8，当页面访问次数过高且近期页面变化很少时触发恢复</span>
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.recoveryHighVisitThreshold} onChange={(e) => props.setRecoveryHighVisitThreshold(e.target.value)} placeholder="留空=使用默认值 8" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             低奖励窗口
-            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.recoveryLowRewardWindow} onChange={(e) => props.setRecoveryLowRewardWindow(e.target.value)} placeholder="默认空" />
+            <span className="text-xs text-muted-foreground">默认：6，统计最近多少步页面变化，用来配合高访问阈值判断是否卡住</span>
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.recoveryLowRewardWindow} onChange={(e) => props.setRecoveryLowRewardWindow(e.target.value)} placeholder="留空=使用默认值 6" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             候选歧义 Top Gap
-            <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.01" value={props.candidateAmbiguityTopGapThreshold} onChange={(e) => props.setCandidateAmbiguityTopGapThreshold(e.target.value)} placeholder="默认空" />
+            <span className="text-xs text-muted-foreground">默认：0.15，兼容保留字段，当前不再触发内置 LLM 候选增强</span>
+            <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.01" value={props.candidateAmbiguityTopGapThreshold} onChange={(e) => props.setCandidateAmbiguityTopGapThreshold(e.target.value)} placeholder="留空=使用默认值 0.15" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             高价值页面访问上限
-            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.highValuePageVisitLimit} onChange={(e) => props.setHighValuePageVisitLimit(e.target.value)} placeholder="默认空" />
+            <span className="text-xs text-muted-foreground">默认：2，兼容保留字段，当前不再触发内置 LLM 候选增强</span>
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.highValuePageVisitLimit} onChange={(e) => props.setHighValuePageVisitLimit(e.target.value)} placeholder="留空=使用默认值 2" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             候选风险下降阈值
-            <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.candidateRiskDropThreshold} onChange={(e) => props.setCandidateRiskDropThreshold(e.target.value)} placeholder="默认空" />
+            <span className="text-xs text-muted-foreground">默认：2.1，候选动作风险分高于该值时会被直接丢弃</span>
+            <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.candidateRiskDropThreshold} onChange={(e) => props.setCandidateRiskDropThreshold(e.target.value)} placeholder="留空=使用默认值 2.1" />
           </label>
           <label className="flex flex-col gap-1 text-sm md:col-span-2">
             候选最小融合分数
-            <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.candidateMinFusionScore} onChange={(e) => props.setCandidateMinFusionScore(e.target.value)} placeholder="默认空" />
+            <span className="text-xs text-muted-foreground">默认：-0.3，融合分数低于该值的候选动作会被过滤</span>
+            <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.candidateMinFusionScore} onChange={(e) => props.setCandidateMinFusionScore(e.target.value)} placeholder="留空=使用默认值 -0.3" />
           </label>
         </div>
       ) : null}
@@ -497,8 +510,9 @@ export function ConfigPanel(props: Props) {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm md:col-span-2">
             决策算法
+            <span className="text-xs text-muted-foreground">默认：`reuse`，用于控制动作选择的核心策略</span>
             {renderSelect(props.algorithm, (value) => props.setAlgorithm(value as "" | "reuse" | "uctbandit" | "random"), "选择决策算法", [
-              { value: "", label: "不指定（使用默认）" },
+              { value: "", label: "不指定（当前默认 reuse）" },
               { value: "reuse", label: "reuse" },
               { value: "uctbandit", label: "uctbandit" },
               { value: "random", label: "random" },
@@ -511,27 +525,33 @@ export function ConfigPanel(props: Props) {
               </p>
               <label className="flex flex-col gap-1 text-sm">
                 双态循环惩罚
-                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctTwoStateLoopPenalty} onChange={(e) => props.setUctTwoStateLoopPenalty(e.target.value)} placeholder="默认空" />
+                <span className="text-xs text-muted-foreground">默认：-3.0，检测到 A↔B 往返循环时追加负奖励，降低重复选择概率</span>
+                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctTwoStateLoopPenalty} onChange={(e) => props.setUctTwoStateLoopPenalty(e.target.value)} placeholder="留空=使用默认值 -3.0" />
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 边重复惩罚
-                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctEdgeRepeatPenalty} onChange={(e) => props.setUctEdgeRepeatPenalty(e.target.value)} placeholder="默认空" />
+                <span className="text-xs text-muted-foreground">默认：-1.0，同一状态转移边重复过多时按次数叠加惩罚</span>
+                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctEdgeRepeatPenalty} onChange={(e) => props.setUctEdgeRepeatPenalty(e.target.value)} placeholder="留空=使用默认值 -1.0" />
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 边重复阈值
-                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.uctEdgeRepeatThreshold} onChange={(e) => props.setUctEdgeRepeatThreshold(e.target.value)} placeholder="默认空" />
+                <span className="text-xs text-muted-foreground">默认：2，同一条边重复超过该次数后才开始施加边重复惩罚</span>
+                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.uctEdgeRepeatThreshold} onChange={(e) => props.setUctEdgeRepeatThreshold(e.target.value)} placeholder="留空=使用默认值 2" />
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 动作冷却惩罚
-                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctActionCooldownPenalty} onChange={(e) => props.setUctActionCooldownPenalty(e.target.value)} placeholder="默认空" />
+                <span className="text-xs text-muted-foreground">默认：0.8，短时间内在同一页反复选同一动作时逐步降权</span>
+                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctActionCooldownPenalty} onChange={(e) => props.setUctActionCooldownPenalty(e.target.value)} placeholder="留空=使用默认值 0.8" />
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 最近动作窗口
-                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.uctRecentActionWindow} onChange={(e) => props.setUctRecentActionWindow(e.target.value)} placeholder="默认空" />
+                <span className="text-xs text-muted-foreground">默认：6，记录最近多少次动作选择，用于计算动作冷却惩罚</span>
+                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.uctRecentActionWindow} onChange={(e) => props.setUctRecentActionWindow(e.target.value)} placeholder="留空=使用默认值 6" />
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 脱环探索增益
-                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctLoopEscapeExploreBoost} onChange={(e) => props.setUctLoopEscapeExploreBoost(e.target.value)} placeholder="默认空" />
+                <span className="text-xs text-muted-foreground">默认：0.25，检测到明显回环时临时提高随机探索概率以尽快脱困</span>
+                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctLoopEscapeExploreBoost} onChange={(e) => props.setUctLoopEscapeExploreBoost(e.target.value)} placeholder="留空=使用默认值 0.25" />
               </label>
             </>
           ) : null}
@@ -542,32 +562,38 @@ export function ConfigPanel(props: Props) {
               </p>
               <label className="flex flex-col gap-1 text-sm">
                 探索率 epsilon
-                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} max={1} step="0.001" value={props.reuseEpsilon} onChange={(e) => props.setReuseEpsilon(e.target.value)} placeholder="例如 0.05" />
+                <span className="text-xs text-muted-foreground">默认：0.05，越大越偏向随机探索，越小越偏向复用历史高价值动作</span>
+                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} max={1} step="0.001" value={props.reuseEpsilon} onChange={(e) => props.setReuseEpsilon(e.target.value)} placeholder="留空=使用默认值 0.05" />
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 折扣因子 gamma
-                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} max={1} step="0.001" value={props.reuseGamma} onChange={(e) => props.setReuseGamma(e.target.value)} placeholder="例如 0.8" />
+                <span className="text-xs text-muted-foreground">默认：0.8，越大越重视长期回报，越小越重视短期收益</span>
+                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} max={1} step="0.001" value={props.reuseGamma} onChange={(e) => props.setReuseGamma(e.target.value)} placeholder="留空=使用默认值 0.8" />
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 N-Step 步数
-                <input className="rounded-md border bg-background px-3 py-2" type="number" min={1} step="1" value={props.reuseNStep} onChange={(e) => props.setReuseNStep(e.target.value)} placeholder="例如 5" />
+                <span className="text-xs text-muted-foreground">默认：5，学习更新时向后回看多少步奖励，越大越平滑</span>
+                <input className="rounded-md border bg-background px-3 py-2" type="number" min={1} step="1" value={props.reuseNStep} onChange={(e) => props.setReuseNStep(e.target.value)} placeholder="留空=使用默认值 5" />
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 模型保存路径
-                <input className="rounded-md border bg-background px-3 py-2 font-mono" value={props.reuseModelSavePath} onChange={(e) => props.setReuseModelSavePath(e.target.value)} placeholder="例如 ./data/reuse.model" />
+                <span className="text-xs text-muted-foreground">默认：`./&lt;包名&gt;_reuse.model`，无包名时为 `./default_reuse.model`，用于持久化历史经验</span>
+                <input className="rounded-md border bg-background px-3 py-2 font-mono" value={props.reuseModelSavePath} onChange={(e) => props.setReuseModelSavePath(e.target.value)} placeholder="留空=按包名自动生成默认路径" />
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 启用模型持久化
+                <span className="text-xs text-muted-foreground">默认：开启，关闭后不会加载也不会保存 reuse 经验模型</span>
                 {renderSelect(props.reuseEnableModelPersistenceMode, (value) => props.setReuseEnableModelPersistenceMode(value as "" | "true" | "false"), "选择是否持久化", [
-                  { value: "", label: "不指定（使用默认）" },
+                  { value: "", label: "不指定（当前默认开启）" },
                   { value: "true", label: "开启" },
                   { value: "false", label: "关闭" },
                 ])}
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 启动时重置模型
+                <span className="text-xs text-muted-foreground">默认：关闭，开启后会在启动时删除已有模型文件，从空经验重新学习</span>
                 {renderSelect(props.reuseResetModelOnStartMode, (value) => props.setReuseResetModelOnStartMode(value as "" | "true" | "false"), "选择是否重置", [
-                  { value: "", label: "不指定（使用默认）" },
+                  { value: "", label: "不指定（当前默认关闭）" },
                   { value: "true", label: "开启" },
                   { value: "false", label: "关闭" },
                 ])}

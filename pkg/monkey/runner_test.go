@@ -999,14 +999,6 @@ func TestResolvePageNameByStrategyStructureFingerprintIgnoresActivity(t *testing
 	}
 }
 
-func TestResolvePageNameByStrategyUIAActivityFirstUsesActivity(t *testing.T) {
-	xml := `<hierarchy><node widget="button"/></hierarchy>`
-	page := ResolvePageNameByStrategy(xml, nil, PageNameStrategyUIAActivityFirst, "uia", "com.demo.MainActivity")
-	if page != "com.demo.MainActivity" {
-		t.Fatalf("UIA Activity 优先策略应返回 Activity，实际: %s", page)
-	}
-}
-
 func TestRunnerUsesGojaTransformedPageInfoInWholeChain(t *testing.T) {
 	decider := &transformingDecider{
 		fakeDecider: fakeDecider{
@@ -1053,7 +1045,7 @@ func TestRunnerUsesGojaTransformedPageInfoInWholeChain(t *testing.T) {
 	}
 }
 
-func TestRunnerUsesCurrentActivityAsPageNameWhenUIA(t *testing.T) {
+func TestRunnerUsesStructureFingerprintPageNameByDefaultWhenUIA(t *testing.T) {
 	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
 	driver := &fakeDriver{
 		pageSource:      &fakePageSource{xml: `<node class="android.widget.FrameLayout"/>`},
@@ -1079,15 +1071,15 @@ func TestRunnerUsesCurrentActivityAsPageNameWhenUIA(t *testing.T) {
 	if report.StopReason != StopCompleted {
 		t.Fatalf("停止原因错误: %s", report.StopReason)
 	}
-	if decider.lastPage != "com.demo.LoginActivity" {
-		t.Fatalf("预期使用当前 Activity 作为页面名，实际: %s", decider.lastPage)
+	if !strings.HasPrefix(decider.lastPage, pageFingerprintPrefix+":") {
+		t.Fatalf("预期 UIA 默认使用结构指纹页面名，实际: %s", decider.lastPage)
 	}
-	if report.PageVisitCount["com.demo.LoginActivity"] != 1 {
-		t.Fatalf("预期使用 Activity 名参与页面统计，实际: %+v", report.PageVisitCount)
+	if report.PageVisitCount[decider.lastPage] != 1 {
+		t.Fatalf("预期使用结构指纹页面名参与页面统计，实际: %+v", report.PageVisitCount)
 	}
 }
 
-func TestRunnerUsesXMLPageNameWhenStrategyXMLOnly(t *testing.T) {
+func TestRunnerUsesXMLPageNameWhenStrategyXMLFingerprint(t *testing.T) {
 	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
 	driver := &fakeDriver{
 		pageSource:      &fakePageSource{xml: `<node class="com.demo.FromXML"/>`},
@@ -1098,7 +1090,7 @@ func TestRunnerUsesXMLPageNameWhenStrategyXMLOnly(t *testing.T) {
 		MaxSteps:         1,
 		StepInterval:     0,
 		PageSourceType:   "uia",
-		PageNameStrategy: PageNameStrategyXMLOnly,
+		PageNameStrategy: PageNameStrategyStructureFingerprint,
 		KeepStepRecords:  true,
 		StopOnCrash:      true,
 		StopOnANR:        true,
@@ -1115,7 +1107,7 @@ func TestRunnerUsesXMLPageNameWhenStrategyXMLOnly(t *testing.T) {
 		t.Fatalf("停止原因错误: %s", report.StopReason)
 	}
 	if !strings.HasPrefix(decider.lastPage, pageFingerprintPrefix+":") {
-		t.Fatalf("预期 xml_only 使用 XML 结构指纹页面名，实际: %s", decider.lastPage)
+		t.Fatalf("预期 structure_fingerprint 使用结构指纹页面名，实际: %s", decider.lastPage)
 	}
 }
 

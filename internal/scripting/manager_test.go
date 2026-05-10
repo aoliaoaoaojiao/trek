@@ -185,12 +185,12 @@ func TestLoadStaticConfigReadsCamelCasePageSourceAndTouchMode(t *testing.T) {
 
 func TestLoadStaticConfigReadsPageNameStrategy(t *testing.T) {
 	cfg, err := LoadStaticConfig(`const config = {
-  page_name_strategy: "xml_only"
+  page_name_strategy: "structure_fingerprint"
 }`)
 	if err != nil {
 		t.Fatalf("加载静态配置失败: %v", err)
 	}
-	if cfg.PageNameStrategy != "xml_only" {
+	if cfg.PageNameStrategy != "structure_fingerprint" {
 		t.Fatalf("页面名策略配置不符合预期: %q", cfg.PageNameStrategy)
 	}
 }

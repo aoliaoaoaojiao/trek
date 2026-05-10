@@ -2,7 +2,7 @@
 
 const config = {
   page_source: "uia",
-  page_name_strategy: "uia_activity_first",
+  page_name_strategy: "structure_fingerprint",
   capture_screenshot: true,
   keep_step_records: true,
 

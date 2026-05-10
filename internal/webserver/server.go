@@ -356,9 +356,9 @@ func resolvePreviewPageName(cfg ConfigPayload, pageSourceType string, xml string
 func previewPageNameStrategyNeedsActivity(cfg ConfigPayload, pageSourceType string) bool {
 	strategy := strings.ToLower(strings.TrimSpace(cfg.PageNameStrategy))
 	if strategy == "" || strategy == "auto" {
-		return strings.EqualFold(strings.TrimSpace(pageSourceType), "uia")
+		return false
 	}
-	return strategy == monkey.PageNameStrategyUIAActivityFirst || strategy == monkey.PageNameStrategyActivityOnly
+	return strategy == monkey.PageNameStrategyActivityOnly
 }
 
 func decodePayload(r *http.Request) (ConfigPayload, error) {
@@ -415,7 +415,7 @@ func BuildConfigJS(cfg ConfigPayload) (string, error) {
 	pageNameStrategy := strings.ToLower(strings.TrimSpace(cfg.PageNameStrategy))
 	if pageNameStrategy != "" {
 		switch pageNameStrategy {
-		case "uia_activity_first", "xml_only", "xml_fingerprint", "structure_fingerprint", "activity_only", "image_fingerprint":
+		case "structure_fingerprint", "activity_only", "image_fingerprint":
 		default:
 			return "", fmt.Errorf("page_name_strategy 不合法: %s", pageNameStrategy)
 		}

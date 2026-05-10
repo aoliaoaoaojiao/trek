@@ -122,11 +122,11 @@ const config = {
   // raw: 直接使用 dump 原始 XML
   // ocr: 基于截图 OCR 提取控件区域并生成伪控件树
   // llm: 基于截图 LLM 推断控件区域并生成伪控件树
-  page_control_strategy: "ocr",
+  page_control_strategy: "ocr", // 页面理解策略
 }
 ```
 
-当 `page_control_strategy` 为 `ocr` 或 `llm` 时，Trek 会自动启用截图采集；如果当前步骤拿不到 dump，会继续尝试走“截图 -> 控件区域 -> 伪 XML”链路，而不是直接中断该步。
+当“页面理解策略” `page_control_strategy` 为 `ocr` 或 `llm` 时，Trek 会自动启用截图采集；如果当前步骤拿不到 dump，会继续尝试走“截图 -> 控件区域 -> 伪 XML”链路，而不是直接中断该步。
 
 其中 `llm` 现已使用专门的“控件检测 schema”，要求模型直接返回控件区域列表（`controls`），不再复用恢复动作建议的 `candidates` schema。页面控件提示词独立存放在 Markdown 文档中，并通过 Go `embed` 加载，便于单独维护。控件输出以基础交互类型 `action_type` 为主，例如 `click`、`drag`、`swipe_*`、`input`；可选的 `control_type` 仅作为语义补充。控件 `bounds` 优先使用对象格式 `{left,top,right,bottom}`，同时兼容四元数组 `[left, top, right, bottom]`。
 
@@ -271,7 +271,7 @@ trek run --package com.example.app --capture-screenshot
 - 如果使用 Anthropic 兼容网关或米莫 Anthropic 接口，可额外配置 `ANTHROPIC_API_URL`
 - 当前带截图的页面控件检测属于多模态请求；以米莫兼容接口为例，只有 `mimo-v2.5` 与 `mimo-v2-omni` 支持图片输入，更适合这条链路
 - 这些外部服务配置统一走环境变量，不再通过 `trek run` 传入
-- 当前内置 LLM 仅用于 `page_control_strategy=llm` 的页面控件检测，不再直接参与恢复决策或候选增强
+- 当前内置 LLM 仅用于 `page_control_strategy=llm` 的页面理解/控件检测，不再直接参与恢复决策或候选增强
 
 ## 配置优先级
 

@@ -6,14 +6,8 @@ import (
 )
 
 const (
-	// PageNameStrategyUIAActivityFirst 在 UIA 页面源下优先使用当前 Activity，失败时回退 XML 解析。
-	PageNameStrategyUIAActivityFirst = "uia_activity_first"
-	// PageNameStrategyXMLOnly 始终只使用 XML 结构指纹解析页面名。
-	PageNameStrategyXMLOnly = "xml_only"
 	// PageNameStrategyActivityOnly 始终只使用当前 Activity，失败时返回 UnknownPage。
 	PageNameStrategyActivityOnly = "activity_only"
-	// PageNameStrategyXMLFingerprint 显式使用 XML 结构指纹解析页面名。
-	PageNameStrategyXMLFingerprint = "xml_fingerprint"
 	// PageNameStrategyStructureFingerprint 显式使用页面树结构指纹解析页面名。
 	PageNameStrategyStructureFingerprint = "structure_fingerprint"
 	// PageNameStrategyImageFingerprint 基于截图生成页面指纹，适用于 XML dump 不可用的场景。
@@ -31,14 +25,9 @@ func resolveBasePageNameByStrategy(ctx context.Context, r *Runner, xml string, s
 			return r.cfg.PageNameResolverEx.ResolvePageName(xml, screenshot)
 		}
 		return resolveFallbackPageName(xml, r.cfg.PageNameResolver)
-	case PageNameStrategyXMLOnly, PageNameStrategyXMLFingerprint, PageNameStrategyStructureFingerprint:
+	case PageNameStrategyStructureFingerprint:
 		return ResolvePageNameByStrategy(xml, r.cfg.PageNameResolver, strategy, r.cfg.PageSourceType, "")
 	case PageNameStrategyActivityOnly:
-		if activity, ok := resolveCurrentActivityName(ctx, r.driver); ok {
-			return ResolvePageNameByStrategy(xml, r.cfg.PageNameResolver, strategy, r.cfg.PageSourceType, activity)
-		}
-		return ResolvePageNameByStrategy(xml, r.cfg.PageNameResolver, strategy, r.cfg.PageSourceType, "")
-	case PageNameStrategyUIAActivityFirst:
 		if activity, ok := resolveCurrentActivityName(ctx, r.driver); ok {
 			return ResolvePageNameByStrategy(xml, r.cfg.PageNameResolver, strategy, r.cfg.PageSourceType, activity)
 		}
@@ -53,18 +42,13 @@ func ResolvePageNameByStrategy(xml string, resolver PageNameResolver, strategy s
 	normalized := normalizePageNameStrategy(strategy, pageSourceType)
 	activity := strings.TrimSpace(currentActivity)
 	switch normalized {
-	case PageNameStrategyXMLOnly, PageNameStrategyXMLFingerprint, PageNameStrategyStructureFingerprint:
+	case PageNameStrategyStructureFingerprint:
 		return ResolvePageName(xml, resolver)
 	case PageNameStrategyActivityOnly:
 		if activity != "" {
 			return activity
 		}
 		return "UnknownPage"
-	case PageNameStrategyUIAActivityFirst:
-		if activity != "" {
-			return activity
-		}
-		return ResolvePageName(xml, resolver)
 	case PageNameStrategyImageFingerprint:
 		// image_fingerprint 需要截图，外部调用方无法提供，fallback 到 XML 解析。
 		return ResolvePageName(xml, resolver)
@@ -76,18 +60,9 @@ func ResolvePageNameByStrategy(xml string, resolver PageNameResolver, strategy s
 func normalizePageNameStrategy(strategy string, pageSourceType string) string {
 	text := strings.ToLower(strings.TrimSpace(strategy))
 	if text == "" || text == "auto" {
-		if strings.EqualFold(strings.TrimSpace(pageSourceType), string(defaultPageSourceType)) {
-			return PageNameStrategyUIAActivityFirst
-		}
-		return PageNameStrategyXMLOnly
+		return PageNameStrategyStructureFingerprint
 	}
 	switch text {
-	case PageNameStrategyUIAActivityFirst:
-		return PageNameStrategyUIAActivityFirst
-	case PageNameStrategyXMLOnly:
-		return PageNameStrategyXMLOnly
-	case PageNameStrategyXMLFingerprint:
-		return PageNameStrategyXMLFingerprint
 	case PageNameStrategyStructureFingerprint:
 		return PageNameStrategyStructureFingerprint
 	case PageNameStrategyActivityOnly:
@@ -96,10 +71,7 @@ func normalizePageNameStrategy(strategy string, pageSourceType string) string {
 		return PageNameStrategyImageFingerprint
 	default:
 		// 未知策略按 auto 处理，确保兼容。
-		if strings.EqualFold(strings.TrimSpace(pageSourceType), string(defaultPageSourceType)) {
-			return PageNameStrategyUIAActivityFirst
-		}
-		return PageNameStrategyXMLOnly
+		return PageNameStrategyStructureFingerprint
 	}
 }
 

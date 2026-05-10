@@ -96,9 +96,6 @@ export type PartialConfigPayload = Partial<{
 
 export type PageNameStrategy =
   | ""
-  | "uia_activity_first"
-  | "xml_only"
-  | "xml_fingerprint"
   | "structure_fingerprint"
   | "activity_only"
   | "image_fingerprint"

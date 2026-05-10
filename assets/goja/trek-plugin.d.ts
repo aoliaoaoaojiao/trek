@@ -251,9 +251,6 @@ declare namespace Trek {
   type TouchMode = "adb" | "motion" | "uia"
   type PageControlStrategy = "raw" | "ocr" | "llm"
   type PageNameStrategy =
-    | "uia_activity_first"
-    | "xml_only"
-    | "xml_fingerprint"
     | "structure_fingerprint"
     | "activity_only"
     | "image_fingerprint"
@@ -346,7 +343,7 @@ declare namespace Trek {
     page_source?: PageSourceType
     /** 指定 monkey 运行使用的触控模式。默认 "motion" */
     touch_mode?: TouchMode
-    /** 指定页面名生成策略（不填时按页面源自动选择：UIA 默认 uia_activity_first，Poco 默认 xml_only） */
+    /** 指定页面名生成策略（不填时默认使用 structure_fingerprint） */
     page_name_strategy?: PageNameStrategy
     /**
      * 页面控件信息获取策略。

@@ -23,9 +23,6 @@ import type {
 
 const pageNameStrategies: PageNameStrategy[] = [
   "",
-  "uia_activity_first",
-  "xml_only",
-  "xml_fingerprint",
   "structure_fingerprint",
   "activity_only",
   "image_fingerprint",

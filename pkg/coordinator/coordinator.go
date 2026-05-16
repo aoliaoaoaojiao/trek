@@ -673,7 +673,7 @@ func (s *Coordinator) buildPageInfoByStrategy(pageName string, input ActionInput
 		return PageInfo{}, err
 	}
 
-	syntheticXML := buildSyntheticXMLFromCandidates(candidates, input.Screenshot)
+	syntheticXML := buildSyntheticXMLFromCandidates(strategy, candidates, input.Screenshot)
 	if strings.TrimSpace(syntheticXML) == "" {
 		return info, nil
 	}
@@ -747,7 +747,7 @@ func normalizePageControlStrategy(strategy string) string {
 	}
 }
 
-func buildSyntheticXMLFromCandidates(items []perception.Candidate, screenshot []byte) string {
+func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candidate, screenshot []byte) string {
 	width, height := decodeScreenshotSize(screenshot)
 	if width <= 0 {
 		width = 1000
@@ -796,10 +796,15 @@ func buildSyntheticXMLFromCandidates(items []perception.Candidate, screenshot []
 		return ""
 	}
 
+	rootExtraAttr := ""
+	if strategy == pageControlStrategyLLM {
+		rootExtraAttr = ` trek-scroll-infer-disabled="true"`
+	}
+
 	var b strings.Builder
 	b.WriteString(`<hierarchy rotation="0">`)
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf(`  <node index="0" text="" resource-id="" class="android.widget.FrameLayout" content-desc="" clickable="false" enabled="true" bounds="[0,0][%d,%d]">`, width, height))
+	b.WriteString(fmt.Sprintf(`  <node index="0" text="" resource-id="" class="android.widget.FrameLayout" content-desc="" clickable="false" enabled="true"%s bounds="[0,0][%d,%d]">`, rootExtraAttr, width, height))
 	b.WriteString("\n")
 	for i, node := range nodes {
 		b.WriteString(fmt.Sprintf(`    <node index="%d" text="%s" resource-id="visual_%d" class="%s" content-desc="%s" clickable="true" long-clickable="false" enabled="true" bounds="%s"/>`,

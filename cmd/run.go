@@ -127,6 +127,9 @@ func runMonkey(logLevelStr string, opts struct {
 	if err != nil {
 		return err
 	}
+	if pageSourceType == "screenshot" {
+		opts.captureScreenshot = true
+	}
 	touchMode, touchType, err := android.ResolveTouchMode(staticCfg.TouchMode)
 	if err != nil {
 		return err
@@ -267,6 +270,15 @@ func normalizePageControlStrategy(strategy string) string {
 
 // probePageName 输出当前程序判定的页面名，便于调试页面识别逻辑。
 func probePageName(driver *android.AndroidDriver, cfg monkey.Config) error {
+	if strings.EqualFold(strings.TrimSpace(cfg.PageSourceType), "screenshot") {
+		screenshot, err := driver.Screenshot(context.Background())
+		if err != nil {
+			return fmt.Errorf("获取截图失败: %w", err)
+		}
+		pageName := monkey.ResolveImageFingerprintPageName(screenshot, cfg.ImageFingerprintRegions)
+		fmt.Printf("当前页面名: %s\n", pageName)
+		return nil
+	}
 	pageSource := driver.GetPageSource(cfg.PageSourceType)
 	if pageSource == nil {
 		return fmt.Errorf("页面源不可用: %s", cfg.PageSourceType)

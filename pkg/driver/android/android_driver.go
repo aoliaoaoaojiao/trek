@@ -576,6 +576,12 @@ func (a *AndroidDriver) CheckEnvironment(pageSourceType string) (*common.Environ
 	}
 	result.DeviceReady = true
 
+	if strings.EqualFold(strings.TrimSpace(pageSourceType), "screenshot") {
+		result.PageSourceReady = true
+		result.Detail = "screenshot 模式仅依赖设备截图"
+		return result, nil
+	}
+
 	if a.GetPageSource(pageSourceType) == nil {
 		result.Detail = "页面源不可用"
 		return result, fmt.Errorf("页面源不可用: %s", pageSourceType)

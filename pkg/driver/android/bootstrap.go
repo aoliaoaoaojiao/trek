@@ -27,8 +27,10 @@ func ResolvePageSourceType(value string) (string, error) {
 		return "uia", nil
 	case "poco":
 		return "poco", nil
+	case "screenshot":
+		return "screenshot", nil
 	default:
-		return "", fmt.Errorf("不支持的页面源类型: %s（可选: uia, poco）", pageSource)
+		return "", fmt.Errorf("不支持的页面源类型: %s（可选: uia, poco, screenshot）", pageSource)
 	}
 }
 

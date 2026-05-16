@@ -117,8 +117,8 @@ declare namespace Trek {
     step: number
     /** 被测应用包名 */
     package_name: string
-    /** 页面源类型，例如 "uia" / "poco" */
-    page_source_type: string
+      /** 页面源类型，例如 "uia" / "poco" / "screenshot" */
+      page_source_type: string
     /** 上一步动作（如有） */
     last_action?: Action
     /** 上一步错误信息（如有） */
@@ -167,8 +167,8 @@ declare namespace Trek {
   interface LifecycleContext {
     /** 被测应用包名 */
     package_name: string
-    /** 页面源类型，例如 "uia" / "poco" */
-    page_source_type: string
+      /** 页面源类型，例如 "uia" / "poco" / "screenshot" */
+      page_source_type: string
   }
 
   // ── 插件钩子 ─────────────────────────────────────────────────
@@ -247,7 +247,7 @@ declare namespace Trek {
   // ── 配置枚举 ─────────────────────────────────────────────────
 
   type LogLevel = "debug" | "info" | "warn" | "warning" | "error" | "fatal"
-  type PageSourceType = "uia" | "poco"
+  type PageSourceType = "uia" | "poco" | "screenshot"
   type TouchMode = "adb" | "motion" | "uia"
   type PageControlStrategy = "raw" | "ocr" | "llm"
   type PageNameStrategy =
@@ -339,8 +339,8 @@ declare namespace Trek {
     algorithm?: AlgorithmType
     /** 外部插件脚本路径列表 */
     plugins?: string[]
-    /** 指定 monkey 运行使用的页面源类型。默认 "uia" */
-    page_source?: PageSourceType
+      /** 指定 monkey 运行使用的页面源类型。默认 "uia"，可选 "uia" / "poco" / "screenshot"。选择 "screenshot" 时会按截图驱动页面识别，并默认开启每步截图。 */
+      page_source?: PageSourceType
     /** 指定 monkey 运行使用的触控模式。默认 "motion" */
     touch_mode?: TouchMode
     /** 指定页面名生成策略（不填时默认使用 structure_fingerprint） */
@@ -353,8 +353,8 @@ declare namespace Trek {
      * 当策略为 `ocr` 或 `llm` 时，运行期会自动启用截图采集。
      */
     page_control_strategy?: PageControlStrategy
-    /** 是否采集截图给决策层。默认 false */
-    capture_screenshot?: boolean
+      /** 是否采集截图给决策层。默认 false；当 page_source="screenshot" 或页面理解策略不是 raw 时会自动开启。 */
+      capture_screenshot?: boolean
     /** 是否保留每步记录。默认 true */
     keep_step_records?: boolean
     /**
@@ -427,7 +427,10 @@ declare namespace Trek {
     /**
      * 滚动推断阈值。
      * 当 UI 元素的可点击子节点数 >= 此值时，自动推断为可滚动容器。
-     * 用于解决 Poco/Unity 游戏 UI 未声明 ScrollRect 的场景。0 禁用推断。默认 5
+     * 默认 5，设为 0 表示关闭推断。
+     * 值越小越激进，更容易把容器识别成可滚动；值越大越保守，误判更少但也更容易漏掉真实可滚动区域。
+     * raw 模式下最有效，ocr 模式下仍可生效但精度较弱；llm 模式下当前已禁用此推断。
+     * 主要用于解决 Poco/Unity 游戏 UI 未声明 ScrollRect 的场景。
      */
     scroll_infer_threshold?: number
     /** UIA 端口相关配置 */

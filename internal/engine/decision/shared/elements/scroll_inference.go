@@ -1,6 +1,7 @@
 package elements
 
 import (
+	"fmt"
 	"trek/internal/engine/core/types"
 	"trek/logger"
 )
@@ -19,6 +20,9 @@ func InferScrollableElements(root types.IElement, threshold int) {
 // 返回值表示当前元素是否被推断为可滚动（用于父级决策：避免重复标记宽泛的祖先容器）。
 func inferScrollable(elem types.IElement, threshold int) bool {
 	if elem == nil {
+		return false
+	}
+	if isScrollInferenceDisabled(elem) {
 		return false
 	}
 
@@ -71,4 +75,20 @@ func countClickableDescendants(elem types.IElement) int {
 		count += countClickableDescendants(child)
 	}
 	return count
+}
+
+func isScrollInferenceDisabled(elem types.IElement) bool {
+	if elem == nil {
+		return false
+	}
+	value := elem.GetAttr("trek-scroll-infer-disabled")
+	if value == nil {
+		return false
+	}
+	switch fmt.Sprint(value) {
+	case "true", "TRUE", "True", "1":
+		return true
+	default:
+		return false
+	}
 }

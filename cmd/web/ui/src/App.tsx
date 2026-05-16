@@ -86,7 +86,7 @@ function boolValueToMode(value: boolean | null | undefined): "" | "true" | "fals
 }
 
 export function App() {
-  const [pageSource, setPageSource] = useState<"uia" | "poco">("uia")
+  const [pageSource, setPageSource] = useState<"uia" | "poco" | "screenshot">("uia")
   const [pageNameStrategy, setPageNameStrategy] = useState<PageNameStrategy>("structure_fingerprint")
   const [touchMode, setTouchMode] = useState<"motion" | "uia" | "adb">("motion")
   const [deviceSerial, setDeviceSerial] = useState("")
@@ -179,6 +179,17 @@ export function App() {
     void fetchDevices()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (pageSource === "screenshot") {
+      if (captureScreenshotMode !== "true") {
+        setCaptureScreenshotMode("true")
+      }
+      if (pageNameStrategy === "structure_fingerprint") {
+        setPageNameStrategy("image_fingerprint")
+      }
+    }
+  }, [captureScreenshotMode, pageNameStrategy, pageSource])
 
   const parsedDump = useMemo(() => parseDumpTree(xmlPreview), [xmlPreview])
 
@@ -440,7 +451,11 @@ export function App() {
 
   const handleImportConfig = (source: string) => {
     const imported = parseConfigSource(source)
-    if (imported.page_source === "uia" || imported.page_source === "poco") {
+    if (
+      imported.page_source === "uia" ||
+      imported.page_source === "poco" ||
+      imported.page_source === "screenshot"
+    ) {
       setPageSource(imported.page_source)
     }
     if (isPageNameStrategy(imported.page_name_strategy)) {

@@ -308,16 +308,19 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = driver.Close() }()
 
-	pageSource := driver.GetPageSource(pageSourceType)
-	if pageSource == nil {
-		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: fmt.Sprintf("页面源不可用: %s", pageSourceType)})
-		return
-	}
+	xml := ""
+	if pageSourceType != "screenshot" {
+		pageSource := driver.GetPageSource(pageSourceType)
+		if pageSource == nil {
+			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: fmt.Sprintf("页面源不可用: %s", pageSourceType)})
+			return
+		}
 
-	xml, err := pageSource.DumpPageSource()
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: fmt.Sprintf("获取页面 dump 失败: %v", err)})
-		return
+		xml, err = pageSource.DumpPageSource()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: fmt.Sprintf("获取页面 dump 失败: %v", err)})
+			return
+		}
 	}
 
 	screenshot, err := driver.Screenshot(r.Context())
@@ -336,7 +339,7 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 			activityName = strings.TrimSpace(activity)
 		}
 	}
-	pageName := resolvePreviewPageName(req.Config, pageSourceType, xml, activityName)
+	pageName := resolvePreviewPageName(req.Config, pageSourceType, xml, screenshot, activityName)
 
 	writeJSON(w, http.StatusOK, PreviewResponse{
 		UsedSerial:       strings.TrimSpace(driver.Name()),
@@ -349,7 +352,10 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 
 // --- 辅助函数 ---
 
-func resolvePreviewPageName(cfg ConfigPayload, pageSourceType string, xml string, activityName string) string {
+func resolvePreviewPageName(cfg ConfigPayload, pageSourceType string, xml string, screenshot []byte, activityName string) string {
+	if strings.EqualFold(strings.TrimSpace(cfg.PageNameStrategy), monkey.PageNameStrategyImageFingerprint) {
+		return monkey.ResolveImageFingerprintPageName(screenshot, nil)
+	}
 	return monkey.ResolvePageNameByStrategy(xml, nil, cfg.PageNameStrategy, pageSourceType, activityName)
 }
 
@@ -400,8 +406,8 @@ func BuildConfigJS(cfg ConfigPayload) (string, error) {
 	if pageSource == "" {
 		pageSource = "uia"
 	}
-	if pageSource != "uia" && pageSource != "poco" {
-		return "", fmt.Errorf("page_source 仅支持 uia 或 poco")
+	if pageSource != "uia" && pageSource != "poco" && pageSource != "screenshot" {
+		return "", fmt.Errorf("page_source 仅支持 uia / poco / screenshot")
 	}
 
 	touchMode := strings.ToLower(strings.TrimSpace(cfg.TouchMode))
@@ -480,7 +486,9 @@ func BuildConfigJS(cfg ConfigPayload) (string, error) {
 	if cfg.SkipAll {
 		b.WriteString("  skip_all_actions_from_model: true,\n")
 	}
-	if cfg.CaptureScreenshot != nil {
+	if pageSource == "screenshot" {
+		b.WriteString("  capture_screenshot: true,\n")
+	} else if cfg.CaptureScreenshot != nil {
 		b.WriteString(fmt.Sprintf("  capture_screenshot: %t,\n", *cfg.CaptureScreenshot))
 	}
 	if cfg.KeepStepRecords != nil {

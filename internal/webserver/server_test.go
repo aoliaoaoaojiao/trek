@@ -59,12 +59,31 @@ func TestResolvePreviewPageNameUsesSelectedStrategy(t *testing.T) {
 		PageSource:       "poco",
 		PageNameStrategy: "structure_fingerprint",
 	}
-	pageName := resolvePreviewPageName(cfg, "poco", `<hierarchy><node widget="button"/></hierarchy>`, "com.unity3d.player")
+	pageName := resolvePreviewPageName(cfg, "poco", `<hierarchy><node widget="button"/></hierarchy>`, nil, "com.unity3d.player")
 	if strings.HasPrefix(pageName, "com.unity3d") {
 		t.Fatalf("预览页面名不应绕过结构指纹策略返回 Activity: %s", pageName)
 	}
 	if !strings.HasPrefix(pageName, "XMLPage:") {
 		t.Fatalf("预期结构指纹页面名，实际: %s", pageName)
+	}
+}
+
+func TestBuildConfigJS_ScreenshotPageSourceForcesCaptureScreenshot(t *testing.T) {
+	cfg := ConfigPayload{
+		PageSource: "screenshot",
+		TouchMode:  "motion",
+	}
+	js, err := BuildConfigJS(cfg)
+	if err != nil {
+		t.Fatalf("buildConfigJS screenshot 页面源失败: %v", err)
+	}
+	for _, expected := range []string{
+		`page_source: "screenshot"`,
+		`capture_screenshot: true`,
+	} {
+		if !strings.Contains(js, expected) {
+			t.Fatalf("未输出字段 %q: %s", expected, js)
+		}
 	}
 }
 

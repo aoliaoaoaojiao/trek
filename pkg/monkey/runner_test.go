@@ -1182,6 +1182,42 @@ func TestRunnerUsesImageFingerprintPageNameWhenStrategyImageFingerprint(t *testi
 	}
 }
 
+func TestRunnerSupportsScreenshotPageSource(t *testing.T) {
+	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
+	driver := &fakeDriver{}
+
+	runner, err := NewRunner(decider, driver, Config{
+		MaxSteps:          1,
+		StepInterval:      0,
+		PageSourceType:    "screenshot",
+		PageNameStrategy:  PageNameStrategyImageFingerprint,
+		CaptureScreenshot: true,
+		KeepStepRecords:   true,
+		StopOnCrash:       true,
+		StopOnANR:         true,
+		ImageSignatureFunc: func(data []byte) string {
+			if len(data) == 0 {
+				return ""
+			}
+			return imageFingerprintPrefix + ":shot"
+		},
+	})
+	if err != nil {
+		t.Fatalf("创建 runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("运行 monkey 失败: %v", err)
+	}
+	if report.StopReason != StopCompleted {
+		t.Fatalf("停止原因错误: %s", report.StopReason)
+	}
+	if decider.lastPage != imageFingerprintPrefix+":shot" {
+		t.Fatalf("预期 screenshot 页面源使用截图签名页面名，实际: %s", decider.lastPage)
+	}
+}
+
 func TestRunnerUsesUnknownWhenStrategyActivityOnlyAndNoActivity(t *testing.T) {
 	decider := &fakeDecider{commands: []*types.ActionCommand{{Act: types.CLICK, Pos: *types.NewRect(0, 0, 100, 100)}}}
 	driver := &fakeDriver{

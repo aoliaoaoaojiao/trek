@@ -1,5 +1,5 @@
 export type ConfigPayload = {
-  page_source: "uia" | "poco"
+  page_source: "uia" | "poco" | "screenshot"
   page_name_strategy: PageNameStrategy
   touch_mode: "motion" | "uia" | "adb"
   skip_all_actions_from_model: boolean
@@ -47,7 +47,7 @@ export type ConfigPayload = {
 }
 
 export type PartialConfigPayload = Partial<{
-  page_source: "uia" | "poco"
+  page_source: "uia" | "poco" | "screenshot"
   page_name_strategy: PageNameStrategy
   touch_mode: "motion" | "uia" | "adb"
   skip_all_actions_from_model: boolean

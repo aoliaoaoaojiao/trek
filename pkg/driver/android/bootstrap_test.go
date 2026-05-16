@@ -10,6 +10,13 @@ func TestResolvePageSourceType(t *testing.T) {
 	if got != "uia" {
 		t.Fatalf("默认页面源应为 uia，实际: %s", got)
 	}
+	got, err = ResolvePageSourceType("screenshot")
+	if err != nil {
+		t.Fatalf("screenshot 页面源解析失败: %v", err)
+	}
+	if got != "screenshot" {
+		t.Fatalf("screenshot 页面源解析错误，实际: %s", got)
+	}
 }
 
 func TestResolveTouchMode(t *testing.T) {

@@ -118,3 +118,19 @@ func TestInferScrollableElements(t *testing.T) {
 func TestScrollInferThresholdDefault(t *testing.T) {
 	assert.Equal(t, 5, coretypes.ScrollInferThreshold)
 }
+
+func TestInferScrollableElementsSkipWhenDisabledByAttr(t *testing.T) {
+	origThreshold := coretypes.ScrollInferThreshold
+	defer func() { coretypes.ScrollInferThreshold = origThreshold }()
+	coretypes.ScrollInferThreshold = 3
+
+	xml := `<node class="uia.widget.FrameLayout" trek-scroll-infer-disabled="true" bounds="[0,0][100,200]">
+		<node class="uia.widget.Button" clickable="true" bounds="[10,20][90,80]"/>
+		<node class="uia.widget.Button" clickable="true" bounds="[10,90][90,150]"/>
+		<node class="uia.widget.Button" clickable="true" bounds="[10,160][90,220]"/>
+	</node>`
+
+	elem, err := CreateAndroidElementFromXml(xml)
+	assert.NoError(t, err)
+	assert.Equal(t, types.NONE, elem.GetScrollType(), "禁用标记存在时不应推断滚动能力")
+}

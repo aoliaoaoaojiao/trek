@@ -251,6 +251,9 @@ func TestSessionTransformPageInfoWithLLMPageControlStrategy(t *testing.T) {
 	if !strings.Contains(info.XML, `text="确认按钮"`) {
 		t.Fatalf("预期生成 LLM 控件提示，实际 XML: %s", info.XML)
 	}
+	if !strings.Contains(info.XML, `trek-scroll-infer-disabled="true"`) {
+		t.Fatalf("LLM 合成 XML 应显式禁用滚动推断，实际 XML: %s", info.XML)
+	}
 }
 
 func TestSessionBeforeDecideUsesGojaPluginAction(t *testing.T) {

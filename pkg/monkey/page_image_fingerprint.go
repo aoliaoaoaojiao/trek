@@ -15,3 +15,8 @@ func resolveImageFingerprintPageName(screenshot []byte, custom func([]byte) stri
 	}
 	return strings.TrimSpace(defaultImageFingerprintNameWithRegions(screenshot, regions))
 }
+
+// ResolveImageFingerprintPageName 基于截图生成页面名，供 web 预览等外部入口复用。
+func ResolveImageFingerprintPageName(screenshot []byte, regions []ImageFingerprintRegion) string {
+	return resolveImageFingerprintPageName(screenshot, nil, regions)
+}

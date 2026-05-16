@@ -40,8 +40,8 @@ type Props = {
   onRefreshDevices: () => void
   usedSerial: string
   currentPackageName: string
-  pageSource: "uia" | "poco"
-  setPageSource: (value: "uia" | "poco") => void
+  pageSource: "uia" | "poco" | "screenshot"
+  setPageSource: (value: "uia" | "poco" | "screenshot") => void
   pageNameStrategy: PageNameStrategy
   setPageNameStrategy: (value: PageNameStrategy) => void
   touchMode: "motion" | "uia" | "adb"
@@ -153,10 +153,11 @@ export function ConfigPanel(props: Props) {
     value: string,
     onValueChange: (value: string) => void,
     placeholder: string,
-    options: SelectOption[]
+    options: SelectOption[],
+    disabled = false
   ) => (
-    <Select value={value === "" ? emptySelectValue : value} onValueChange={(next) => onValueChange(next === emptySelectValue ? "" : next)}>
-      <SelectTrigger className="w-full bg-background px-3 py-2">
+    <Select value={value === "" ? emptySelectValue : value} onValueChange={(next) => onValueChange(next === emptySelectValue ? "" : next)} disabled={disabled}>
+      <SelectTrigger className="w-full bg-background px-3 py-2 disabled:cursor-not-allowed disabled:opacity-60">
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
@@ -313,9 +314,13 @@ export function ConfigPanel(props: Props) {
           </label>
           <label className="flex flex-col gap-1 text-sm">
             页面源
-            {renderSelect(props.pageSource, (value) => props.setPageSource(value as "uia" | "poco"), "选择页面源", [
+            <span className="text-xs text-muted-foreground">
+              选择 `screenshot` 时，运行过程会默认每一步都截图，并优先适合配合 `image_fingerprint` 使用
+            </span>
+            {renderSelect(props.pageSource, (value) => props.setPageSource(value as "uia" | "poco" | "screenshot"), "选择页面源", [
               { value: "uia", label: "uia" },
               { value: "poco", label: "poco" },
+              { value: "screenshot", label: "screenshot" },
             ])}
           </label>
           <label className="flex flex-col gap-1 text-sm">
@@ -342,11 +347,22 @@ export function ConfigPanel(props: Props) {
           </label>
           <label className="flex flex-col gap-1 text-sm">
             截图采集
-            {renderSelect(props.captureScreenshotMode, (value) => props.setCaptureScreenshotMode(value as "" | "true" | "false"), "选择截图采集", [
-              { value: "", label: "自动（按内置规则决定）" },
-              { value: "true", label: "开启" },
-              { value: "false", label: "关闭" },
-            ])}
+            <span className="text-xs text-muted-foreground">
+              {props.pageSource === "screenshot"
+                ? "页面源为 screenshot 时固定开启，默认每一步都会截图"
+                : "默认：自动；当页面理解策略不是 raw 时也会自动开启"}
+            </span>
+            {renderSelect(
+              props.pageSource === "screenshot" ? "true" : props.captureScreenshotMode,
+              (value) => props.setCaptureScreenshotMode(value as "" | "true" | "false"),
+              "选择截图采集",
+              [
+                { value: "", label: "自动（按内置规则决定）" },
+                { value: "true", label: "开启" },
+                { value: "false", label: "关闭" },
+              ],
+              props.pageSource === "screenshot"
+            )}
           </label>
           <label className="flex flex-col gap-1 text-sm">
             步骤记录
@@ -396,9 +412,11 @@ export function ConfigPanel(props: Props) {
           </label>
           <label className="flex flex-col gap-1 text-sm">
             页面名策略
-            <span className="text-xs text-muted-foreground">默认：使用 `structure_fingerprint`</span>
+            <span className="text-xs text-muted-foreground">
+              默认：普通页面源使用 `structure_fingerprint`，截图页面源更适合 `image_fingerprint`
+            </span>
             {renderSelect(props.pageNameStrategy, (value) => props.setPageNameStrategy(value as PageNameStrategy), "选择页面名策略", [
-              { value: "", label: "自动（默认 structure_fingerprint）" },
+              { value: "", label: "自动（普通源默认 structure_fingerprint）" },
               { value: "structure_fingerprint", label: "structure_fingerprint（结构指纹）" },
               { value: "activity_only", label: "activity_only（仅 Activity）" },
               { value: "image_fingerprint", label: "image_fingerprint（图片指纹）" },
@@ -406,8 +424,20 @@ export function ConfigPanel(props: Props) {
           </label>
           <label className="flex flex-col gap-1 text-sm">
             滚动识别阈值
-            <span className="text-xs text-muted-foreground">默认：5，设为 0 表示禁用滚动推断</span>
-            <input className="rounded-md border bg-background px-3 py-2" type="number" step="1" value={props.scrollInferThreshold} onChange={(e) => props.setScrollInferThreshold(e.target.value)} placeholder="留空=使用默认值 5" />
+              <span className="text-xs text-muted-foreground">
+                {props.pageControlStrategy === "llm"
+                  ? "默认：5；LLM 模式下已禁用此推断，修改该值不会生效，避免对合成控件树误判滚动容器"
+                  : "默认：5；值越小越容易生成滚动动作，值越大越保守，0 表示关闭；raw 模式最有效，ocr 模式作用较弱"}
+              </span>
+            <input
+              className="rounded-md border bg-background px-3 py-2 disabled:cursor-not-allowed disabled:opacity-60"
+              type="number"
+              step="1"
+              value={props.scrollInferThreshold}
+              onChange={(e) => props.setScrollInferThreshold(e.target.value)}
+              placeholder={props.pageControlStrategy === "llm" ? "LLM 模式下固定禁用" : "留空=使用默认值 5"}
+              disabled={props.pageControlStrategy === "llm"}
+            />
           </label>
           <label className="flex flex-col gap-1 text-sm md:col-span-2">
             图片相似度 SSIM 阈值

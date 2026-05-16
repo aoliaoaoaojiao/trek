@@ -388,7 +388,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	logger.Infof("monkey preflight ok: detail=%+v", checkResult)
 
 	pageSource := r.driver.GetPageSource(r.cfg.PageSourceType)
-	if pageSource == nil {
+	if pageSource == nil && !r.isScreenshotPageSource() {
 		return nil, fmt.Errorf("页面源不可用: %s", r.cfg.PageSourceType)
 	}
 
@@ -444,14 +444,50 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			continue
 		}
 
-		xml, err := pageSource.DumpPageSource()
-		var screenshot []byte
-		if err != nil {
-			if r.shouldUseImagePageControlFallback() {
-				screenshot, _ = r.driver.Screenshot(ctx)
-				if len(screenshot) > 0 {
-					logger.Warnf("monkey step=%d dump page source failed, fallback to screenshot strategy=%s: %v", step, r.cfg.PageControlStrategy, err)
-					xml = ""
+		var (
+			xml        string
+			screenshot []byte
+			err        error
+		)
+		if r.isScreenshotPageSource() {
+			screenshot, err = r.driver.Screenshot(ctx)
+			if err != nil || len(screenshot) == 0 {
+				if err != nil {
+					record.Err = err.Error()
+					logger.Warnf("monkey step=%d screenshot page source failed: %v", step, err)
+				} else {
+					record.Err = "截图页面源为空"
+					logger.Warnf("monkey step=%d screenshot page source is empty", step)
+				}
+				r.markFailed(report, record, stepStart)
+				if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
+					report.StopReason = StopMaxConsecutiveFailures
+					return report, nil
+				}
+				r.tryRecover(report.ConsecutiveFailures)
+				r.sleepStep(ctx, r.cfg.StepInterval)
+				continue
+			}
+		} else {
+			xml, err = pageSource.DumpPageSource()
+			if err != nil {
+				if r.shouldUseImagePageControlFallback() {
+					screenshot, _ = r.driver.Screenshot(ctx)
+					if len(screenshot) > 0 {
+						logger.Warnf("monkey step=%d dump page source failed, fallback to screenshot strategy=%s: %v", step, r.cfg.PageControlStrategy, err)
+						xml = ""
+					} else {
+						record.Err = err.Error()
+						r.markFailed(report, record, stepStart)
+						logger.Warnf("monkey step=%d dump page source failed: %v", step, err)
+						if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
+							report.StopReason = StopMaxConsecutiveFailures
+							return report, nil
+						}
+						r.tryRecover(report.ConsecutiveFailures)
+						r.sleepStep(ctx, r.cfg.StepInterval)
+						continue
+					}
 				} else {
 					record.Err = err.Error()
 					r.markFailed(report, record, stepStart)
@@ -464,17 +500,6 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 					r.sleepStep(ctx, r.cfg.StepInterval)
 					continue
 				}
-			} else {
-				record.Err = err.Error()
-				r.markFailed(report, record, stepStart)
-				logger.Warnf("monkey step=%d dump page source failed: %v", step, err)
-				if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
-					report.StopReason = StopMaxConsecutiveFailures
-					return report, nil
-				}
-				r.tryRecover(report.ConsecutiveFailures)
-				r.sleepStep(ctx, r.cfg.StepInterval)
-				continue
 			}
 		}
 
@@ -607,16 +632,23 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 }
 
 func (r *Runner) capturePageSnapshot(ctx context.Context, pageSource common.IPageSource, fallbackPageName string) *coordinator.PageSnapshot {
-	if pageSource == nil {
+	if pageSource == nil && !r.isScreenshotPageSource() {
 		return nil
 	}
-	xml, err := pageSource.DumpPageSource()
-	if err != nil {
-		return nil
+	xml := ""
+	if pageSource != nil {
+		var err error
+		xml, err = pageSource.DumpPageSource()
+		if err != nil {
+			return nil
+		}
 	}
 	var screenshot []byte
-	if r.cfg.CaptureScreenshot {
+	if r.cfg.CaptureScreenshot || r.isScreenshotPageSource() {
 		screenshot, _ = r.driver.Screenshot(ctx)
+	}
+	if xml == "" && len(screenshot) == 0 {
+		return nil
 	}
 	pageName := r.resolvePageNameByExOrFallback(xml, screenshot)
 	if strings.TrimSpace(pageName) == "" {
@@ -793,6 +825,10 @@ func (r *Runner) resolvePageInfo(ctx context.Context, xml string, screenshot []b
 
 func (r *Runner) resolveBasePageName(ctx context.Context, xml string, screenshot []byte) string {
 	return resolveBasePageNameByStrategy(ctx, r, xml, screenshot)
+}
+
+func (r *Runner) isScreenshotPageSource() bool {
+	return strings.EqualFold(strings.TrimSpace(r.cfg.PageSourceType), "screenshot")
 }
 
 // resolvePageNameByExOrFallback 优先使用 PageNameResolverEx，否则 fallback 到 PageNameResolver。

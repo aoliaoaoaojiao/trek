@@ -104,6 +104,29 @@ trek run --auto-current-app --capture-screenshot
 trek run --package com.example.app --config .\config.generated.js --capture-screenshot
 ```
 
+如果希望在运行结束后落盘一份报告：
+
+```bash
+trek run --package com.example.app --capture-screenshot --report-file .\log\run-report.json
+```
+
+也支持直接输出 Markdown 复盘文档：
+
+```bash
+trek run --package com.example.app --report-file .\log\run-report.md
+```
+
+说明：
+
+- `--report-file`：指定报告输出路径
+- `--report-format`：可选，支持 `json`、`md`
+- `--artifact-dir`：可选，指定原始截图/XML 产物目录
+- 未显式指定 `--report-format` 时，会按 `--report-file` 的扩展名自动推断
+- 当设置了 `--report-file` 且未指定 `--artifact-dir` 时，会自动生成同名目录，例如 `run-report_artifacts`
+- `.json` 会输出完整结构化报告，适合脚本消费
+- `.md` 会输出人工可读的复盘摘要，适合直接查看
+- 原始截图和 XML 会按页面名分目录输出，并以 `step-步骤号-before/after-动作名` 命名，便于复盘同页多次访问
+
 JS 配置可以为项目提供默认运行开关，例如：
 
 ```js

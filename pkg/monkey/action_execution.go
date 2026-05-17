@@ -11,6 +11,7 @@ import (
 
 	"trek/internal/engine/core/types"
 	"trek/logger"
+	"trek/pkg/coordinator"
 
 	"github.com/beevik/etree"
 )
@@ -344,18 +345,28 @@ func (r *Runner) tryInputText(cmd *types.ActionCommand) error {
 	return r.driver.InputText(cmd.Text, cmd.Clear)
 }
 
-func (r *Runner) markFailed(report *Report, record StepRecord, stepStart time.Time) {
+func (r *Runner) markFailed(report *Report, record StepRecord, stepStart time.Time, before *coordinator.PageSnapshot, after *coordinator.PageSnapshot) {
 	report.StepsTotal++
 	report.StepsFailed++
 	report.ConsecutiveFailures++
-	r.appendRecord(report, record, stepStart)
+	r.appendRecord(report, record, stepStart, before, after)
 }
 
-func (r *Runner) appendRecord(report *Report, record StepRecord, stepStart time.Time) {
+func (r *Runner) appendRecord(report *Report, record StepRecord, stepStart time.Time, before *coordinator.PageSnapshot, after *coordinator.PageSnapshot) {
 	if !r.cfg.KeepStepRecords {
 		return
 	}
 	record.DurationMs = time.Since(stepStart).Milliseconds()
+	if before != nil {
+		record.BeforePageName = strings.TrimSpace(before.PageName)
+		record.BeforeXML = before.XML
+		record.BeforeScreenshot = append([]byte(nil), before.Screenshot...)
+	}
+	if after != nil {
+		record.AfterPageName = strings.TrimSpace(after.PageName)
+		record.AfterXML = after.XML
+		record.AfterScreenshot = append([]byte(nil), after.Screenshot...)
+	}
 	report.Records = append(report.Records, record)
 }
 

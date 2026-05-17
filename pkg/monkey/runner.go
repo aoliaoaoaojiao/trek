@@ -163,11 +163,28 @@ const (
 
 // StepRecord 是每一步执行记录。
 type StepRecord struct {
-	Step       int
-	PageName   string
-	Action     string
-	DurationMs int64
-	Err        string
+	Step               int
+	PageName           string
+	Action             string
+	ActionTargetBounds string `json:"action_target_bounds,omitempty"`
+	ActionWidgetInfo   string `json:"action_widget_info,omitempty"`
+	DurationMs         int64
+	Err                string
+	BeforePageName     string           `json:"before_page_name,omitempty"`
+	AfterPageName      string           `json:"after_page_name,omitempty"`
+	BeforeXML          string           `json:"-"`
+	AfterXML           string           `json:"-"`
+	BeforeScreenshot   []byte           `json:"-"`
+	AfterScreenshot    []byte           `json:"-"`
+	BeforeArtifactRef  *StepArtifactRef `json:"before_artifact,omitempty"`
+	AfterArtifactRef   *StepArtifactRef `json:"after_artifact,omitempty"`
+}
+
+// StepArtifactRef 表示步骤关联产物在磁盘上的相对路径。
+type StepArtifactRef struct {
+	PageDir        string `json:"page_dir,omitempty"`
+	ScreenshotFile string `json:"screenshot_file,omitempty"`
+	XMLFile        string `json:"xml_file,omitempty"`
 }
 
 // Report 是 Monkey 运行报告。
@@ -427,7 +444,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		recovered, recoverErr := r.ensureTargetPackageForeground(step)
 		if recoverErr != nil {
 			record.Err = recoverErr.Error()
-			r.markFailed(report, record, stepStart)
+			r.markFailed(report, record, stepStart, nil, nil)
 			logger.Warnf("monkey step=%d ensure target package failed: %v", step, recoverErr)
 			if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
 				report.StopReason = StopMaxConsecutiveFailures
@@ -439,7 +456,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		if recovered {
 			report.OutOfAppRecoveries++
 			record.Err = "检测到已离开被测应用，已自动拉回前台"
-			r.appendRecord(report, record, stepStart)
+			r.appendRecord(report, record, stepStart, nil, nil)
 			r.sleepStep(ctx, r.cfg.StepInterval)
 			continue
 		}
@@ -459,7 +476,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 					record.Err = "截图页面源为空"
 					logger.Warnf("monkey step=%d screenshot page source is empty", step)
 				}
-				r.markFailed(report, record, stepStart)
+				r.markFailed(report, record, stepStart, nil, nil)
 				if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
 					report.StopReason = StopMaxConsecutiveFailures
 					return report, nil
@@ -478,7 +495,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 						xml = ""
 					} else {
 						record.Err = err.Error()
-						r.markFailed(report, record, stepStart)
+						r.markFailed(report, record, stepStart, nil, nil)
 						logger.Warnf("monkey step=%d dump page source failed: %v", step, err)
 						if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
 							report.StopReason = StopMaxConsecutiveFailures
@@ -490,7 +507,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 					}
 				} else {
 					record.Err = err.Error()
-					r.markFailed(report, record, stepStart)
+					r.markFailed(report, record, stepStart, nil, nil)
 					logger.Warnf("monkey step=%d dump page source failed: %v", step, err)
 					if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
 						report.StopReason = StopMaxConsecutiveFailures
@@ -507,14 +524,14 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		if r.cfg.StopOnCrash && cachedReady && cachedCrash {
 			report.StopReason = StopCrashDetectedLogcat
 			record.Err = "检测到系统 crash 信号"
-			r.appendRecord(report, record, stepStart)
+			r.appendRecord(report, record, stepStart, nil, nil)
 			logger.Errorf("monkey stop on crash signal at step=%d", step)
 			return report, nil
 		}
 		if r.cfg.StopOnANR && cachedReady && cachedANR {
 			report.StopReason = StopANRDetectedLogcat
 			record.Err = "检测到系统 ANR 信号"
-			r.appendRecord(report, record, stepStart)
+			r.appendRecord(report, record, stepStart, nil, nil)
 			logger.Errorf("monkey stop on anr signal at step=%d", step)
 			return report, nil
 		}
@@ -542,7 +559,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		cmd, err := r.nextCommandWithRecovery(step, beforePage, pageName, input)
 		if err != nil {
 			record.Err = err.Error()
-			r.markFailed(report, record, stepStart)
+			r.markFailed(report, record, stepStart, &beforePage, nil)
 			logger.Warnf("monkey step=%d next command failed: %v", step, err)
 			if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
 				report.StopReason = StopMaxConsecutiveFailures
@@ -554,7 +571,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		}
 		if cmd == nil {
 			record.Err = "决策返回空动作"
-			r.markFailed(report, record, stepStart)
+			r.markFailed(report, record, stepStart, &beforePage, nil)
 			logger.Warnf("monkey step=%d got nil command", step)
 			if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
 				report.StopReason = StopMaxConsecutiveFailures
@@ -568,6 +585,8 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		r.applyEffectiveTouchArea(step, cmd, xml)
 
 		record.Action = cmd.Act.String()
+		record.ActionTargetBounds = cmd.Pos.String()
+		record.ActionWidgetInfo = strings.TrimSpace(cmd.WidgetInfo)
 		report.ActionCount[record.Action]++
 		report.StepsTotal++
 		r.recordActionTrace(beforePage, cmd)
@@ -581,7 +600,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			r.recordRecoveryOutcome(false)
 			crash, anr := r.currentHealthSignals()
 			r.notifyStepResult(step, cmd, false, err.Error(), time.Since(stepStart).Milliseconds(), crash, anr, beforePage, afterPage)
-			r.markFailed(report, record, stepStart)
+			r.markFailed(report, record, stepStart, &beforePage, afterPage)
 			logger.Warnf("monkey step=%d execute action=%s failed: %v", step, cmd.Act.String(), err)
 			if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
 				report.StopReason = StopMaxConsecutiveFailures
@@ -622,7 +641,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		r.recordRecoveryOutcome(escaped)
 		crash, anr := r.currentHealthSignals()
 		r.notifyStepResult(step, cmd, true, "", time.Since(stepStart).Milliseconds(), crash, anr, beforePage, afterPage)
-		r.appendRecord(report, record, stepStart)
+		r.appendRecord(report, record, stepStart, &beforePage, afterPage)
 		logger.Debugf("monkey step=%d execute action=%s success", step, cmd.Act.String())
 		r.sleepStep(ctx, r.resolveStepDelay(cmd))
 	}

@@ -6,10 +6,12 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"trek/internal/engine/decision"
+	"trek/internal/reporting"
 	"trek/internal/scripting"
 	"trek/logger"
 	"trek/pkg/coordinator"
@@ -32,6 +34,9 @@ var runOptions = struct {
 	keepStepRecords   bool
 	probePageName     bool
 	autoCurrentApp    bool
+	reportFile        string
+	reportFormat      string
+	artifactDir       string
 }{}
 
 var (
@@ -65,6 +70,9 @@ func init() {
 	runCmd.Flags().BoolVar(&runOptions.keepStepRecords, "keep-step-records", true, "是否保留每步记录")
 	runCmd.Flags().BoolVar(&runOptions.probePageName, "probe-page-name", false, "仅探测当前页面名后退出")
 	runCmd.Flags().BoolVar(&runOptions.autoCurrentApp, "auto-current-app", false, "自动使用当前前台应用进行测试")
+	runCmd.Flags().StringVar(&runOptions.reportFile, "report-file", "", "运行报告输出路径（可选，支持 .json/.md）")
+	runCmd.Flags().StringVar(&runOptions.reportFormat, "report-format", "", "运行报告格式（可选：json、md；默认按 report-file 扩展名推断）")
+	runCmd.Flags().StringVar(&runOptions.artifactDir, "artifact-dir", "", "页面产物输出目录（可选；默认跟随 report-file 自动生成同名目录）")
 }
 
 // runMonkey 执行 monkey 测试的核心逻辑。
@@ -80,6 +88,9 @@ func runMonkey(logLevelStr string, opts struct {
 	keepStepRecords   bool
 	probePageName     bool
 	autoCurrentApp    bool
+	reportFile        string
+	reportFormat      string
+	artifactDir       string
 }) error {
 	if err := logger.SetLevel(logLevelStr); err != nil {
 		return fmt.Errorf("设置日志级别失败: %w", err)
@@ -104,6 +115,12 @@ func runMonkey(logLevelStr string, opts struct {
 	}
 	if staticCfg.KeepStepRecords.IsSet() && !keepStepRecordsCLISet {
 		opts.keepStepRecords = staticCfg.KeepStepRecords.Get()
+	}
+	if strings.TrimSpace(opts.reportFile) != "" || strings.TrimSpace(opts.artifactDir) != "" {
+		if !opts.keepStepRecords {
+			fmt.Println("检测到报告/产物输出需求，已自动启用 keep-step-records")
+		}
+		opts.keepStepRecords = true
 	}
 	exploreOCRTimeout := time.Duration(staticCfg.ExploreOCRTimeoutMs.OrDefault(10000)) * time.Millisecond
 	recoveryCooldownSteps := staticCfg.RecoveryCooldownSteps.OrDefault(2)
@@ -242,7 +259,66 @@ func runMonkey(logLevelStr string, opts struct {
 		report.RecoveryCooldownEnterCount, report.RecoveryCooldownStepCount)
 	fmt.Printf("LLM 决策统计（兼容字段，当前固定为 0）: recovery_calls=%d recovery_budget_denied=%d enhancement_calls=%d enhancement_hits=%d enhancement_budget_denied=%d\n",
 		report.RecoveryLLMCalls, report.RecoveryLLMBudgetDenied, report.CandidateEnhancementCalls, report.CandidateEnhancementSelects, report.EnhancementLLMBudgetDenied)
+	reportFile := strings.TrimSpace(opts.reportFile)
+	artifactDir := resolveArtifactDir(reportFile, opts.artifactDir)
+	if reportFile != "" {
+		err = reporting.WriteRunReportWithArtifacts(reportFile, opts.reportFormat, artifactDir, reporting.RunMetadata{
+			PackageName:         packageName,
+			DeviceSerial:        deviceSerial,
+			Algorithm:           opts.algorithm,
+			MaxSteps:            opts.maxSteps,
+			MaxDuration:         opts.maxDuration,
+			StepInterval:        opts.stepInterval,
+			PageSourceType:      pageSourceType,
+			PageControlStrategy: pageControlStrategy,
+			CaptureScreenshot:   opts.captureScreenshot,
+			KeepStepRecords:     opts.keepStepRecords,
+			ConfigPath:          opts.configPath,
+		}, report)
+		if err != nil {
+			return fmt.Errorf("写入运行报告失败: %w", err)
+		}
+		fmt.Printf("报告已输出: %s\n", reportFile)
+		if artifactDir != "" {
+			fmt.Printf("页面产物已输出: %s\n", artifactDir)
+		}
+	} else if artifactDir != "" {
+		_, err = reporting.BuildRunReportEnvelope(reporting.RunMetadata{
+			PackageName:         packageName,
+			DeviceSerial:        deviceSerial,
+			Algorithm:           opts.algorithm,
+			MaxSteps:            opts.maxSteps,
+			MaxDuration:         opts.maxDuration,
+			StepInterval:        opts.stepInterval,
+			PageSourceType:      pageSourceType,
+			PageControlStrategy: pageControlStrategy,
+			CaptureScreenshot:   opts.captureScreenshot,
+			KeepStepRecords:     opts.keepStepRecords,
+			ConfigPath:          opts.configPath,
+		}, report, artifactDir)
+		if err != nil {
+			return fmt.Errorf("写入页面产物失败: %w", err)
+		}
+		fmt.Printf("页面产物已输出: %s\n", artifactDir)
+	}
 	return nil
+}
+
+func resolveArtifactDir(reportFile string, artifactDir string) string {
+	explicitDir := strings.TrimSpace(artifactDir)
+	if explicitDir != "" {
+		return explicitDir
+	}
+	reportPath := strings.TrimSpace(reportFile)
+	if reportPath == "" {
+		return ""
+	}
+	ext := filepath.Ext(reportPath)
+	base := strings.TrimSuffix(reportPath, ext)
+	if strings.TrimSpace(base) == "" {
+		return ""
+	}
+	return base + "_artifacts"
 }
 
 const (

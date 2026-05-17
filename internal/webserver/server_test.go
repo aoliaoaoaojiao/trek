@@ -87,6 +87,20 @@ func TestBuildConfigJS_ScreenshotPageSourceForcesCaptureScreenshot(t *testing.T)
 	}
 }
 
+func TestBuildConfigJS_ScreenshotPageSourceForcesOCRPageControl(t *testing.T) {
+	cfg := ConfigPayload{
+		PageSource: "screenshot",
+		TouchMode:  "motion",
+	}
+	js, err := BuildConfigJS(cfg)
+	if err != nil {
+		t.Fatalf("buildConfigJS screenshot 页面源失败: %v", err)
+	}
+	if !strings.Contains(js, `page_control_strategy: "ocr"`) {
+		t.Fatalf("screenshot 页面源应默认导出 ocr 页面理解策略: %s", js)
+	}
+}
+
 func TestBuildConfigJS_InvalidTouchMode(t *testing.T) {
 	cfg := ConfigPayload{
 		PageSource: "uia",

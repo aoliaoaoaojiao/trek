@@ -32,8 +32,6 @@ type StaticConfig struct {
 	ExploreOCRTimeoutMs               coretypes.Optional[int]
 	LLMTimeoutMs                      coretypes.Optional[int]
 	RecoveryCooldownSteps             coretypes.Optional[int]
-	LLMMaxCalls                       coretypes.Optional[int]
-	LLMWindowSteps                    coretypes.Optional[int]
 	RecoveryTwoStateLoopThreshold     coretypes.Optional[int]
 	RecoveryHighVisitThreshold        coretypes.Optional[int]
 	RecoveryLowRewardWindow           coretypes.Optional[int]
@@ -255,8 +253,6 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 	cfg.ExploreOCRTimeoutMs = optionalInt(obj, "explore_ocr_timeout_ms", "exploreOcrTimeoutMs")
 	cfg.LLMTimeoutMs = optionalInt(obj, "llm_timeout_ms", "recovery_llm_timeout_ms", "llmTimeoutMs", "recoveryLlmTimeoutMs")
 	cfg.RecoveryCooldownSteps = optionalInt(obj, "recovery_cooldown_steps", "recoveryCooldownSteps")
-	cfg.LLMMaxCalls = optionalInt(obj, "llm_max_calls", "recovery_llm_max_calls", "llmMaxCalls", "recoveryLlmMaxCalls")
-	cfg.LLMWindowSteps = optionalInt(obj, "llm_window_steps", "recovery_llm_window_steps", "llmWindowSteps", "recoveryLlmWindowSteps")
 	cfg.RecoveryTwoStateLoopThreshold = optionalInt(obj, "recovery_two_state_loop_threshold", "recoveryTwoStateLoopThreshold")
 	cfg.RecoveryHighVisitThreshold = optionalInt(obj, "recovery_high_visit_threshold", "recoveryHighVisitThreshold")
 	cfg.RecoveryLowRewardWindow = optionalInt(obj, "recovery_low_reward_window", "recoveryLowRewardWindow")

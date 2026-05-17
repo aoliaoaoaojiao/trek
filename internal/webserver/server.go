@@ -35,9 +35,8 @@ type ConfigPayload struct {
 	KeepStepRecords                   *bool    `json:"keep_step_records"`
 	ScrollInferThreshold              *int     `json:"scroll_infer_threshold"`
 	ImageSimilaritySSIMThreshold      *float64 `json:"image_similarity_ssim_threshold"`
+	ExploreOCRTimeoutMs               *int     `json:"explore_ocr_timeout_ms"`
 	LLMTimeoutMs                      *int     `json:"llm_timeout_ms"`
-	LLMMaxCalls                       *int     `json:"llm_max_calls"`
-	LLMWindowSteps                    *int     `json:"llm_window_steps"`
 	RecoveryCooldownSteps             *int     `json:"recovery_cooldown_steps"`
 	RecoveryTwoStateLoopThreshold     *int     `json:"recovery_two_state_loop_threshold"`
 	RecoveryHighVisitThreshold        *int     `json:"recovery_high_visit_threshold"`
@@ -434,6 +433,9 @@ func BuildConfigJS(cfg ConfigPayload) (string, error) {
 			return "", fmt.Errorf("page_control_strategy 不合法: %s", pageControlStrategy)
 		}
 	}
+	if pageSource == "screenshot" && (pageControlStrategy == "" || pageControlStrategy == "raw") {
+		pageControlStrategy = "ocr"
+	}
 	algorithm := strings.ToLower(strings.TrimSpace(cfg.Algorithm))
 	if algorithm != "" {
 		switch algorithm {
@@ -500,14 +502,11 @@ func BuildConfigJS(cfg ConfigPayload) (string, error) {
 	if cfg.ImageSimilaritySSIMThreshold != nil {
 		b.WriteString(fmt.Sprintf("  image_similarity_ssim_threshold: %s,\n", strconv.FormatFloat(*cfg.ImageSimilaritySSIMThreshold, 'f', -1, 64)))
 	}
+	if cfg.ExploreOCRTimeoutMs != nil {
+		b.WriteString(fmt.Sprintf("  explore_ocr_timeout_ms: %d,\n", *cfg.ExploreOCRTimeoutMs))
+	}
 	if cfg.LLMTimeoutMs != nil {
 		b.WriteString(fmt.Sprintf("  llm_timeout_ms: %d,\n", *cfg.LLMTimeoutMs))
-	}
-	if cfg.LLMMaxCalls != nil {
-		b.WriteString(fmt.Sprintf("  llm_max_calls: %d,\n", *cfg.LLMMaxCalls))
-	}
-	if cfg.LLMWindowSteps != nil {
-		b.WriteString(fmt.Sprintf("  llm_window_steps: %d,\n", *cfg.LLMWindowSteps))
 	}
 	if cfg.RecoveryCooldownSteps != nil {
 		b.WriteString(fmt.Sprintf("  recovery_cooldown_steps: %d,\n", *cfg.RecoveryCooldownSteps))

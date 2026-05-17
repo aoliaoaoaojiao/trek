@@ -1,37 +1,82 @@
-package monkey
+package fingerprint
 
 import (
+	"bytes"
+	"encoding/hex"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
-	visionfingerprint "trek/internal/vision/fingerprint"
 )
 
 const (
+	// Prefix 是图片页面指纹的统一前缀。
+	Prefix            = "IMGPage"
 	fingerprintWidth  = 9
 	fingerprintHeight = 8
 )
 
-// defaultImageFingerprintName 使用纯 Go 实现生成截图感知哈希。
-// 算法采用“整图 + 内容区”的组合感知哈希，兼顾稳定性与局部变化敏感度。
-func defaultImageFingerprintName(data []byte) string {
-	return defaultImageFingerprintNameWithRegions(data, nil)
+// Region 定义截图上的归一化局部区域，用于增强局部变化敏感度。
+type Region struct {
+	Left   float64
+	Top    float64
+	Right  float64
+	Bottom float64
 }
 
-func defaultImageFingerprintNameWithRegions(data []byte, regions []ImageFingerprintRegion) string {
-	sharedRegions := make([]visionfingerprint.Region, 0, len(regions))
-	for _, region := range regions {
-		sharedRegions = append(sharedRegions, visionfingerprint.Region{
-			Left:   region.Left,
-			Top:    region.Top,
-			Right:  region.Right,
-			Bottom: region.Bottom,
-		})
+// Name 基于“整图 + 局部区域”组合感知哈希生成稳定图片指纹。
+func Name(data []byte, regions []Region) string {
+	if len(data) == 0 {
+		return ""
 	}
-	return visionfingerprint.Name(data, sharedRegions)
+
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return ""
+	}
+
+	bounds := img.Bounds()
+	if bounds.Empty() {
+		return ""
+	}
+
+	rects := fingerprintRegions(bounds, regions)
+	hashBytes := make([]byte, 0, len(rects)*fingerprintHeight*2)
+	for _, region := range rects {
+		hashBytes = append(hashBytes, regionFingerprintBytes(img, region)...)
+	}
+
+	return Prefix + ":" + hex.EncodeToString(hashBytes)
 }
 
-func fingerprintRegions(bounds image.Rectangle, custom []ImageFingerprintRegion) []image.Rectangle {
+func regionFingerprintBytes(img image.Image, bounds image.Rectangle) []byte {
+	sampled := sampleGrayGrid(img, bounds, fingerprintWidth, fingerprintHeight)
+	hashBytes := make([]byte, fingerprintHeight*2)
+	for y := 0; y < fingerprintHeight; y++ {
+		var row byte
+		for x := 0; x < fingerprintWidth-1; x++ {
+			left := sampled[y*fingerprintWidth+x]
+			right := sampled[y*fingerprintWidth+x+1]
+			if left > right {
+				row |= 1 << uint(7-x)
+			}
+		}
+		hashBytes[y] = row
+	}
+
+	avgThreshold := averageGray(sampled, fingerprintWidth-1, fingerprintHeight)
+	for y := 0; y < fingerprintHeight; y++ {
+		var row byte
+		for x := 0; x < fingerprintWidth-1; x++ {
+			if sampled[y*fingerprintWidth+x] >= avgThreshold {
+				row |= 1 << uint(7-x)
+			}
+		}
+		hashBytes[fingerprintHeight+y] = row
+	}
+	return hashBytes
+}
+
+func fingerprintRegions(bounds image.Rectangle, custom []Region) []image.Rectangle {
 	regions := []image.Rectangle{bounds}
 
 	for _, region := range custom {
@@ -54,7 +99,7 @@ func fingerprintRegions(bounds image.Rectangle, custom []ImageFingerprintRegion)
 	return regions
 }
 
-func normalizeFingerprintRegion(bounds image.Rectangle, region ImageFingerprintRegion) image.Rectangle {
+func normalizeFingerprintRegion(bounds image.Rectangle, region Region) image.Rectangle {
 	left := clamp01(region.Left)
 	top := clamp01(region.Top)
 	right := clamp01(region.Right)
@@ -158,6 +203,21 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func averageGray(sampled []uint8, width, height int) uint8 {
+	var sum uint64
+	var count uint64
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			sum += uint64(sampled[y*fingerprintWidth+x])
+			count++
+		}
+	}
+	if count == 0 {
+		return 0
+	}
+	return uint8(sum / count)
 }
 
 func grayAt(img image.Image, x, y int) uint8 {

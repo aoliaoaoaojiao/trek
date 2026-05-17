@@ -350,7 +350,9 @@ declare namespace Trek {
      * `raw` 直接使用 dump 原始 XML；
      * `ocr` 基于截图 OCR 提取控件区域并生成伪控件树；
      * `llm` 基于截图 LLM 推断控件区域并生成伪控件树。
-     * 当策略为 `ocr` 或 `llm` 时，运行期会自动启用截图采集。
+     * 当策略为 `ocr` 或 `llm` 时，运行期会自动启用截图采集，
+     * 并按截图图片指纹缓存伪控件树；相同图片优先复用缓存，仅首次出现时才调用 OCR/LLM。
+     * 同一图片连续命中缓存达到阈值后会自动重新识别一次；阻塞恢复路径也会强制刷新，避免长期复用过期控件树。
      */
     page_control_strategy?: PageControlStrategy
       /** 是否采集截图给决策层。默认 false；当 page_source="screenshot" 或页面理解策略不是 raw 时会自动开启。 */
@@ -374,16 +376,6 @@ declare namespace Trek {
      * 防止刚脱困就立即再次进入恢复。默认 2
      */
     recovery_cooldown_steps?: number
-    /**
-     * 兼容保留字段。
-     * 当前内置 LLM 已不再参与恢复决策或候选增强，因此该字段暂不生效。默认 0
-     */
-    llm_max_calls?: number
-    /**
-     * 兼容保留字段。
-     * 当前内置 LLM 已不再参与恢复决策或候选增强，因此该字段暂不生效。默认 0
-     */
-    llm_window_steps?: number
     /**
      * 两状态循环检测阈值。
      * 引擎跟踪页面签名跳转，当检测到连续 A→B→A→B 模式达到此次数时，

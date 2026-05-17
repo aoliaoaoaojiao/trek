@@ -9,6 +9,7 @@ import (
 	_ "image/png"
 	"os"
 	"strings"
+	"sync"
 	"time"
 	"trek/internal/engine/core/types"
 	"trek/internal/engine/decision"
@@ -21,6 +22,7 @@ import (
 	engineruntime "trek/internal/engine/runtime"
 	enginestate "trek/internal/engine/state"
 	"trek/internal/engine/traversal"
+	visionfingerprint "trek/internal/vision/fingerprint"
 	"trek/logger"
 )
 
@@ -78,13 +80,19 @@ type StepResultInput struct {
 
 // Coordinator 对外稳定协调入口。
 type Coordinator struct {
-	config         Config
-	runtime        *engineruntime.Runtime
-	memoryStore    *memory.Store
-	memoryProvider *memory.Provider
-	ocrProvider    candidateProvider
-	llmProvider    pageControlCandidateProvider
-	traversalAlgo  traversal.TraversalAlgorithm
+	config           Config
+	runtime          *engineruntime.Runtime
+	memoryStore      *memory.Store
+	memoryProvider   *memory.Provider
+	ocrProvider      candidateProvider
+	llmProvider      pageControlCandidateProvider
+	traversalAlgo    traversal.TraversalAlgorithm
+	pageControlCache sync.Map
+}
+
+type pageControlCacheEntry struct {
+	SyntheticXML string
+	HitCount     int
 }
 
 type candidateProvider interface {
@@ -323,7 +331,7 @@ func (s *Coordinator) NextActionWithInput(pageName string, input ActionInput) (*
 		return nil, fmt.Errorf("xmlDescOfGuiTree and screenshot are both empty")
 	}
 	if strings.TrimSpace(input.XMLDescOfGuiTree) == "" && len(input.Screenshot) > 0 {
-		pageInfo, err := s.buildPageInfoByStrategy(pageName, input, false)
+		pageInfo, err := s.buildPageInfoByStrategy(pageName, input, false, false)
 		if err != nil {
 			logger.Warnf("coordinator 基于图片生成页面控件信息失败，继续使用空 XML: page=%s err=%v", pageName, err)
 		} else {
@@ -352,7 +360,7 @@ func (s *Coordinator) NextBlockRecoveryAction(pageName string, input ActionInput
 		return nil, fmt.Errorf("xmlDescOfGuiTree 和 screenshot 不能同时为空")
 	}
 	if strings.TrimSpace(input.XMLDescOfGuiTree) == "" && len(input.Screenshot) > 0 {
-		pageInfo, err := s.buildPageInfoByStrategy(pageName, input, false)
+		pageInfo, err := s.buildPageInfoByStrategy(pageName, input, false, true)
 		if err != nil {
 			logger.Warnf("coordinator 阻塞恢复基于图片生成页面控件信息失败，继续使用空 XML: page=%s err=%v", pageName, err)
 		} else {
@@ -628,10 +636,10 @@ func (s *Coordinator) TransformPageInfoWithInput(pageName string, input ActionIn
 	if strings.TrimSpace(input.XMLDescOfGuiTree) == "" && len(input.Screenshot) == 0 {
 		return PageInfo{}, fmt.Errorf("xmlDescOfGuiTree and screenshot are both empty")
 	}
-	return s.buildPageInfoByStrategy(pageName, input, true)
+	return s.buildPageInfoByStrategy(pageName, input, true, false)
 }
 
-func (s *Coordinator) buildPageInfoByStrategy(pageName string, input ActionInput, applyPluginTransform bool) (PageInfo, error) {
+func (s *Coordinator) buildPageInfoByStrategy(pageName string, input ActionInput, applyPluginTransform bool, forceRefresh bool) (PageInfo, error) {
 	resolvedPageName := strings.TrimSpace(pageName)
 	resolvedXML := strings.TrimSpace(input.XMLDescOfGuiTree)
 
@@ -658,6 +666,11 @@ func (s *Coordinator) buildPageInfoByStrategy(pageName string, input ActionInput
 	if strategy == pageControlStrategyRaw {
 		return info, nil
 	}
+	if cachedXML, ok := s.loadPageControlCache(strategy, input.Screenshot, forceRefresh); ok {
+		logger.Debugf("coordinator 页面控件缓存命中: strategy=%s page=%s", strategy, resolvedPageName)
+		info.XML = cachedXML
+		return info, nil
+	}
 
 	candidates, err := s.buildPageControlCandidates(strategy, enginestate.TraversalContext{
 		Mode:       "Explore",
@@ -677,8 +690,46 @@ func (s *Coordinator) buildPageInfoByStrategy(pageName string, input ActionInput
 	if strings.TrimSpace(syntheticXML) == "" {
 		return info, nil
 	}
+	s.storePageControlCache(strategy, input.Screenshot, syntheticXML)
 	info.XML = syntheticXML
 	return info, nil
+}
+
+func (s *Coordinator) loadPageControlCache(strategy string, screenshot []byte, forceRefresh bool) (string, bool) {
+	cacheKey := pageControlCacheKey(strategy, screenshot)
+	if cacheKey == "" {
+		return "", false
+	}
+	cached, ok := s.pageControlCache.Load(cacheKey)
+	if !ok {
+		return "", false
+	}
+	entry, ok := cached.(pageControlCacheEntry)
+	if !ok || strings.TrimSpace(entry.SyntheticXML) == "" {
+		return "", false
+	}
+	if forceRefresh {
+		logger.Debugf("coordinator 页面控件缓存主动刷新: reason=block_recovery strategy=%s", strategy)
+		return "", false
+	}
+	if entry.HitCount >= pageControlCacheRefreshHitThreshold {
+		logger.Debugf("coordinator 页面控件缓存达到刷新阈值: strategy=%s hit_count=%d", strategy, entry.HitCount)
+		return "", false
+	}
+	entry.HitCount++
+	s.pageControlCache.Store(cacheKey, entry)
+	return entry.SyntheticXML, true
+}
+
+func (s *Coordinator) storePageControlCache(strategy string, screenshot []byte, syntheticXML string) {
+	cacheKey := pageControlCacheKey(strategy, screenshot)
+	if cacheKey == "" || strings.TrimSpace(syntheticXML) == "" {
+		return
+	}
+	s.pageControlCache.Store(cacheKey, pageControlCacheEntry{
+		SyntheticXML: syntheticXML,
+		HitCount:     0,
+	})
 }
 
 func (s *Coordinator) buildPageControlCandidates(strategy string, ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
@@ -729,9 +780,10 @@ func isAppRestartAction(act types.ActionType) bool {
 }
 
 const (
-	pageControlStrategyRaw = "raw"
-	pageControlStrategyOCR = "ocr"
-	pageControlStrategyLLM = "llm"
+	pageControlStrategyRaw              = "raw"
+	pageControlStrategyOCR              = "ocr"
+	pageControlStrategyLLM              = "llm"
+	pageControlCacheRefreshHitThreshold = 5
 )
 
 func normalizePageControlStrategy(strategy string) string {
@@ -819,6 +871,17 @@ func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candida
 	}
 	b.WriteString("  </node>\n</hierarchy>")
 	return b.String()
+}
+
+func pageControlCacheKey(strategy string, screenshot []byte) string {
+	if strategy != pageControlStrategyOCR && strategy != pageControlStrategyLLM {
+		return ""
+	}
+	fingerprint := strings.TrimSpace(visionfingerprint.Name(screenshot, nil))
+	if fingerprint == "" {
+		return ""
+	}
+	return strategy + "|" + fingerprint
 }
 
 func decodeScreenshotSize(data []byte) (int, int) {

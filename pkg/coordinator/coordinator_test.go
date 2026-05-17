@@ -222,6 +222,89 @@ func TestSessionTransformPageInfoWithOCRPageControlStrategy(t *testing.T) {
 	}
 }
 
+func TestSessionTransformPageInfoWithOCRPageControlStrategyUsesFingerprintCache(t *testing.T) {
+	session, err := NewSession(Config{
+		PackageName:         "com.demo",
+		PageControlStrategy: "ocr",
+	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
+
+	callCount := 0
+	session.ocrProvider = &mockCandidateProvider{
+		buildFn: func(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
+			callCount++
+			item := perception.NewCandidate(
+				&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.15, 0.2, 0.45, 0.4)},
+				perception.SourceOCR,
+				"ocr_click:缓存登录",
+				map[string]string{"ocr_text": "缓存登录"},
+			)
+			return []perception.Candidate{item}, nil
+		},
+	}
+
+	input := ActionInput{
+		XMLDescOfGuiTree: `<hierarchy><node class="android.widget.TextView"/></hierarchy>`,
+		Screenshot:       mustPNG(t, 240, 360),
+	}
+	first, err := session.TransformPageInfoWithInput("MainActivity", input)
+	if err != nil {
+		t.Fatalf("首次 TransformPageInfoWithInput 失败: %v", err)
+	}
+	second, err := session.TransformPageInfoWithInput("MainActivity", input)
+	if err != nil {
+		t.Fatalf("二次 TransformPageInfoWithInput 失败: %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("预期 OCR provider 仅调用 1 次，实际: %d", callCount)
+	}
+	if first.XML != second.XML {
+		t.Fatalf("缓存命中后应复用同一份控件树，首次=%s 二次=%s", first.XML, second.XML)
+	}
+	if !strings.Contains(second.XML, `text="缓存登录"`) {
+		t.Fatalf("缓存结果缺少 OCR 控件信息，实际 XML: %s", second.XML)
+	}
+}
+
+func TestSessionTransformPageInfoWithOCRPageControlStrategyRefreshesAfterRepeatedCacheHits(t *testing.T) {
+	session, err := NewSession(Config{
+		PackageName:         "com.demo",
+		PageControlStrategy: "ocr",
+	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
+
+	callCount := 0
+	session.ocrProvider = &mockCandidateProvider{
+		buildFn: func(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
+			callCount++
+			item := perception.NewCandidate(
+				&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.2, 0.2, 0.4, 0.35)},
+				perception.SourceOCR,
+				"ocr_click:重复刷新",
+				map[string]string{"ocr_text": "重复刷新"},
+			)
+			return []perception.Candidate{item}, nil
+		},
+	}
+
+	input := ActionInput{
+		XMLDescOfGuiTree: `<hierarchy><node class="android.widget.TextView"/></hierarchy>`,
+		Screenshot:       mustPNG(t, 240, 360),
+	}
+	for i := 0; i < pageControlCacheRefreshHitThreshold+2; i++ {
+		if _, err := session.TransformPageInfoWithInput("MainActivity", input); err != nil {
+			t.Fatalf("第 %d 次 TransformPageInfoWithInput 失败: %v", i+1, err)
+		}
+	}
+	if callCount != 2 {
+		t.Fatalf("预期达到缓存刷新阈值后重新调用 OCR provider，实际调用次数: %d", callCount)
+	}
+}
+
 func TestSessionTransformPageInfoWithLLMPageControlStrategy(t *testing.T) {
 	session, err := NewSession(Config{
 		PackageName:         "com.demo",
@@ -253,6 +336,67 @@ func TestSessionTransformPageInfoWithLLMPageControlStrategy(t *testing.T) {
 	}
 	if !strings.Contains(info.XML, `trek-scroll-infer-disabled="true"`) {
 		t.Fatalf("LLM 合成 XML 应显式禁用滚动推断，实际 XML: %s", info.XML)
+	}
+}
+
+func TestSessionNextBlockRecoveryActionForcesPageControlRefresh(t *testing.T) {
+	session, err := NewSession(Config{
+		PackageName:         "com.demo",
+		PageControlStrategy: "ocr",
+	})
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
+
+	callCount := 0
+	session.ocrProvider = &mockCandidateProvider{
+		buildFn: func(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
+			callCount++
+			item := perception.NewCandidate(
+				&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.3, 0.2)},
+				perception.SourceOCR,
+				"ocr_click:阻塞刷新",
+				map[string]string{"ocr_text": "阻塞刷新"},
+			)
+			return []perception.Candidate{item}, nil
+		},
+	}
+
+	screenshot := mustPNG(t, 300, 300)
+	if _, err := session.TransformPageInfoWithInput("MainActivity", ActionInput{
+		XMLDescOfGuiTree: `<hierarchy><node class="android.widget.TextView"/></hierarchy>`,
+		Screenshot:       screenshot,
+	}); err != nil {
+		t.Fatalf("预热缓存失败: %v", err)
+	}
+
+	configPath := filepath.Join(t.TempDir(), "plugin.js")
+	configContent := `const plugin = {
+  beforeDecide(ctx) {
+    if (ctx.runtime.block_recovery) {
+      return trek.action.back()
+    }
+    return null
+  }
+};`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("写入测试文件失败: %v", err)
+	}
+	if err := session.LoadConfigFile(configPath); err != nil {
+		t.Fatalf("加载配置失败: %v", err)
+	}
+
+	action, err := session.NextBlockRecoveryAction("MainActivity", ActionInput{
+		Screenshot: screenshot,
+	})
+	if err != nil {
+		t.Fatalf("获取阻塞恢复动作失败: %v", err)
+	}
+	if action == nil || action.Act != types.BACK {
+		t.Fatalf("预期阻塞恢复返回 BACK，实际: %+v", action)
+	}
+	if callCount != 2 {
+		t.Fatalf("阻塞恢复路径应强制重新调用 OCR provider，实际调用次数: %d", callCount)
 	}
 }
 

@@ -292,8 +292,6 @@ func TestLoadStaticConfigReadsRecoveryAndCandidateTuningSettings(t *testing.T) {
   explore_ocr_timeout_ms: 12000,
   llm_timeout_ms: 23000,
   recovery_cooldown_steps: 3,
-  llm_max_calls: 5,
-  llm_window_steps: 40,
   recovery_two_state_loop_threshold: 4,
   recovery_high_visit_threshold: 9,
   recovery_low_reward_window: 7,
@@ -313,12 +311,6 @@ func TestLoadStaticConfigReadsRecoveryAndCandidateTuningSettings(t *testing.T) {
 	}
 	if !cfg.RecoveryCooldownSteps.IsSet() || cfg.RecoveryCooldownSteps.Get() != 3 {
 		t.Fatalf("recovery_cooldown_steps 不符合预期: %+v", cfg)
-	}
-	if !cfg.LLMMaxCalls.IsSet() || cfg.LLMMaxCalls.Get() != 5 {
-		t.Fatalf("llm_max_calls 不符合预期: %+v", cfg)
-	}
-	if !cfg.LLMWindowSteps.IsSet() || cfg.LLMWindowSteps.Get() != 40 {
-		t.Fatalf("llm_window_steps 不符合预期: %+v", cfg)
 	}
 	if !cfg.RecoveryTwoStateLoopThreshold.IsSet() || cfg.RecoveryTwoStateLoopThreshold.Get() != 4 {
 		t.Fatalf("recovery_two_state_loop_threshold 不符合预期: %+v", cfg)

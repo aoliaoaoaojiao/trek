@@ -108,8 +108,6 @@ func runMonkey(logLevelStr string, opts struct {
 	exploreOCRTimeout := time.Duration(staticCfg.ExploreOCRTimeoutMs.OrDefault(10000)) * time.Millisecond
 	recoveryCooldownSteps := staticCfg.RecoveryCooldownSteps.OrDefault(2)
 	llmTimeout := time.Duration(staticCfg.LLMTimeoutMs.OrDefault(15000)) * time.Millisecond
-	llmMaxCalls := staticCfg.LLMMaxCalls.OrDefault(0)
-	llmWindowSteps := staticCfg.LLMWindowSteps.OrDefault(0)
 	recoveryTwoStateLoopThreshold := staticCfg.RecoveryTwoStateLoopThreshold.OrDefault(2)
 	recoveryHighVisitThreshold := staticCfg.RecoveryHighVisitThreshold.OrDefault(8)
 	recoveryLowRewardWindow := staticCfg.RecoveryLowRewardWindow.OrDefault(6)
@@ -212,8 +210,6 @@ func runMonkey(logLevelStr string, opts struct {
 		StopOnANR:                         true,
 		EffectiveTouchAreas:               buildEffectiveTouchAreasConfig(staticCfg, packageName, deviceSerial),
 		RecoveryCooldownSteps:             recoveryCooldownSteps,
-		LLMBudgetMaxCalls:                 llmMaxCalls,
-		LLMBudgetWindowStep:               llmWindowSteps,
 		TwoStateLoopThreshold:             recoveryTwoStateLoopThreshold,
 		HighVisitThreshold:                recoveryHighVisitThreshold,
 		LowRewardWindow:                   recoveryLowRewardWindow,

@@ -103,9 +103,8 @@ export function App() {
   const [fileLevel, setFileLevel] = useState("info")
   const [scrollInferThreshold, setScrollInferThreshold] = useState("")
   const [imageSimilarityThreshold, setImageSimilarityThreshold] = useState("")
+  const [exploreOCRTimeoutMs, setExploreOCRTimeoutMs] = useState("")
   const [llmTimeoutMs, setLLMTimeoutMs] = useState("")
-  const [llmMaxCalls, setLLMMaxCalls] = useState("")
-  const [llmWindowSteps, setLLMWindowSteps] = useState("")
   const [recoveryCooldownSteps, setRecoveryCooldownSteps] = useState("")
   const [recoveryTwoStateLoopThreshold, setRecoveryTwoStateLoopThreshold] = useState("")
   const [recoveryHighVisitThreshold, setRecoveryHighVisitThreshold] = useState("")
@@ -185,11 +184,14 @@ export function App() {
       if (captureScreenshotMode !== "true") {
         setCaptureScreenshotMode("true")
       }
+      if (pageControlStrategy === "" || pageControlStrategy === "raw") {
+        setPageControlStrategy("ocr")
+      }
       if (pageNameStrategy === "structure_fingerprint") {
         setPageNameStrategy("image_fingerprint")
       }
     }
-  }, [captureScreenshotMode, pageNameStrategy, pageSource])
+  }, [captureScreenshotMode, pageControlStrategy, pageNameStrategy, pageSource])
 
   const parsedDump = useMemo(() => parseDumpTree(xmlPreview), [xmlPreview])
 
@@ -241,9 +243,8 @@ export function App() {
       keep_step_records: boolModeToValue(keepStepRecordsMode),
       scroll_infer_threshold: parseOptionalNumber(scrollInferThreshold),
       image_similarity_ssim_threshold: parseOptionalNumber(imageSimilarityThreshold),
+      explore_ocr_timeout_ms: parseOptionalNumber(exploreOCRTimeoutMs),
       llm_timeout_ms: parseOptionalNumber(llmTimeoutMs),
-      llm_max_calls: parseOptionalNumber(llmMaxCalls),
-      llm_window_steps: parseOptionalNumber(llmWindowSteps),
       recovery_cooldown_steps: parseOptionalNumber(recoveryCooldownSteps),
       recovery_two_state_loop_threshold: parseOptionalNumber(recoveryTwoStateLoopThreshold),
       recovery_high_visit_threshold: parseOptionalNumber(recoveryHighVisitThreshold),
@@ -286,13 +287,12 @@ export function App() {
       currentPackageName,
       deviceSerial,
       effectiveRange,
+      exploreOCRTimeoutMs,
       fileLevel,
       highValuePageVisitLimit,
       imageSimilarityThreshold,
       keepStepRecordsMode,
-      llmMaxCalls,
       llmTimeoutMs,
-      llmWindowSteps,
       pageControlStrategy,
       pageNameStrategy,
       pageSource,
@@ -503,9 +503,8 @@ export function App() {
     }
     setScrollInferThreshold(imported.scroll_infer_threshold != null ? String(imported.scroll_infer_threshold) : "")
     setImageSimilarityThreshold(imported.image_similarity_ssim_threshold != null ? String(imported.image_similarity_ssim_threshold) : "")
+    setExploreOCRTimeoutMs(imported.explore_ocr_timeout_ms != null ? String(imported.explore_ocr_timeout_ms) : "")
     setLLMTimeoutMs(imported.llm_timeout_ms != null ? String(imported.llm_timeout_ms) : "")
-    setLLMMaxCalls(imported.llm_max_calls != null ? String(imported.llm_max_calls) : "")
-    setLLMWindowSteps(imported.llm_window_steps != null ? String(imported.llm_window_steps) : "")
     setRecoveryCooldownSteps(imported.recovery_cooldown_steps != null ? String(imported.recovery_cooldown_steps) : "")
     setRecoveryTwoStateLoopThreshold(imported.recovery_two_state_loop_threshold != null ? String(imported.recovery_two_state_loop_threshold) : "")
     setRecoveryHighVisitThreshold(imported.recovery_high_visit_threshold != null ? String(imported.recovery_high_visit_threshold) : "")
@@ -715,12 +714,10 @@ export function App() {
       setScrollInferThreshold={setScrollInferThreshold}
       imageSimilarityThreshold={imageSimilarityThreshold}
       setImageSimilarityThreshold={setImageSimilarityThreshold}
+      exploreOCRTimeoutMs={exploreOCRTimeoutMs}
+      setExploreOCRTimeoutMs={setExploreOCRTimeoutMs}
       llmTimeoutMs={llmTimeoutMs}
       setLLMTimeoutMs={setLLMTimeoutMs}
-      llmMaxCalls={llmMaxCalls}
-      setLLMMaxCalls={setLLMMaxCalls}
-      llmWindowSteps={llmWindowSteps}
-      setLLMWindowSteps={setLLMWindowSteps}
       recoveryCooldownSteps={recoveryCooldownSteps}
       setRecoveryCooldownSteps={setRecoveryCooldownSteps}
       recoveryTwoStateLoopThreshold={recoveryTwoStateLoopThreshold}

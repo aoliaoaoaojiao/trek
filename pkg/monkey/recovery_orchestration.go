@@ -99,8 +99,15 @@ func (r *Runner) trySelectFromTraversalCandidates(
 }
 
 func (r *Runner) handleBlockDetected(reason string) {
+	r.handleBlockDetectedWithPage(reason, nil)
+}
+
+func (r *Runner) handleBlockDetectedWithPage(reason string, page *coordinator.PageSnapshot) {
 	if r == nil {
 		return
+	}
+	if page != nil && shouldInvalidatePageControlCacheOnBlock(reason) {
+		r.invalidatePageControlCache(page.Screenshot)
 	}
 	if r.recoveryState == nil {
 		r.recoveryState = newRecoveryStateMachineWithCooldown(r.cfg.RecoveryCooldownSteps)
@@ -110,6 +117,15 @@ func (r *Runner) handleBlockDetected(reason string) {
 	r.pendingBlockRecovery = r.recoveryState.Mode() == TraversalModeRecover
 	logger.Infof("recovery state transition on block: from=%s to=%s reason=%s",
 		beforeMode, r.recoveryState.Mode(), r.recoveryState.BlockReason())
+}
+
+func shouldInvalidatePageControlCacheOnBlock(reason string) bool {
+	switch strings.TrimSpace(reason) {
+	case blockReasonSamePageNoChange, blockReasonHighVisitLowGain:
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *Runner) handleProgress(escaped bool) {

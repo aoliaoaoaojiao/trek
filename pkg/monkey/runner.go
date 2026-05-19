@@ -284,6 +284,10 @@ type currentActivityProvider interface {
 	GetCurrentActivity(ctx context.Context) (string, error)
 }
 
+type pageControlCacheInvalidator interface {
+	InvalidatePageControlCache(screenshot []byte)
+}
+
 // Runner 执行 Smart Monkey 真机闭环。
 type Runner struct {
 	decider                Decider
@@ -596,6 +600,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		if err = r.execute(cmd); err != nil {
 			record.Err = err.Error()
 			afterPage := r.capturePageSnapshot(ctx, pageSource, pageName)
+			r.invalidatePageControlCache(beforePage.Screenshot)
 			r.notifyTraversalOutcome(step, beforePage, afterPage, cmd, false)
 			r.recordRecoveryOutcome(false)
 			crash, anr := r.currentHealthSignals()
@@ -629,7 +634,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			beforePage.Signature != afterPage.Signature
 		r.notifyTraversalOutcome(step, beforePage, afterPage, cmd, true)
 		if r.shouldEnableBlockRecovery() && r.blockDetector.Observe(cmd, beforePage, afterPage) {
-			r.handleBlockDetected(r.blockDetector.LastReason())
+			r.handleBlockDetectedWithPage(r.blockDetector.LastReason(), &beforePage)
 			logger.Warnf("monkey step=%d detected block loop reason=%s mode=%s pending=%t",
 				step, r.blockDetector.LastReason(), r.recoveryState.Mode(), r.pendingBlockRecovery)
 			if r.pendingBlockRecovery {
@@ -683,6 +688,14 @@ func (r *Runner) capturePageSnapshot(ctx context.Context, pageSource common.IPag
 		Screenshot: screenshot,
 		Signature:  pageSignature(nextPageName, nextXML),
 	}
+}
+
+func (r *Runner) invalidatePageControlCache(screenshot []byte) {
+	invalidator, ok := r.decider.(pageControlCacheInvalidator)
+	if !ok || invalidator == nil || len(screenshot) == 0 {
+		return
+	}
+	invalidator.InvalidatePageControlCache(screenshot)
 }
 
 func (r *Runner) notifyStepResult(step int, cmd *types.ActionCommand, success bool, errText string, durationMs int64, crash bool, anr bool, before coordinator.PageSnapshot, after *coordinator.PageSnapshot) {

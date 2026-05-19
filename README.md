@@ -146,10 +146,26 @@ const config = {
   // ocr: 基于截图 OCR 提取控件区域并生成伪控件树
   // llm: 基于截图 LLM 推断控件区域并生成伪控件树
   page_control_strategy: "ocr", // 页面理解策略
+  page_control_cache_file: "./data/page_control_cache.sqlite", // 可选：页面理解持久化缓存
+  page_control_cache_ttl_seconds: 1800, // 可选：缓存 TTL，默认 1800 秒
 }
 ```
 
 当“页面理解策略” `page_control_strategy` 为 `ocr` 或 `llm` 时，Trek 会自动启用截图采集；如果当前步骤拿不到 dump，会继续尝试走“截图 -> 控件区域 -> 伪 XML”链路，而不是直接中断该步。
+
+如果希望跨多次跑测复用页面理解结果，可以额外开启页面理解持久化缓存：
+
+- JS 配置：`page_control_cache_file`
+- 环境变量：`PAGE_CONTROL_CACHE_FILE`
+
+启用后，`ocr` / `llm` 生成的合成 XML 会按截图指纹持久化到本地 SQLite；后续遇到相同页面截图时，会优先复用缓存结果，减少重复 OCR / LLM 调用。
+
+当前推荐的缓存刷新逻辑为：
+
+- 缓存 TTL 到期后自动重新获取
+- 动作执行失败时，当前页面截图对应的缓存会立即失效
+- 检测到 `same_page_no_change` / `high_visit_low_reward` 这类低收益信号时，当前页面截图对应的缓存也会失效
+- 阻塞恢复链路中本来就会强制刷新，不复用旧缓存
 
 其中 `llm` 现已使用专门的“控件检测 schema”，要求模型直接返回控件区域列表（`controls`），不再复用恢复动作建议的 `candidates` schema。页面控件提示词独立存放在 Markdown 文档中，并通过 Go `embed` 加载，便于单独维护。控件输出以基础交互类型 `action_type` 为主，例如 `click`、`drag`、`swipe_*`、`input`；可选的 `control_type` 仅作为语义补充。控件 `bounds` 优先使用对象格式 `{left,top,right,bottom}`，同时兼容四元数组 `[left, top, right, bottom]`。
 

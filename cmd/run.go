@@ -133,6 +133,7 @@ func runMonkey(logLevelStr string, opts struct {
 	candidateRiskDropThreshold := staticCfg.CandidateRiskDropThreshold.OrDefault(2.1)
 	candidateMinFusionScore := staticCfg.CandidateMinFusionScore.OrDefault(-0.3)
 	pageControlStrategy := strings.TrimSpace(staticCfg.PageControlStrategy)
+	pageControlCacheTTL := time.Duration(staticCfg.PageControlCacheTTLSeconds.OrDefault(0)) * time.Second
 
 	if normalizePageControlStrategy(pageControlStrategy) != pageControlStrategyRaw {
 		opts.captureScreenshot = true
@@ -196,15 +197,18 @@ func runMonkey(logLevelStr string, opts struct {
 	}
 
 	coord, err := coordinator.New(coordinator.Config{
-		PackageName:         packageName,
-		Algorithm:           algorithmType,
-		ExploreOCRTimeout:   exploreOCRTimeout,
-		RecoveryLLMTimeout:  llmTimeout,
-		PageControlStrategy: pageControlStrategy,
+		PackageName:          packageName,
+		Algorithm:            algorithmType,
+		ExploreOCRTimeout:    exploreOCRTimeout,
+		RecoveryLLMTimeout:   llmTimeout,
+		PageControlStrategy:  pageControlStrategy,
+		PageControlCacheFile: strings.TrimSpace(staticCfg.PageControlCacheFile),
+		PageControlCacheTTL:  pageControlCacheTTL,
 	})
 	if err != nil {
 		return fmt.Errorf("创建会话失败: %w", err)
 	}
+	defer func() { _ = coord.Close() }()
 	if opts.configPath != "" {
 		if err := coord.LoadConfigFile(opts.configPath); err != nil {
 			return fmt.Errorf("加载配置文件失败(%s): %w", opts.configPath, err)

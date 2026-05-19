@@ -8,6 +8,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ import (
 	_ "trek/internal/engine/decision/reuse"
 	_ "trek/internal/engine/decision/uctbandit"
 	"trek/internal/engine/memory"
+	"trek/internal/engine/pagecache"
 	"trek/internal/engine/perception"
 	candidateproviders "trek/internal/engine/perception/providers"
 	engineruntime "trek/internal/engine/runtime"
@@ -43,6 +45,8 @@ type Config struct {
 	RecoveryLLMOpenAIBaseURL string
 	RecoveryLLMTimeout       time.Duration
 	PageControlStrategy      string
+	PageControlCacheFile     string
+	PageControlCacheTTL      time.Duration
 }
 
 // ActionInput 动作输入，包含 XML 描述的 GUI 树和可选截图。
@@ -84,6 +88,7 @@ type Coordinator struct {
 	runtime          *engineruntime.Runtime
 	memoryStore      *memory.Store
 	memoryProvider   *memory.Provider
+	pageControlStore *pagecache.Store
 	ocrProvider      candidateProvider
 	llmProvider      pageControlCandidateProvider
 	traversalAlgo    traversal.TraversalAlgorithm
@@ -92,7 +97,7 @@ type Coordinator struct {
 
 type pageControlCacheEntry struct {
 	SyntheticXML string
-	HitCount     int
+	RefreshedAt  time.Time
 }
 
 type candidateProvider interface {
@@ -123,6 +128,7 @@ func New(config Config) (*Coordinator, error) {
 	coordinator.initRecoveryMemoryProvider()
 	coordinator.initExploreOCRProvider()
 	coordinator.initPageControlLLMProvider()
+	coordinator.initPageControlCacheStore()
 
 	// 在 Reset 之前设置生命周期上下文，供插件 onInit/onDestroy 使用
 	coordinator.runtime.SetLifecycleContext(coordinator.runtime.NewLifecycleContext())
@@ -136,6 +142,25 @@ func New(config Config) (*Coordinator, error) {
 // NewSession 为旧名称兼容入口，后续优先使用 New。
 func NewSession(config Config) (*Coordinator, error) {
 	return New(config)
+}
+
+// Close 关闭协调器持有的持久化资源。
+func (s *Coordinator) Close() error {
+	if s == nil {
+		return nil
+	}
+	var firstErr error
+	if s.memoryStore != nil {
+		if err := s.memoryStore.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	if s.pageControlStore != nil {
+		if err := s.pageControlStore.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
 func (s *Coordinator) initRecoveryMemoryProvider() {
@@ -239,6 +264,23 @@ func (s *Coordinator) initPageControlLLMProvider() {
 	}
 	s.llmProvider = provider
 	logger.Infof("coordinator openai page control llm provider 已启用: model=%s", openAIModel)
+}
+
+func (s *Coordinator) initPageControlCacheStore() {
+	path := strings.TrimSpace(s.config.PageControlCacheFile)
+	if path == "" {
+		path = strings.TrimSpace(os.Getenv("PAGE_CONTROL_CACHE_FILE"))
+	}
+	if path == "" {
+		return
+	}
+	store, err := pagecache.NewStore(path)
+	if err != nil {
+		logger.Warnf("coordinator 初始化页面控件持久化缓存失败: path=%s err=%v", path, err)
+		return
+	}
+	s.pageControlStore = store
+	logger.Infof("coordinator 页面控件持久化缓存已启用: path=%s", path)
 }
 
 // Reset 重置引擎模型和脚本插件状态
@@ -700,24 +742,35 @@ func (s *Coordinator) loadPageControlCache(strategy string, screenshot []byte, f
 	if cacheKey == "" {
 		return "", false
 	}
+	if forceRefresh {
+		logger.Debugf("coordinator 页面控件缓存主动刷新: reason=block_recovery strategy=%s", strategy)
+		return "", false
+	}
 	cached, ok := s.pageControlCache.Load(cacheKey)
 	if !ok {
+		if s.pageControlStore != nil {
+			if persistent, ok := s.pageControlStore.Get(cacheKey); ok && strings.TrimSpace(persistent.SyntheticXML) != "" {
+				entry := pageControlCacheEntry{
+					SyntheticXML: persistent.SyntheticXML,
+					RefreshedAt:  chooseCacheRefreshTime(persistent.RefreshedAt, persistent.CreatedAt),
+				}
+				if s.isPageControlCacheExpired(entry.RefreshedAt) {
+					return "", false
+				}
+				s.pageControlCache.Store(cacheKey, entry)
+				return entry.SyntheticXML, true
+			}
+		}
 		return "", false
 	}
 	entry, ok := cached.(pageControlCacheEntry)
 	if !ok || strings.TrimSpace(entry.SyntheticXML) == "" {
 		return "", false
 	}
-	if forceRefresh {
-		logger.Debugf("coordinator 页面控件缓存主动刷新: reason=block_recovery strategy=%s", strategy)
+	if s.isPageControlCacheExpired(entry.RefreshedAt) {
+		logger.Debugf("coordinator 页面控件缓存 TTL 已过期: strategy=%s", strategy)
 		return "", false
 	}
-	if entry.HitCount >= pageControlCacheRefreshHitThreshold {
-		logger.Debugf("coordinator 页面控件缓存达到刷新阈值: strategy=%s hit_count=%d", strategy, entry.HitCount)
-		return "", false
-	}
-	entry.HitCount++
-	s.pageControlCache.Store(cacheKey, entry)
 	return entry.SyntheticXML, true
 }
 
@@ -726,10 +779,38 @@ func (s *Coordinator) storePageControlCache(strategy string, screenshot []byte, 
 	if cacheKey == "" || strings.TrimSpace(syntheticXML) == "" {
 		return
 	}
+	now := time.Now()
 	s.pageControlCache.Store(cacheKey, pageControlCacheEntry{
 		SyntheticXML: syntheticXML,
-		HitCount:     0,
+		RefreshedAt:  now,
 	})
+	if s.pageControlStore != nil {
+		_ = s.pageControlStore.Put(pagecache.Entry{
+			CacheKey:     cacheKey,
+			Strategy:     strategy,
+			Fingerprint:  pageControlCacheFingerprint(screenshot),
+			SyntheticXML: syntheticXML,
+			RefreshedAt:  now,
+			LastUsedAt:   now,
+			CreatedAt:    now,
+		})
+	}
+}
+
+// InvalidatePageControlCache 使指定截图对应的页面理解缓存失效。
+func (s *Coordinator) InvalidatePageControlCache(screenshot []byte) {
+	if s == nil || len(screenshot) == 0 {
+		return
+	}
+	strategy := normalizePageControlStrategy(s.config.PageControlStrategy)
+	cacheKey := pageControlCacheKey(strategy, screenshot)
+	if cacheKey == "" {
+		return
+	}
+	s.pageControlCache.Delete(cacheKey)
+	if s.pageControlStore != nil {
+		_ = s.pageControlStore.Delete(cacheKey)
+	}
 }
 
 func (s *Coordinator) buildPageControlCandidates(strategy string, ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
@@ -780,10 +861,10 @@ func isAppRestartAction(act types.ActionType) bool {
 }
 
 const (
-	pageControlStrategyRaw              = "raw"
-	pageControlStrategyOCR              = "ocr"
-	pageControlStrategyLLM              = "llm"
-	pageControlCacheRefreshHitThreshold = 5
+	pageControlStrategyRaw     = "raw"
+	pageControlStrategyOCR     = "ocr"
+	pageControlStrategyLLM     = "llm"
+	defaultPageControlCacheTTL = 30 * time.Minute
 )
 
 func normalizePageControlStrategy(strategy string) string {
@@ -877,11 +958,50 @@ func pageControlCacheKey(strategy string, screenshot []byte) string {
 	if strategy != pageControlStrategyOCR && strategy != pageControlStrategyLLM {
 		return ""
 	}
-	fingerprint := strings.TrimSpace(visionfingerprint.Name(screenshot, nil))
+	fingerprint := pageControlCacheFingerprint(screenshot)
 	if fingerprint == "" {
 		return ""
 	}
 	return strategy + "|" + fingerprint
+}
+
+func pageControlCacheFingerprint(screenshot []byte) string {
+	return strings.TrimSpace(visionfingerprint.Name(screenshot, nil))
+}
+
+func (s *Coordinator) resolvePageControlCacheTTL() time.Duration {
+	if s == nil {
+		return defaultPageControlCacheTTL
+	}
+	if s.config.PageControlCacheTTL > 0 {
+		return s.config.PageControlCacheTTL
+	}
+	if text := strings.TrimSpace(os.Getenv("PAGE_CONTROL_CACHE_TTL_SECONDS")); text != "" {
+		if seconds, err := strconv.Atoi(text); err == nil && seconds > 0 {
+			return time.Duration(seconds) * time.Second
+		}
+	}
+	return defaultPageControlCacheTTL
+}
+
+func (s *Coordinator) isPageControlCacheExpired(refreshedAt time.Time) bool {
+	if refreshedAt.IsZero() {
+		return false
+	}
+	ttl := s.resolvePageControlCacheTTL()
+	if ttl <= 0 {
+		return false
+	}
+	return time.Since(refreshedAt) >= ttl
+}
+
+func chooseCacheRefreshTime(values ...time.Time) time.Time {
+	for _, value := range values {
+		if !value.IsZero() {
+			return value
+		}
+	}
+	return time.Time{}
 }
 
 func decodeScreenshotSize(data []byte) (int, int) {

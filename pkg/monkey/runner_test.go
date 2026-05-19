@@ -42,11 +42,13 @@ func (f *failingDecider) NextActionWithInput(pageName string, input session.Acti
 
 type observingDecider struct {
 	fakeDecider
-	results           []session.StepResultInput
-	outcomeCalls      int
-	lastOutcome       string
-	lastOutcomeCtx    enginestate.TraversalContext
-	lastOutcomeAction *types.ActionCommand
+	results                   []session.StepResultInput
+	outcomeCalls              int
+	lastOutcome               string
+	lastOutcomeCtx            enginestate.TraversalContext
+	lastOutcomeAction         *types.ActionCommand
+	invalidatedCount          int
+	lastInvalidatedScreenshot []byte
 }
 
 func (o *observingDecider) OnStepResult(result session.StepResultInput) error {
@@ -60,6 +62,11 @@ func (o *observingDecider) ObserveTraversalOutcome(ctx enginestate.TraversalCont
 	o.lastOutcomeCtx = ctx
 	o.lastOutcomeAction = action
 	return nil
+}
+
+func (o *observingDecider) InvalidatePageControlCache(screenshot []byte) {
+	o.invalidatedCount++
+	o.lastInvalidatedScreenshot = append([]byte(nil), screenshot...)
 }
 
 type weightedDecider struct {
@@ -273,6 +280,7 @@ type fakeDriver struct {
 	envErr              error
 	crashAfterClick     bool
 	anrAfterClick       bool
+	clickErr            error
 	currentActivity     string
 	currentActErr       error
 }
@@ -285,6 +293,9 @@ func (f *fakeDriver) Click(point types.Point) error {
 	}
 	if f.anrAfterClick {
 		f.anr = true
+	}
+	if f.clickErr != nil {
+		return f.clickErr
 	}
 	return nil
 }
@@ -1982,6 +1993,69 @@ func TestBlockDetectorDetectsHighVisitLowReward(t *testing.T) {
 	}
 	if detector.LastReason() != blockReasonHighVisitLowGain {
 		t.Fatalf("预期 reason=%s，实际: %s", blockReasonHighVisitLowGain, detector.LastReason())
+	}
+}
+
+func TestRunnerInvalidatesPageControlCacheOnExecuteFailure(t *testing.T) {
+	decider := &observingDecider{
+		fakeDecider: fakeDecider{
+			commands: []*types.ActionCommand{
+				{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
+			},
+		},
+	}
+	driver := &fakeDriver{
+		pageSource: &fakePageSource{xml: `<hierarchy><node class="android.widget.Button"/></hierarchy>`},
+		clickErr:   errors.New("click failed"),
+		envResult: &common.EnvironmentCheckResult{
+			ADBReady: true, DeviceReady: true, PageSourceReady: true, UIAReady: true, PageSourceType: "uia",
+		},
+	}
+	runner, err := NewRunner(decider, driver, Config{
+		PackageName:       "com.demo",
+		MaxSteps:          1,
+		MaxDuration:       time.Second,
+		KeepStepRecords:   true,
+		CaptureScreenshot: true,
+		PageSourceType:    "uia",
+	})
+	if err != nil {
+		t.Fatalf("创建 Runner 失败: %v", err)
+	}
+
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run 返回错误: %v", err)
+	}
+	if report == nil || report.StepsFailed != 1 {
+		t.Fatalf("预期记录 1 次失败，实际报告: %+v", report)
+	}
+	if decider.invalidatedCount != 1 {
+		t.Fatalf("预期执行失败后触发一次缓存失效，实际: %d", decider.invalidatedCount)
+	}
+	if len(decider.lastInvalidatedScreenshot) == 0 {
+		t.Fatal("预期传递截图给缓存失效逻辑")
+	}
+}
+
+func TestHandleBlockDetectedWithPageInvalidatesPageControlCacheForLowRewardReasons(t *testing.T) {
+	decider := &observingDecider{}
+	runner := &Runner{decider: decider}
+	page := &session.PageSnapshot{PageName: "MainActivity", Screenshot: []byte{1, 2, 3}}
+
+	runner.handleBlockDetectedWithPage(blockReasonSamePageNoChange, page)
+	if decider.invalidatedCount != 1 {
+		t.Fatalf("预期 same_page_no_change 触发一次缓存失效，实际: %d", decider.invalidatedCount)
+	}
+
+	runner.handleBlockDetectedWithPage(blockReasonHighVisitLowGain, page)
+	if decider.invalidatedCount != 2 {
+		t.Fatalf("预期 high_visit_low_reward 再触发一次缓存失效，实际: %d", decider.invalidatedCount)
+	}
+
+	runner.handleBlockDetectedWithPage(blockReasonScrollNoChange, page)
+	if decider.invalidatedCount != 2 {
+		t.Fatalf("scroll_no_change 不应触发缓存失效，实际: %d", decider.invalidatedCount)
 	}
 }
 

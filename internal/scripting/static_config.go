@@ -25,6 +25,8 @@ type StaticConfig struct {
 	ImageFingerprintRegions           []StaticTouchRange
 	ImageSimilaritySSIMThreshold      coretypes.Optional[float64]
 	PageControlStrategy               string
+	PageControlCacheFile              string
+	PageControlCacheTTLSeconds        coretypes.Optional[int]
 	Algorithm                         string
 	Plugins                           []string
 	CaptureScreenshot                 coretypes.Optional[bool]
@@ -229,6 +231,13 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 	if strategyValue := obj.Get("pageControlStrategy"); cfg.PageControlStrategy == "" && !isEmptyJSValue(strategyValue) {
 		cfg.PageControlStrategy = strings.TrimSpace(strategyValue.String())
 	}
+	if cachePathValue := obj.Get("page_control_cache_file"); !isEmptyJSValue(cachePathValue) {
+		cfg.PageControlCacheFile = strings.TrimSpace(cachePathValue.String())
+	}
+	if cachePathValue := obj.Get("pageControlCacheFile"); cfg.PageControlCacheFile == "" && !isEmptyJSValue(cachePathValue) {
+		cfg.PageControlCacheFile = strings.TrimSpace(cachePathValue.String())
+	}
+	cfg.PageControlCacheTTLSeconds = optionalInt(obj, "page_control_cache_ttl_seconds", "pageControlCacheTTLSeconds")
 	if algorithmValue := obj.Get("algorithm"); !isEmptyJSValue(algorithmValue) {
 		cfg.Algorithm = strings.TrimSpace(algorithmValue.String())
 	}

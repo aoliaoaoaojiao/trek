@@ -34,9 +34,15 @@ func mustPNG(t *testing.T, width int, height int) []byte {
 
 func closeSessionMemoryStore(s *Coordinator) {
 	if s == nil || s.memoryStore == nil {
+		if s != nil && s.pageControlStore != nil {
+			_ = s.pageControlStore.Close()
+		}
 		return
 	}
 	_ = s.memoryStore.Close()
+	if s.pageControlStore != nil {
+		_ = s.pageControlStore.Close()
+	}
 }
 
 func TestCoordinatorOwnsRuntimeFacade(t *testing.T) {
@@ -268,10 +274,11 @@ func TestSessionTransformPageInfoWithOCRPageControlStrategyUsesFingerprintCache(
 	}
 }
 
-func TestSessionTransformPageInfoWithOCRPageControlStrategyRefreshesAfterRepeatedCacheHits(t *testing.T) {
+func TestSessionTransformPageInfoWithOCRPageControlStrategyRefreshesAfterTTLExpires(t *testing.T) {
 	session, err := NewSession(Config{
 		PackageName:         "com.demo",
 		PageControlStrategy: "ocr",
+		PageControlCacheTTL: 5 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("创建会话失败: %v", err)
@@ -295,13 +302,93 @@ func TestSessionTransformPageInfoWithOCRPageControlStrategyRefreshesAfterRepeate
 		XMLDescOfGuiTree: `<hierarchy><node class="android.widget.TextView"/></hierarchy>`,
 		Screenshot:       mustPNG(t, 240, 360),
 	}
-	for i := 0; i < pageControlCacheRefreshHitThreshold+2; i++ {
-		if _, err := session.TransformPageInfoWithInput("MainActivity", input); err != nil {
-			t.Fatalf("第 %d 次 TransformPageInfoWithInput 失败: %v", i+1, err)
-		}
+	if _, err := session.TransformPageInfoWithInput("MainActivity", input); err != nil {
+		t.Fatalf("首次 TransformPageInfoWithInput 失败: %v", err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	if _, err := session.TransformPageInfoWithInput("MainActivity", input); err != nil {
+		t.Fatalf("TTL 过期后二次 TransformPageInfoWithInput 失败: %v", err)
 	}
 	if callCount != 2 {
-		t.Fatalf("预期达到缓存刷新阈值后重新调用 OCR provider，实际调用次数: %d", callCount)
+		t.Fatalf("预期缓存 TTL 到期后重新调用 OCR provider，实际调用次数: %d", callCount)
+	}
+}
+
+func TestSessionTransformPageInfoWithOCRPageControlStrategyLoadsPersistentCacheAcrossSessions(t *testing.T) {
+	cachePath := filepath.Join(t.TempDir(), "page_control_cache.sqlite")
+
+	firstSession, err := NewSession(Config{
+		PackageName:          "com.demo",
+		PageControlStrategy:  "ocr",
+		PageControlCacheFile: cachePath,
+	})
+	if err != nil {
+		t.Fatalf("创建首次会话失败: %v", err)
+	}
+	defer closeSessionMemoryStore(firstSession)
+
+	firstCallCount := 0
+	firstSession.ocrProvider = &mockCandidateProvider{
+		buildFn: func(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
+			firstCallCount++
+			item := perception.NewCandidate(
+				&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.15, 0.2, 0.45, 0.4)},
+				perception.SourceOCR,
+				"ocr_click:持久化缓存登录",
+				map[string]string{"ocr_text": "持久化缓存登录"},
+			)
+			return []perception.Candidate{item}, nil
+		},
+	}
+
+	input := ActionInput{
+		XMLDescOfGuiTree: `<hierarchy><node class="android.widget.TextView"/></hierarchy>`,
+		Screenshot:       mustPNG(t, 240, 360),
+	}
+	first, err := firstSession.TransformPageInfoWithInput("MainActivity", input)
+	if err != nil {
+		t.Fatalf("首次 TransformPageInfoWithInput 失败: %v", err)
+	}
+	if firstCallCount != 1 {
+		t.Fatalf("预期首次 provider 调用 1 次，实际: %d", firstCallCount)
+	}
+
+	secondSession, err := NewSession(Config{
+		PackageName:          "com.demo",
+		PageControlStrategy:  "ocr",
+		PageControlCacheFile: cachePath,
+	})
+	if err != nil {
+		t.Fatalf("创建二次会话失败: %v", err)
+	}
+	defer closeSessionMemoryStore(secondSession)
+
+	secondCallCount := 0
+	secondSession.ocrProvider = &mockCandidateProvider{
+		buildFn: func(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
+			secondCallCount++
+			item := perception.NewCandidate(
+				&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.3, 0.3, 0.5, 0.45)},
+				perception.SourceOCR,
+				"ocr_click:不应触发",
+				map[string]string{"ocr_text": "不应触发"},
+			)
+			return []perception.Candidate{item}, nil
+		},
+	}
+
+	second, err := secondSession.TransformPageInfoWithInput("MainActivity", input)
+	if err != nil {
+		t.Fatalf("二次 TransformPageInfoWithInput 失败: %v", err)
+	}
+	if secondCallCount != 0 {
+		t.Fatalf("预期二次会话直接命中持久化缓存，实际 provider 调用次数: %d", secondCallCount)
+	}
+	if first.XML != second.XML {
+		t.Fatalf("跨会话持久化缓存应复用同一份控件树，首次=%s 二次=%s", first.XML, second.XML)
+	}
+	if !strings.Contains(second.XML, `text="持久化缓存登录"`) {
+		t.Fatalf("持久化缓存结果缺少 OCR 控件信息，实际 XML: %s", second.XML)
 	}
 }
 

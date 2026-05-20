@@ -586,11 +586,117 @@ declare namespace Trek {
     error(message: string): void
   }
 
+  interface HTTPRequestOptions {
+    method?: string
+    url: string
+    headers?: Record<string, string>
+    body?: string | Uint8Array | number[]
+    /** 请求超时（毫秒）。默认 10000，最大 30000 */
+    timeout_ms?: number
+  }
+
+  interface HTTPResponse {
+    status: number
+    status_text: string
+    ok: boolean
+    headers: Record<string, string>
+    body: string
+    bytes: Uint8Array
+  }
+
+  interface HTTPAPI {
+    /** 发起同步 HTTP 请求，仅支持 http / https。响应体最大 2MB。 */
+    request(options: HTTPRequestOptions): HTTPResponse
+    /** 发起 GET 请求。 */
+    get(url: string, options?: Omit<HTTPRequestOptions, "method" | "url" | "body">): HTTPResponse
+    /** 发起 POST 请求。 */
+    post(url: string, body?: string | Uint8Array | number[], options?: Omit<HTTPRequestOptions, "method" | "url" | "body">): HTTPResponse
+  }
+
+  // ── OCR API ──────────────────────────────────────────────────
+
+  /** OCR 识别出的文本区域。 */
+  interface OCRRegion {
+    /** 识别出的文本内容（格式为 intent 字符串，如 "ocr_click:确定"）。 */
+    text: string
+    /** 置信度 [0, 1]。 */
+    confidence: number
+    /** 归一化边界 [left, top, right, bottom]，范围 [0, 1]。 */
+    bounds: [number, number, number, number]
+  }
+
+  interface OCRRecognizeOptions {
+    /** 截图字节（来自 trek.page.screenshotBytes）。 */
+    screenshot: Uint8Array | number[]
+    /** OCR 服务端点 URL。缺省读 PADDLEOCR_API_URL 环境变量。 */
+    endpoint?: string
+    /** 认证密钥。缺省读 PADDLEOCR_API_KEY 环境变量。 */
+    api_key?: string
+    /** 请求超时毫秒。默认 10000。 */
+    timeout_ms?: number
+    /** 额外请求头。 */
+    headers?: Record<string, string>
+  }
+
+  interface OCRAPI {
+    /**
+     * 调用 OCR 服务识别截图中的文本区域，返回归一化坐标的区域列表。
+     * @example
+     * const regions = trek.ocr.recognize({
+     *   screenshot: trek.page.screenshotBytes(ctx.page),
+     *   endpoint: 'http://ocr-server:8080/ocr',
+     * });
+     * for (const r of regions) {
+     *   trek.log.info(`text=${r.text} bounds=${r.bounds}`);
+     * }
+     */
+    recognize(options: OCRRecognizeOptions): OCRRegion[]
+  }
+
+  // ── LLM API ──────────────────────────────────────────────────
+
+  interface LLMChatOptions {
+    /** 用户提示词。 */
+    prompt: string
+    /** 可选截图（多模态输入）。 */
+    screenshot?: Uint8Array | number[]
+    /** LLM 端点 URL（OpenAI Chat Completions 格式）。缺省读 LLM_API_URL / OPENAI_API_URL。 */
+    endpoint?: string
+    /** 认证密钥。缺省读 LLM_API_KEY / OPENAI_API_KEY。 */
+    api_key?: string
+    /** 模型名称。缺省读 LLM_MODEL / OPENAI_MODEL。 */
+    model?: string
+    /** 请求超时毫秒。默认 30000。 */
+    timeout_ms?: number
+    /** 额外请求头。 */
+    headers?: Record<string, string>
+    /** 最大输出 token 数。默认 4096。 */
+    max_tokens?: number
+  }
+
+  interface LLMAPI {
+    /**
+     * 调用 LLM 多模态对话，返回文本响应。
+     * 支持所有 OpenAI Chat Completions 格式的端点（GPT-4o、Gemini、Qwen-VL 等）。
+     * @example
+     * const text = trek.llm.chat({
+     *   prompt: '根据截图描述当前页面内容',
+     *   screenshot: trek.page.screenshotBytes(ctx.page),
+     * });
+     */
+    chat(options: LLMChatOptions): string
+  }
+
   interface API {
     action: ActionAPI
     page: PageAPI
     store: StoreAPI
     log: LogAPI
+    http: HTTPAPI
+    ocr: OCRAPI
+    llm: LLMAPI
+    /** 同步暂停指定毫秒数，最大 30000。 */
+    sleep(milliseconds: number): void
   }
 }
 

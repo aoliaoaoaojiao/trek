@@ -1,6 +1,12 @@
 package scripting
 
-import "testing"
+import (
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+)
 
 func TestManagerTransformBeforeAfterAndState(t *testing.T) {
 	manager, err := LoadScript(`const plugin = {
@@ -134,6 +140,249 @@ func TestManagerOnStepResultSeesCrashANRAndBeforeAfterPages(t *testing.T) {
 	}
 	if got := manager.StateGet("after_xml"); got != `<after/>` {
 		t.Fatalf("after xml 不符合预期: %v", got)
+	}
+}
+
+func TestManagerExposesHTTPGetToScript(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("请求方法不符合预期: %s", r.Method)
+		}
+		w.Header().Set("X-Trek-Test", "ok")
+		_, _ = w.Write([]byte(`{"enabled":true}`))
+	}))
+	defer server.Close()
+
+	manager, err := LoadScript(`const plugin = {
+  beforeDecide(ctx) {
+    const resp = trek.http.get("` + server.URL + `/flags", { timeout_ms: 1000 })
+    if (resp.ok && resp.status === 200 && resp.body.indexOf("enabled") >= 0 && resp.headers["X-Trek-Test"] === "ok") {
+      return trek.action.back()
+    }
+    return null
+  },
+}`)
+	if err != nil {
+		t.Fatalf("加载插件失败: %v", err)
+	}
+
+	action, handled, err := manager.BeforeDecide(PluginContext{})
+	if err != nil {
+		t.Fatalf("beforeDecide 失败: %v", err)
+	}
+	if !handled || action == nil || action.Type != ActionBack {
+		t.Fatalf("HTTP GET 未正确暴露给脚本: handled=%v action=%+v", handled, action)
+	}
+}
+
+func TestManagerExposesHTTPPostToScript(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("请求方法不符合预期: %s", r.Method)
+		}
+		if r.Header.Get("X-Trek-Token") != "local-test" {
+			t.Fatalf("请求头不符合预期: %s", r.Header.Get("X-Trek-Token"))
+		}
+		data, _ := io.ReadAll(r.Body)
+		if string(data) != `{"page":"Home"}` {
+			t.Fatalf("请求体不符合预期: %s", string(data))
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte("created"))
+	}))
+	defer server.Close()
+
+	manager, err := LoadScript(`const plugin = {
+  beforeDecide(ctx) {
+    const resp = trek.http.post("` + server.URL + `/events", "{\"page\":\"Home\"}", {
+      headers: { "X-Trek-Token": "local-test" },
+      timeout_ms: 1000,
+    })
+    if (resp.status === 201 && resp.body === "created") return trek.action.back()
+    return null
+  },
+}`)
+	if err != nil {
+		t.Fatalf("加载插件失败: %v", err)
+	}
+
+	action, handled, err := manager.BeforeDecide(PluginContext{})
+	if err != nil {
+		t.Fatalf("beforeDecide 失败: %v", err)
+	}
+	if !handled || action == nil || action.Type != ActionBack {
+		t.Fatalf("HTTP POST 未正确暴露给脚本: handled=%v action=%+v", handled, action)
+	}
+}
+
+func TestManagerExposesSleepToScript(t *testing.T) {
+	manager, err := LoadScript(`const plugin = {
+  beforeDecide(ctx) {
+    const start = Date.now()
+    trek.sleep(20)
+    if (Date.now() - start >= 15) return trek.action.back()
+    return null
+  },
+}`)
+	if err != nil {
+		t.Fatalf("加载插件失败: %v", err)
+	}
+
+	start := time.Now()
+	action, handled, err := manager.BeforeDecide(PluginContext{})
+	if err != nil {
+		t.Fatalf("beforeDecide 失败: %v", err)
+	}
+	if time.Since(start) < 15*time.Millisecond {
+		t.Fatalf("trek.sleep 未产生预期暂停")
+	}
+	if !handled || action == nil || action.Type != ActionBack {
+		t.Fatalf("sleep 后未返回预期动作: handled=%v action=%+v", handled, action)
+	}
+}
+
+func TestOCRRecognizeFromScript(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// 使用归一化坐标 [0,1]，避免 OCR provider 因无法解码截图尺寸而丢弃。
+		_, _ = w.Write([]byte(`{"regions":[{"text":"确定","confidence":0.95,"bounds":[0.1,0.2,0.3,0.4]}]}`))
+	}))
+	defer server.Close()
+
+	manager, err := LoadScript(`const plugin = {
+  beforeDecide(ctx) {
+    const regions = trek.ocr.recognize({
+      screenshot: [0x89, 0x50, 0x4E],
+      endpoint: "` + server.URL + `/ocr",
+      timeout_ms: 5000,
+    });
+    if (regions.length === 1 && regions[0].text.indexOf("确定") >= 0 && regions[0].confidence > 0.9) {
+      return trek.action.click(regions[0].bounds);
+    }
+    return null
+  },
+}`)
+	if err != nil {
+		t.Fatalf("加载插件失败: %v", err)
+	}
+
+	action, handled, err := manager.BeforeDecide(PluginContext{})
+	if err != nil {
+		t.Fatalf("beforeDecide 失败: %v", err)
+	}
+	if !handled || action == nil || action.Type != ActionClick {
+		t.Fatalf("OCR 识别未正确返回: handled=%v action=%+v", handled, action)
+	}
+	if action.Bounds != [4]float64{0.1, 0.2, 0.3, 0.4} {
+		t.Fatalf("OCR bounds 不符合预期: %+v", action.Bounds)
+	}
+}
+
+func TestOCRRecognizeMissingEndpoint(t *testing.T) {
+	manager, err := LoadScript(`const plugin = {
+  onInit(ctx) {
+    try {
+      trek.ocr.recognize({ screenshot: [1, 2, 3] });
+    } catch (e) {
+      trek.store.set("error", e.message);
+    }
+  },
+}`)
+	if err != nil {
+		t.Fatalf("加载插件失败: %v", err)
+	}
+
+	_ = manager.OnInit(LifecycleContext{})
+	if got := manager.StateGet("error"); got == nil {
+		t.Fatal("缺少 endpoint 时应抛出错误")
+	}
+}
+
+func TestLLMChatFromScript(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"当前页面是登录页"}}]}`))
+	}))
+	defer server.Close()
+
+	manager, err := LoadScript(`const plugin = {
+  beforeDecide(ctx) {
+    const text = trek.llm.chat({
+      prompt: "描述当前页面",
+      endpoint: "` + server.URL + `/v1/chat/completions",
+      model: "gpt-4o",
+      max_tokens: 100,
+      timeout_ms: 5000,
+    });
+    if (text === "当前页面是登录页") {
+      return trek.action.back();
+    }
+    return null
+  },
+}`)
+	if err != nil {
+		t.Fatalf("加载插件失败: %v", err)
+	}
+
+	action, handled, err := manager.BeforeDecide(PluginContext{})
+	if err != nil {
+		t.Fatalf("beforeDecide 失败: %v", err)
+	}
+	if !handled || action == nil || action.Type != ActionBack {
+		t.Fatalf("LLM chat 未正确返回: handled=%v action=%+v", handled, action)
+	}
+}
+
+func TestLLMChatWithScreenshot(t *testing.T) {
+	var receivedBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, _ := io.ReadAll(r.Body)
+		receivedBody = string(data)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer server.Close()
+
+	manager, err := LoadScript(`const plugin = {
+  beforeDecide(ctx) {
+    trek.llm.chat({
+      prompt: "分析截图",
+      screenshot: [0x89, 0x50, 0x4E, 0x47],
+      endpoint: "` + server.URL + `/v1/chat/completions",
+    });
+    return trek.action.nop()
+  },
+}`)
+	if err != nil {
+		t.Fatalf("加载插件失败: %v", err)
+	}
+
+	_, _, err = manager.BeforeDecide(PluginContext{})
+	if err != nil {
+		t.Fatalf("beforeDecide 失败: %v", err)
+	}
+	if receivedBody == "" {
+		t.Fatal("LLM chat 未发送请求")
+	}
+}
+
+func TestLLMChatMissingPrompt(t *testing.T) {
+	manager, err := LoadScript(`const plugin = {
+  onInit(ctx) {
+    try {
+      trek.llm.chat({ endpoint: "http://localhost:1" });
+    } catch (e) {
+      trek.store.set("error", e.message);
+    }
+  },
+}`)
+	if err != nil {
+		t.Fatalf("加载插件失败: %v", err)
+	}
+
+	_ = manager.OnInit(LifecycleContext{})
+	if got := manager.StateGet("error"); got == nil {
+		t.Fatal("缺少 prompt 时应抛出错误")
 	}
 }
 

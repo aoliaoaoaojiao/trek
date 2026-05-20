@@ -4,6 +4,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -383,6 +385,120 @@ func TestLLMChatMissingPrompt(t *testing.T) {
 	_ = manager.OnInit(LifecycleContext{})
 	if got := manager.StateGet("error"); got == nil {
 		t.Fatal("缺少 prompt 时应抛出错误")
+	}
+}
+
+func jsPath(p string) string {
+	return strings.ReplaceAll(p, "\\", "/")
+}
+
+func TestFileOpenReadWrite(t *testing.T) {
+	dir := t.TempDir()
+	filePath := dir + "/test.txt"
+
+	manager, err := LoadScript(`const plugin = {
+  onInit(ctx) {
+    // 写入
+    const w = trek.file.open("` + jsPath(filePath) + `", "w");
+    w.writeString("hello world");
+    w.close();
+
+    // 读取
+    const r = trek.file.open("` + jsPath(filePath) + `");
+    const text = r.readString();
+    r.close();
+
+    trek.store.set("text", text);
+  },
+}`)
+	if err != nil {
+		t.Fatalf("加载插件失败: %v", err)
+	}
+
+	_ = manager.OnInit(LifecycleContext{})
+	if got := manager.StateGet("text"); got != "hello world" {
+		t.Fatalf("文件读写不符合预期: %v", got)
+	}
+}
+
+func TestFileReadLines(t *testing.T) {
+	dir := t.TempDir()
+	filePath := dir + "/lines.txt"
+	_ = os.WriteFile(filePath, []byte("line1\nline2\nline3\n"), 0644)
+
+	manager, err := LoadScript(`const plugin = {
+  onInit(ctx) {
+    const f = trek.file.open("` + jsPath(filePath) + `");
+    const lines = f.readLines();
+    f.close();
+    trek.store.set("count", lines.length);
+    trek.store.set("first", lines[0]);
+    trek.store.set("last", lines[lines.length - 1]);
+  },
+}`)
+	if err != nil {
+		t.Fatalf("加载插件失败: %v", err)
+	}
+
+	_ = manager.OnInit(LifecycleContext{})
+	if got := manager.StateGet("count"); got != int64(4) {
+		t.Fatalf("行数不符合预期: %v", got)
+	}
+	if got := manager.StateGet("first"); got != "line1" {
+		t.Fatalf("首行不符合预期: %v", got)
+	}
+}
+
+func TestFileExists(t *testing.T) {
+	dir := t.TempDir()
+	filePath := dir + "/exists.txt"
+	_ = os.WriteFile(filePath, []byte("data"), 0644)
+
+	manager, err := LoadScript(`const plugin = {
+  onInit(ctx) {
+    trek.store.set("exists", trek.file.exists("` + jsPath(filePath) + `"));
+    trek.store.set("missing", trek.file.exists("` + jsPath(dir) + `/nope.txt"));
+  },
+}`)
+	if err != nil {
+		t.Fatalf("加载插件失败: %v", err)
+	}
+
+	_ = manager.OnInit(LifecycleContext{})
+	if got := manager.StateGet("exists"); got != true {
+		t.Fatalf("存在的文件应返回 true: %v", got)
+	}
+	if got := manager.StateGet("missing"); got != false {
+		t.Fatalf("不存在的文件应返回 false: %v", got)
+	}
+}
+
+func TestFileSeekAndTell(t *testing.T) {
+	dir := t.TempDir()
+	filePath := dir + "/seek.txt"
+	_ = os.WriteFile(filePath, []byte("abcdef"), 0644)
+
+	manager, err := LoadScript(`const plugin = {
+  onInit(ctx) {
+    const f = trek.file.open("` + jsPath(filePath) + `");
+    f.seek(3, "start");
+    const pos = f.tell();
+    const rest = f.readString();
+    f.close();
+    trek.store.set("pos", pos);
+    trek.store.set("rest", rest);
+  },
+}`)
+	if err != nil {
+		t.Fatalf("加载插件失败: %v", err)
+	}
+
+	_ = manager.OnInit(LifecycleContext{})
+	if got := manager.StateGet("pos"); got != int64(3) {
+		t.Fatalf("seek 位置不符合预期: %v", got)
+	}
+	if got := manager.StateGet("rest"); got != "def" {
+		t.Fatalf("seek 后读取不符合预期: %v", got)
 	}
 }
 

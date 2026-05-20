@@ -35,6 +35,7 @@ const (
 type Manager struct {
 	source string
 	state  map[string]any
+	files  []*scriptFile
 	vm     *goja.Runtime
 }
 
@@ -318,6 +319,20 @@ func (m *Manager) installTrekAPI(vm *goja.Runtime) error {
 		},
 	}
 
+	fileAPI := map[string]any{
+		"open": func(path string, mode goja.Value) (map[string]any, error) {
+			mm := ""
+			if mode != nil && !goja.IsUndefined(mode) && !goja.IsNull(mode) {
+				mm = mode.String()
+			}
+			return m.scriptFileOpen(path, mm)
+		},
+		"exists": func(path string) bool {
+			_, err := os.Stat(path)
+			return err == nil
+		},
+	}
+
 	return vm.Set("trek", map[string]any{
 		"action": actionAPI,
 		"page":   pageAPI,
@@ -326,6 +341,7 @@ func (m *Manager) installTrekAPI(vm *goja.Runtime) error {
 		"http":   httpAPI,
 		"ocr":    ocrAPI,
 		"llm":    llmAPI,
+		"file":   fileAPI,
 		"sleep":  sleepScript,
 	})
 }
@@ -542,6 +558,188 @@ func floatValue(value any) float64 {
 	default:
 		return 0
 	}
+}
+
+// scriptFile 是 goja 脚本中 trek.file.open() 返回的文件句柄。
+type scriptFile struct {
+	path   string
+	file   *os.File
+	closed bool
+}
+
+// scriptFileOpen 打开文件并返回 JS 可用的文件句柄对象。
+//
+// trek.file.open(path, mode?)
+// mode: "r" 只读（默认）, "w" 写入（清空）, "a" 追加, "r+" 读写
+func (m *Manager) scriptFileOpen(path string, mode string) (map[string]any, error) {
+	if path == "" {
+		return nil, fmt.Errorf("trek.file.open 缺少 path")
+	}
+	flag := os.O_RDONLY
+	perm := os.FileMode(0644)
+	mm := "r"
+	if mode != "" {
+		mm = strings.ToLower(strings.TrimSpace(mode))
+	}
+	switch mm {
+	case "r":
+		flag = os.O_RDONLY
+	case "w":
+		flag = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+	case "a":
+		flag = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+	case "r+":
+		flag = os.O_RDWR | os.O_CREATE
+	default:
+		return nil, fmt.Errorf("trek.file.open 不支持的 mode: %s（仅 r/w/a/r+）", mm)
+	}
+	f, err := os.OpenFile(path, flag, perm)
+	if err != nil {
+		return nil, fmt.Errorf("trek.file.open 失败: %w", err)
+	}
+	sf := &scriptFile{path: path, file: f}
+	m.files = append(m.files, sf)
+
+	return map[string]any{
+		"readString": func() (string, error) {
+			if sf.closed {
+				return "", fmt.Errorf("文件已关闭: %s", path)
+			}
+			data, err := io.ReadAll(sf.file)
+			if err != nil {
+				return "", err
+			}
+			return string(data), nil
+		},
+		"readBytes": func() ([]byte, error) {
+			if sf.closed {
+				return nil, fmt.Errorf("文件已关闭: %s", path)
+			}
+			return io.ReadAll(sf.file)
+		},
+		"read": func(n int) ([]byte, error) {
+			if sf.closed {
+				return nil, fmt.Errorf("文件已关闭: %s", path)
+			}
+			if n <= 0 {
+				return io.ReadAll(sf.file)
+			}
+			buf := make([]byte, n)
+			nn, err := sf.file.Read(buf)
+			if err != nil && err != io.EOF {
+				return nil, err
+			}
+			return buf[:nn], nil
+		},
+		"readLine": func() (string, error) {
+			if sf.closed {
+				return "", fmt.Errorf("文件已关闭: %s", path)
+			}
+			var line []byte
+			buf := make([]byte, 1)
+			for {
+				n, err := sf.file.Read(buf)
+				if n > 0 {
+					if buf[0] == '\n' {
+						break
+					}
+					line = append(line, buf[0])
+				}
+				if err != nil {
+					if err == io.EOF && len(line) > 0 {
+						break
+					}
+					return string(line), err
+				}
+			}
+			return strings.TrimRight(string(line), "\r"), nil
+		},
+		"readLines": func() ([]string, error) {
+			if sf.closed {
+				return nil, fmt.Errorf("文件已关闭: %s", path)
+			}
+			data, err := io.ReadAll(sf.file)
+			if err != nil {
+				return nil, err
+			}
+			raw := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+			lines := make([]string, 0, len(raw))
+			for _, l := range raw {
+				lines = append(lines, l)
+			}
+			return lines, nil
+		},
+		"writeString": func(data string) (int, error) {
+			if sf.closed {
+				return 0, fmt.Errorf("文件已关闭: %s", path)
+			}
+			return sf.file.WriteString(data)
+		},
+		"writeBytes": func(data []byte) (int, error) {
+			if sf.closed {
+				return 0, fmt.Errorf("文件已关闭: %s", path)
+			}
+			return sf.file.Write(data)
+		},
+		"write": func(data any) (int, error) {
+			if sf.closed {
+				return 0, fmt.Errorf("文件已关闭: %s", path)
+			}
+			switch v := data.(type) {
+			case string:
+				return sf.file.WriteString(v)
+			case []byte:
+				return sf.file.Write(v)
+			case []any:
+				b := make([]byte, len(v))
+				for i, item := range v {
+					b[i] = byte(intValue(item))
+				}
+				return sf.file.Write(b)
+			default:
+				return sf.file.WriteString(fmt.Sprint(v))
+			}
+		},
+		"seek": func(offset int64, whence string) (int64, error) {
+			if sf.closed {
+				return 0, fmt.Errorf("文件已关闭: %s", path)
+			}
+			w := io.SeekStart
+			switch strings.ToLower(strings.TrimSpace(whence)) {
+			case "current", "cur":
+				w = io.SeekCurrent
+			case "end":
+				w = io.SeekEnd
+			}
+			return sf.file.Seek(offset, w)
+		},
+		"tell": func() (int64, error) {
+			if sf.closed {
+				return 0, fmt.Errorf("文件已关闭: %s", path)
+			}
+			return sf.file.Seek(0, io.SeekCurrent)
+		},
+		"size": func() (int64, error) {
+			if sf.closed {
+				return 0, fmt.Errorf("文件已关闭: %s", path)
+			}
+			info, err := sf.file.Stat()
+			if err != nil {
+				return 0, err
+			}
+			return info.Size(), nil
+		},
+		"close": func() error {
+			if sf.closed {
+				return nil
+			}
+			sf.closed = true
+			return sf.file.Close()
+		},
+		"path": func() string {
+			return path
+		},
+	}, nil
 }
 
 func intValue(value any) int {

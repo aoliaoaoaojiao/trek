@@ -687,6 +687,61 @@ declare namespace Trek {
     chat(options: LLMChatOptions): string
   }
 
+  // ── File API ─────────────────────────────────────────────────
+
+  /** trek.file.open() 返回的文件句柄。 */
+  interface FileHandle {
+    /** 读取全部内容为字符串。 */
+    readString(): string
+    /** 读取全部内容为字节数组。 */
+    readBytes(): Uint8Array
+    /** 读取 n 字节；n<=0 或省略则读取全部。 */
+    read(n?: number): Uint8Array
+    /** 读取一行（不含换行符）。 */
+    readLine(): string
+    /** 读取所有行，返回字符串数组。 */
+    readLines(): string[]
+    /** 写入字符串，返回写入字节数。 */
+    writeString(data: string): number
+    /** 写入字节数组，返回写入字节数。 */
+    writeBytes(data: Uint8Array | number[]): number
+    /** 写入字符串或字节，返回写入字节数。 */
+    write(data: string | Uint8Array | number[]): number
+    /** 移动文件指针。whence: "start"（默认）/ "current" / "end"。 */
+    seek(offset: number, whence?: string): number
+    /** 返回当前文件指针位置。 */
+    tell(): number
+    /** 返回文件大小（字节）。 */
+    size(): number
+    /** 关闭文件句柄。 */
+    close(): void
+    /** 返回文件路径。 */
+    path(): string
+  }
+
+  interface FileAPI {
+    /**
+     * 打开文件，返回文件句柄。
+     * @param path 文件路径
+     * @param mode 打开模式："r" 只读（默认）, "w" 写入（清空）, "a" 追加, "r+" 读写
+     * @example
+     * const f = trek.file.open('/sdcard/config.json');
+     * const text = f.readString();
+     * f.close();
+     *
+     * const w = trek.file.open('/sdcard/output.txt', 'w');
+     * w.writeString('hello\n');
+     * w.close();
+     */
+    open(path: string, mode?: string): FileHandle
+    /**
+     * 检查文件是否存在。
+     * @example
+     * if (trek.file.exists('/sdcard/config.json')) { ... }
+     */
+    exists(path: string): boolean
+  }
+
   interface API {
     action: ActionAPI
     page: PageAPI
@@ -695,6 +750,7 @@ declare namespace Trek {
     http: HTTPAPI
     ocr: OCRAPI
     llm: LLMAPI
+    file: FileAPI
     /** 同步暂停指定毫秒数，最大 30000。 */
     sleep(milliseconds: number): void
   }

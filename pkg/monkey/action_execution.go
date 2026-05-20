@@ -1,8 +1,11 @@
 package monkey
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image"
+	"image/png"
 	"math"
 	"regexp"
 	"strconv"
@@ -100,6 +103,23 @@ func (r *Runner) normalizePocoScrollCommand(step int, cmd *types.ActionCommand, 
 			logger.Warnf("monkey step=%d action=%s bounds empty under poco, fallback to normalized full-screen rect", step, cmd.Act.String())
 		}
 	}
+}
+
+// cropScreenshotForEffectiveTouchArea 在截图进入决策管线前按 effective_touch_area 裁剪。
+// 这样 goja/LLM 看到的是子区域截图，返回的归一化坐标经 applyEffectiveTouchArea 映射后位置正确。
+func (r *Runner) cropScreenshotForEffectiveTouchArea(screenshot []byte) []byte {
+	if len(screenshot) == 0 || len(r.cfg.EffectiveTouchAreas) == 0 {
+		return screenshot
+	}
+	orientation := r.resolveScreenOrientation()
+	if orientation == "" {
+		return screenshot
+	}
+	area := matchEffectiveTouchArea(r.cfg.EffectiveTouchAreas, r.cfg.DeviceSerial, r.cfg.PackageName, orientation)
+	if area == nil {
+		return screenshot
+	}
+	return cropScreenshotByNormalizedRange(screenshot, area.Range)
 }
 
 func (r *Runner) applyEffectiveTouchArea(step int, cmd *types.ActionCommand, xml string) {
@@ -407,4 +427,48 @@ func (r *Runner) resolveStepDelay(cmd *types.ActionCommand) time.Duration {
 		delay = time.Duration(n) * time.Millisecond
 	}
 	return delay
+}
+
+type subImager interface {
+	SubImage(r image.Rectangle) image.Image
+}
+
+// cropScreenshotByNormalizedRange 按归一化坐标范围裁剪截图。
+// area 值域 [0,1]，全屏范围不做裁剪直接返回原图。
+func cropScreenshotByNormalizedRange(screenshot []byte, area EffectiveTouchRange) []byte {
+	if len(screenshot) == 0 {
+		return screenshot
+	}
+	if area.Left <= 0 && area.Top <= 0 && area.Right >= 1 && area.Bottom >= 1 {
+		return screenshot
+	}
+	img, format, err := image.Decode(bytes.NewReader(screenshot))
+	if err != nil || format != "png" {
+		return screenshot
+	}
+	si, ok := img.(subImager)
+	if !ok {
+		return screenshot
+	}
+	bounds := img.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+	if w <= 0 || h <= 0 {
+		return screenshot
+	}
+	rect := image.Rect(
+		int(area.Left*float64(w))+bounds.Min.X,
+		int(area.Top*float64(h))+bounds.Min.Y,
+		int(area.Right*float64(w))+bounds.Min.X,
+		int(area.Bottom*float64(h))+bounds.Min.Y,
+	)
+	rect = rect.Intersect(bounds)
+	if rect.Empty() {
+		return screenshot
+	}
+	cropped := si.SubImage(rect)
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, cropped); err != nil {
+		return screenshot
+	}
+	return buf.Bytes()
 }

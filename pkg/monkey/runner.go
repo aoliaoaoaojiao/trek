@@ -543,6 +543,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		if r.cfg.CaptureScreenshot && len(screenshot) == 0 {
 			screenshot, _ = r.driver.Screenshot(ctx)
 		}
+		screenshot = r.cropScreenshotForEffectiveTouchArea(screenshot)
 		pageName, xml := r.resolvePageInfo(ctx, xml, screenshot)
 
 		beforePage := coordinator.PageSnapshot{

@@ -129,6 +129,7 @@ type Config struct {
 	ImageSignatureFunc                func([]byte) string
 	ImageFingerprintRegions           []ImageFingerprintRegion
 	ImageSimilaritySSIMThreshold      float64
+	ArtifactDir                       string // 产物实时写入目录；为空则不实时写盘
 }
 
 type EffectiveTouchArea struct {

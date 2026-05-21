@@ -470,27 +470,33 @@ func writeArtifacts(rootDir string, records []monkey.StepRecord, pages []PageSum
 
 	for index := range cloned {
 		record := &cloned[index]
-		beforeRef, beforeFiles, err := writeStepSnapshotArtifacts(targetRoot, *record, "before", record.BeforePageName, record.BeforeXML, record.BeforeScreenshot)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		record.BeforeArtifactRef = beforeRef
-		if beforeRef != nil {
-			pageDirs[beforeRef.PageDir] = struct{}{}
-		}
-		screenshotCount += beforeFiles.screenshotCount
-		xmlCount += beforeFiles.xmlCount
 
-		afterRef, afterFiles, err := writeStepSnapshotArtifacts(targetRoot, *record, "after", record.AfterPageName, record.AfterXML, record.AfterScreenshot)
-		if err != nil {
-			return nil, nil, nil, err
+		// 实时写盘模式下 ArtifactRef 已在 runner 中设置，跳过重复写入
+		if record.BeforeArtifactRef == nil {
+			beforeRef, beforeFiles, err := writeStepSnapshotArtifacts(targetRoot, *record, "before", record.BeforePageName, record.BeforeXML, record.BeforeScreenshot)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			record.BeforeArtifactRef = beforeRef
+			screenshotCount += beforeFiles.screenshotCount
+			xmlCount += beforeFiles.xmlCount
 		}
-		record.AfterArtifactRef = afterRef
-		if afterRef != nil {
-			pageDirs[afterRef.PageDir] = struct{}{}
+		if record.BeforeArtifactRef != nil {
+			pageDirs[record.BeforeArtifactRef.PageDir] = struct{}{}
 		}
-		screenshotCount += afterFiles.screenshotCount
-		xmlCount += afterFiles.xmlCount
+
+		if record.AfterArtifactRef == nil {
+			afterRef, afterFiles, err := writeStepSnapshotArtifacts(targetRoot, *record, "after", record.AfterPageName, record.AfterXML, record.AfterScreenshot)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			record.AfterArtifactRef = afterRef
+			screenshotCount += afterFiles.screenshotCount
+			xmlCount += afterFiles.xmlCount
+		}
+		if record.AfterArtifactRef != nil {
+			pageDirs[record.AfterArtifactRef.PageDir] = struct{}{}
+		}
 	}
 
 	for index := range updatedPages {

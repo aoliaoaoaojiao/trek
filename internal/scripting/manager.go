@@ -32,6 +32,26 @@ const (
 	maxScriptSleepDuration  = 30 * time.Second
 )
 
+// 包级默认超时，由 cmd/run.go 启动时通过 setter 写入，goja API 作为兜底默认值使用。
+var (
+	globalLLMTimeout = 15 * time.Second
+	globalOCRTimeout = 10 * time.Second
+)
+
+// SetDefaultLLMTimeout 设置全局 LLM 默认超时（来自 llm_timeout_ms 配置）。
+func SetDefaultLLMTimeout(d time.Duration) {
+	if d > 0 {
+		globalLLMTimeout = d
+	}
+}
+
+// SetDefaultOCRTimeout 设置全局 OCR 默认超时（来自 explore_ocr_timeout_ms 配置）。
+func SetDefaultOCRTimeout(d time.Duration) {
+	if d > 0 {
+		globalOCRTimeout = d
+	}
+}
+
 type Manager struct {
 	source string
 	state  map[string]any
@@ -810,7 +830,7 @@ func scriptOCRRecognize(options map[string]any) (any, error) {
 		apiKey = envOrDefault("PADDLEOCR_API_KEY")
 	}
 
-	timeout := scriptHTTPTimeout(options["timeout_ms"])
+	timeout := scriptHTTPTimeoutWithDefault(options["timeout_ms"], globalOCRTimeout)
 
 	provider, err := providers.NewOCRHTTPProvider(providers.OCRHTTPProviderConfig{
 		Endpoint: endpoint,
@@ -881,10 +901,7 @@ func scriptLLMChat(options map[string]any) (string, error) {
 		model = envOrDefault("LLM_MODEL", "OPENAI_MODEL")
 	}
 
-	timeout := time.Duration(scriptHTTPTimeout(options["timeout_ms"]))
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
+	timeout := scriptHTTPTimeoutWithDefault(options["timeout_ms"], globalLLMTimeout)
 
 	maxTokens := intValue(options["max_tokens"])
 	if maxTokens <= 0 {
@@ -1115,6 +1132,20 @@ func scriptHTTPHeaders(value any) map[string]string {
 
 func scriptHTTPTimeout(value any) time.Duration {
 	timeout := defaultHTTPTimeout
+	if value != nil {
+		if ms := intValue(value); ms > 0 {
+			timeout = time.Duration(ms) * time.Millisecond
+		}
+	}
+	if timeout > maxHTTPTimeout {
+		return maxHTTPTimeout
+	}
+	return timeout
+}
+
+// scriptHTTPTimeoutWithDefault 解析脚本传入的 timeout_ms，未指定时使用 fallback 全局默认值。
+func scriptHTTPTimeoutWithDefault(value any, fallback time.Duration) time.Duration {
+	timeout := fallback
 	if value != nil {
 		if ms := intValue(value); ms > 0 {
 			timeout = time.Duration(ms) * time.Millisecond

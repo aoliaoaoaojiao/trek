@@ -6,6 +6,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"time"
@@ -96,6 +98,25 @@ func runMonkey(logLevelStr string, opts struct {
 		return fmt.Errorf("设置日志级别失败: %w", err)
 	}
 
+	// 可取消 context + 信号处理：Ctrl+C 触发优雅退出
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt)
+	defer signal.Stop(sigCh)
+	go func() {
+		<-sigCh
+		logger.Warnf("收到中断信号，正在优雅退出...")
+		cancel()
+		<-sigCh
+		logger.Warnf("二次中断，强制退出")
+		os.Exit(1)
+	}()
+
+	// 提前解析产物目录，供 Config 实时写盘使用
+	reportFile := strings.TrimSpace(opts.reportFile)
+	artifactDir := resolveArtifactDir(reportFile, opts.artifactDir)
+
 	staticCfg := scripting.StaticConfig{}
 	if opts.configPath != "" {
 		cfg, err := scripting.LoadStaticConfigFile(opts.configPath)
@@ -125,6 +146,10 @@ func runMonkey(logLevelStr string, opts struct {
 	exploreOCRTimeout := time.Duration(staticCfg.ExploreOCRTimeoutMs.OrDefault(10000)) * time.Millisecond
 	recoveryCooldownSteps := staticCfg.RecoveryCooldownSteps.OrDefault(2)
 	llmTimeout := time.Duration(staticCfg.LLMTimeoutMs.OrDefault(15000)) * time.Millisecond
+
+	// 统一全局超时：goja trek.llm.chat() / trek.ocr.recognize() 默认使用配置值
+	scripting.SetDefaultLLMTimeout(llmTimeout)
+	scripting.SetDefaultOCRTimeout(exploreOCRTimeout)
 	recoveryTwoStateLoopThreshold := staticCfg.RecoveryTwoStateLoopThreshold.OrDefault(2)
 	recoveryHighVisitThreshold := staticCfg.RecoveryHighVisitThreshold.OrDefault(8)
 	recoveryLowRewardWindow := staticCfg.RecoveryLowRewardWindow.OrDefault(6)
@@ -240,6 +265,7 @@ func runMonkey(logLevelStr string, opts struct {
 		CandidateMinFusionScore:           candidateMinFusionScore,
 		ImageFingerprintRegions:           buildImageFingerprintRegionsConfig(staticCfg),
 		ImageSimilaritySSIMThreshold:      staticCfg.ImageSimilaritySSIMThreshold.OrDefault(0),
+		ArtifactDir:                       artifactDir,
 	}
 
 	if opts.probePageName {
@@ -251,59 +277,51 @@ func runMonkey(logLevelStr string, opts struct {
 		return fmt.Errorf("创建 runner 失败: %w", err)
 	}
 
-	report, err := runner.Run(context.Background())
+	// defer 保证无论正常结束还是 Ctrl+C 中断，都会写出报告和产物
+	metadata := reporting.RunMetadata{
+		PackageName:         packageName,
+		DeviceSerial:        deviceSerial,
+		Algorithm:           opts.algorithm,
+		MaxSteps:            opts.maxSteps,
+		MaxDuration:         opts.maxDuration,
+		StepInterval:        opts.stepInterval,
+		PageSourceType:      pageSourceType,
+		PageControlStrategy: pageControlStrategy,
+		CaptureScreenshot:   opts.captureScreenshot,
+		KeepStepRecords:     opts.keepStepRecords,
+		ConfigPath:          opts.configPath,
+	}
+	var report *monkey.Report
+	defer func() {
+		if report == nil {
+			return
+		}
+		fmt.Printf("运行完成: stop_reason=%s total=%d success=%d failed=%d duration_ms=%d\n",
+			report.StopReason, report.StepsTotal, report.StepsSucceeded, report.StepsFailed, report.DurationMs)
+		fmt.Printf("页面统计: %+v\n", report.PageVisitCount)
+		fmt.Printf("恢复冷却统计: cooldown_enter=%d cooldown_step_hits=%d\n",
+			report.RecoveryCooldownEnterCount, report.RecoveryCooldownStepCount)
+		if reportFile != "" {
+			if wErr := reporting.WriteRunReportWithArtifacts(reportFile, opts.reportFormat, artifactDir, metadata, report); wErr != nil {
+				fmt.Fprintf(os.Stderr, "写入运行报告失败: %v\n", wErr)
+			} else {
+				fmt.Printf("报告已输出: %s\n", reportFile)
+				if artifactDir != "" {
+					fmt.Printf("页面产物已输出: %s\n", artifactDir)
+				}
+			}
+		} else if artifactDir != "" {
+			if _, wErr := reporting.BuildRunReportEnvelope(metadata, report, artifactDir); wErr != nil {
+				fmt.Fprintf(os.Stderr, "写入页面产物失败: %v\n", wErr)
+			} else {
+				fmt.Printf("页面产物已输出: %s\n", artifactDir)
+			}
+		}
+	}()
+
+	report, err = runner.Run(ctx)
 	if err != nil {
 		return fmt.Errorf("执行 monkey 失败: %w", err)
-	}
-
-	fmt.Printf("运行完成: stop_reason=%s total=%d success=%d failed=%d duration_ms=%d\n",
-		report.StopReason, report.StepsTotal, report.StepsSucceeded, report.StepsFailed, report.DurationMs)
-	fmt.Printf("页面统计: %+v\n", report.PageVisitCount)
-	fmt.Printf("恢复冷却统计: cooldown_enter=%d cooldown_step_hits=%d\n",
-		report.RecoveryCooldownEnterCount, report.RecoveryCooldownStepCount)
-	fmt.Printf("LLM 决策统计（兼容字段，当前固定为 0）: recovery_calls=%d recovery_budget_denied=%d enhancement_calls=%d enhancement_hits=%d enhancement_budget_denied=%d\n",
-		report.RecoveryLLMCalls, report.RecoveryLLMBudgetDenied, report.CandidateEnhancementCalls, report.CandidateEnhancementSelects, report.EnhancementLLMBudgetDenied)
-	reportFile := strings.TrimSpace(opts.reportFile)
-	artifactDir := resolveArtifactDir(reportFile, opts.artifactDir)
-	if reportFile != "" {
-		err = reporting.WriteRunReportWithArtifacts(reportFile, opts.reportFormat, artifactDir, reporting.RunMetadata{
-			PackageName:         packageName,
-			DeviceSerial:        deviceSerial,
-			Algorithm:           opts.algorithm,
-			MaxSteps:            opts.maxSteps,
-			MaxDuration:         opts.maxDuration,
-			StepInterval:        opts.stepInterval,
-			PageSourceType:      pageSourceType,
-			PageControlStrategy: pageControlStrategy,
-			CaptureScreenshot:   opts.captureScreenshot,
-			KeepStepRecords:     opts.keepStepRecords,
-			ConfigPath:          opts.configPath,
-		}, report)
-		if err != nil {
-			return fmt.Errorf("写入运行报告失败: %w", err)
-		}
-		fmt.Printf("报告已输出: %s\n", reportFile)
-		if artifactDir != "" {
-			fmt.Printf("页面产物已输出: %s\n", artifactDir)
-		}
-	} else if artifactDir != "" {
-		_, err = reporting.BuildRunReportEnvelope(reporting.RunMetadata{
-			PackageName:         packageName,
-			DeviceSerial:        deviceSerial,
-			Algorithm:           opts.algorithm,
-			MaxSteps:            opts.maxSteps,
-			MaxDuration:         opts.maxDuration,
-			StepInterval:        opts.stepInterval,
-			PageSourceType:      pageSourceType,
-			PageControlStrategy: pageControlStrategy,
-			CaptureScreenshot:   opts.captureScreenshot,
-			KeepStepRecords:     opts.keepStepRecords,
-			ConfigPath:          opts.configPath,
-		}, report, artifactDir)
-		if err != nil {
-			return fmt.Errorf("写入页面产物失败: %w", err)
-		}
-		fmt.Printf("页面产物已输出: %s\n", artifactDir)
 	}
 	return nil
 }

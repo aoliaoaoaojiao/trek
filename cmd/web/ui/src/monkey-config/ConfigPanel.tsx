@@ -473,11 +473,11 @@ export function ConfigPanel(props: Props) {
             <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} max={1} step="0.001" value={props.imageSimilarityThreshold} onChange={(e) => props.setImageSimilarityThreshold(e.target.value)} placeholder="留空=使用默认值 0.995" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            {renderFieldTitle("OCR 超时(ms)", "默认：10000，仅在 page_control_strategy=ocr 时用于页面理解请求超时。")}
+            {renderFieldTitle("OCR 超时(ms)", "默认：10000，统一控制 OCR 请求超时：页面理解（page_control_strategy=ocr）、goja 脚本 trek.ocr.recognize()。")}
             <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.exploreOCRTimeoutMs} onChange={(e) => props.setExploreOCRTimeoutMs(e.target.value)} placeholder="留空=使用默认值 10000" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            {renderFieldTitle("LLM 超时(ms)", "默认：15000，仅在 page_control_strategy=llm 时用于页面理解请求超时。")}
+            {renderFieldTitle("LLM 超时(ms)", "默认：15000，统一控制所有 LLM 请求超时：页面理解（page_control_strategy=llm）、goja 脚本 trek.llm.chat()。含一次自动重试，实际最大等待约为 2×超时+2s。")}
             <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.llmTimeoutMs} onChange={(e) => props.setLLMTimeoutMs(e.target.value)} placeholder="留空=使用默认值 15000" />
           </label>
           <div className="md:col-span-2 rounded-md border bg-background p-3">

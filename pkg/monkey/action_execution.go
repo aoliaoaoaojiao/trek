@@ -387,6 +387,27 @@ func (r *Runner) appendRecord(report *Report, record StepRecord, stepStart time.
 		record.AfterXML = after.XML
 		record.AfterScreenshot = append([]byte(nil), after.Screenshot...)
 	}
+
+	// 实时写盘：截图 + XML 立即落盘，写完释放内存
+	if r.cfg.ArtifactDir != "" {
+		if ref, err := writeStepSnapshotArtifacts(r.cfg.ArtifactDir, record, "before",
+			record.BeforePageName, record.BeforeXML, record.BeforeScreenshot); err == nil && ref != nil {
+			record.BeforeArtifactRef = ref
+		} else if err != nil {
+			logger.Warnf("monkey step=%d 写入 before 产物失败: %v", record.Step, err)
+		}
+		if ref, err := writeStepSnapshotArtifacts(r.cfg.ArtifactDir, record, "after",
+			record.AfterPageName, record.AfterXML, record.AfterScreenshot); err == nil && ref != nil {
+			record.AfterArtifactRef = ref
+		} else if err != nil {
+			logger.Warnf("monkey step=%d 写入 after 产物失败: %v", record.Step, err)
+		}
+		record.BeforeScreenshot = nil
+		record.AfterScreenshot = nil
+		record.BeforeXML = ""
+		record.AfterXML = ""
+	}
+
 	report.Records = append(report.Records, record)
 }
 

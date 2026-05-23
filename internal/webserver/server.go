@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 
+	"trek/internal/config"
 	"trek/pkg/driver/android"
 	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/common/page/poco"
@@ -131,6 +132,7 @@ func Serve(addr string, uiFS fs.FS) error {
 	mux.HandleFunc("/api/save", handleSave)
 	mux.HandleFunc("/api/preview", handlePreview)
 	mux.HandleFunc("/api/devices", handleDevices)
+	mux.HandleFunc("/api/defaults", handleDefaults)
 	mux.Handle("/", uiHandler)
 
 	if strings.TrimSpace(addr) == "" {
@@ -181,6 +183,52 @@ func handleDevices(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"devices": options,
+	})
+}
+
+// DefaultsResponse 返回后端默认配置值，供前端动态显示。
+type DefaultsResponse struct {
+	ScrollInferThreshold             int     `json:"scroll_infer_threshold"`
+	ImageSimilaritySSIMThreshold     float64 `json:"image_similarity_ssim_threshold"`
+	ImageFingerprintHammingThreshold int     `json:"image_fingerprint_hamming_threshold"`
+	PageControlCacheTTLSeconds       int     `json:"page_control_cache_ttl_seconds"`
+	ExploreOCRTimeoutMs              int     `json:"explore_ocr_timeout_ms"`
+	LLMTimeoutMs                     int     `json:"llm_timeout_ms"`
+	TwoStateLoopPenalty              float64 `json:"two_state_loop_penalty"`
+	EdgeRepeatPenalty                float64 `json:"edge_repeat_penalty"`
+	EdgeRepeatThreshold              int     `json:"edge_repeat_threshold"`
+	ActionCooldownPenalty            float64 `json:"action_cooldown_penalty"`
+	RecentActionWindow               int     `json:"recent_action_window"`
+	LoopEscapeExploreBoost           float64 `json:"loop_escape_explore_boost"`
+	BackPenalty                      float64 `json:"back_penalty"`
+	ShortLoopPenalty                 float64 `json:"short_loop_penalty"`
+	ShortLoopWindow                  int     `json:"short_loop_window"`
+	NewStateReward                   float64 `json:"new_state_reward"`
+}
+
+func handleDefaults(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "仅支持 GET"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, DefaultsResponse{
+		ScrollInferThreshold:             config.DefaultScrollInferThreshold,
+		ImageSimilaritySSIMThreshold:     config.DefaultImageSimilaritySSIMThreshold,
+		ImageFingerprintHammingThreshold: config.DefaultImageFingerprintHammingThreshold,
+		PageControlCacheTTLSeconds:       config.DefaultPageControlCacheTTLSeconds,
+		ExploreOCRTimeoutMs:              config.DefaultExploreOCRTimeoutMs,
+		LLMTimeoutMs:                     config.DefaultLLMTimeoutMs,
+		TwoStateLoopPenalty:              config.DefaultTwoStateLoopPenalty,
+		EdgeRepeatPenalty:                config.DefaultEdgeRepeatPenalty,
+		EdgeRepeatThreshold:              config.DefaultEdgeRepeatThreshold,
+		ActionCooldownPenalty:            config.DefaultActionCooldownPenalty,
+		RecentActionWindow:               config.DefaultRecentActionWindow,
+		LoopEscapeExploreBoost:           config.DefaultLoopEscapeExploreBoost,
+		BackPenalty:                      config.DefaultBackPenalty,
+		ShortLoopPenalty:                 config.DefaultShortLoopPenalty,
+		ShortLoopWindow:                  config.DefaultShortLoopWindow,
+		NewStateReward:                   config.DefaultNewStateReward,
 	})
 }
 

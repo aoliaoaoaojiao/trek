@@ -121,6 +121,20 @@ export function App() {
   const [uctActionCooldownPenalty, setUctActionCooldownPenalty] = useState("")
   const [uctRecentActionWindow, setUctRecentActionWindow] = useState("")
   const [uctLoopEscapeExploreBoost, setUctLoopEscapeExploreBoost] = useState("")
+
+  // 后端默认值，用于 placeholder 显示
+  const [defaultScrollInferThreshold, setDefaultScrollInferThreshold] = useState(5)
+  const [defaultImageSimilarityThreshold, setDefaultImageSimilarityThreshold] = useState(0.995)
+  const [defaultImageFingerprintHammingThreshold, setDefaultImageFingerprintHammingThreshold] = useState(10)
+  const [defaultPageControlCacheTTLSeconds, setDefaultPageControlCacheTTLSeconds] = useState(1800)
+  const [defaultExploreOCRTimeoutMs, setDefaultExploreOCRTimeoutMs] = useState(10000)
+  const [defaultLLMTimeoutMs, setDefaultLLMTimeoutMs] = useState(15000)
+  const [defaultUctTwoStateLoopPenalty, setDefaultUctTwoStateLoopPenalty] = useState(-6)
+  const [defaultUctEdgeRepeatPenalty, setDefaultUctEdgeRepeatPenalty] = useState(-1)
+  const [defaultUctEdgeRepeatThreshold, setDefaultUctEdgeRepeatThreshold] = useState(2)
+  const [defaultUctActionCooldownPenalty, setDefaultUctActionCooldownPenalty] = useState(1.5)
+  const [defaultUctRecentActionWindow, setDefaultUctRecentActionWindow] = useState(6)
+  const [defaultUctLoopEscapeExploreBoost, setDefaultUctLoopEscapeExploreBoost] = useState(0.4)
   const [reuseEpsilon, setReuseEpsilon] = useState("")
   const [reuseGamma, setReuseGamma] = useState("")
   const [reuseNStep, setReuseNStep] = useState("")
@@ -179,6 +193,58 @@ export function App() {
   useEffect(() => {
     void fetchDevices()
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 启动时获取后端默认值，更新 placeholder 显示
+  useEffect(() => {
+    const fetchDefaults = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/defaults`)
+        if (response.ok) {
+          const data = (await response.json()) as Record<string, unknown>
+          // 更新各字段的默认值（仅当用户未手动输入时）
+          if (typeof data.scroll_infer_threshold === "number") {
+            setDefaultScrollInferThreshold(data.scroll_infer_threshold)
+          }
+          if (typeof data.image_similarity_ssim_threshold === "number") {
+            setDefaultImageSimilarityThreshold(data.image_similarity_ssim_threshold)
+          }
+          if (typeof data.image_fingerprint_hamming_threshold === "number") {
+            setDefaultImageFingerprintHammingThreshold(data.image_fingerprint_hamming_threshold)
+          }
+          if (typeof data.page_control_cache_ttl_seconds === "number") {
+            setDefaultPageControlCacheTTLSeconds(data.page_control_cache_ttl_seconds)
+          }
+          if (typeof data.explore_ocr_timeout_ms === "number") {
+            setDefaultExploreOCRTimeoutMs(data.explore_ocr_timeout_ms)
+          }
+          if (typeof data.llm_timeout_ms === "number") {
+            setDefaultLLMTimeoutMs(data.llm_timeout_ms)
+          }
+          if (typeof data.two_state_loop_penalty === "number") {
+            setDefaultUctTwoStateLoopPenalty(data.two_state_loop_penalty)
+          }
+          if (typeof data.edge_repeat_penalty === "number") {
+            setDefaultUctEdgeRepeatPenalty(data.edge_repeat_penalty)
+          }
+          if (typeof data.edge_repeat_threshold === "number") {
+            setDefaultUctEdgeRepeatThreshold(data.edge_repeat_threshold)
+          }
+          if (typeof data.action_cooldown_penalty === "number") {
+            setDefaultUctActionCooldownPenalty(data.action_cooldown_penalty)
+          }
+          if (typeof data.recent_action_window === "number") {
+            setDefaultUctRecentActionWindow(data.recent_action_window)
+          }
+          if (typeof data.loop_escape_explore_boost === "number") {
+            setDefaultUctLoopEscapeExploreBoost(data.loop_escape_explore_boost)
+          }
+        }
+      } catch {
+        // 静默失败，使用硬编码默认值
+      }
+    }
+    void fetchDefaults()
   }, [])
 
   useEffect(() => {
@@ -758,6 +824,18 @@ export function App() {
       setUctRecentActionWindow={setUctRecentActionWindow}
       uctLoopEscapeExploreBoost={uctLoopEscapeExploreBoost}
       setUctLoopEscapeExploreBoost={setUctLoopEscapeExploreBoost}
+      defaultScrollInferThreshold={defaultScrollInferThreshold}
+      defaultImageSimilarityThreshold={defaultImageSimilarityThreshold}
+      defaultImageFingerprintHammingThreshold={defaultImageFingerprintHammingThreshold}
+      defaultPageControlCacheTTLSeconds={defaultPageControlCacheTTLSeconds}
+      defaultExploreOCRTimeoutMs={defaultExploreOCRTimeoutMs}
+      defaultLLMTimeoutMs={defaultLLMTimeoutMs}
+      defaultUctTwoStateLoopPenalty={defaultUctTwoStateLoopPenalty}
+      defaultUctEdgeRepeatPenalty={defaultUctEdgeRepeatPenalty}
+      defaultUctEdgeRepeatThreshold={defaultUctEdgeRepeatThreshold}
+      defaultUctActionCooldownPenalty={defaultUctActionCooldownPenalty}
+      defaultUctRecentActionWindow={defaultUctRecentActionWindow}
+      defaultUctLoopEscapeExploreBoost={defaultUctLoopEscapeExploreBoost}
       reuseEpsilon={reuseEpsilon}
       setReuseEpsilon={setReuseEpsilon}
       reuseGamma={reuseGamma}

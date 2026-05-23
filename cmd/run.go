@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"trek/internal/config"
 	"trek/internal/engine/decision"
 	"trek/internal/reporting"
 	"trek/internal/scripting"
-	"trek/internal/vision/fingerprint"
 	"trek/logger"
 	"trek/pkg/coordinator"
 	"trek/pkg/driver/android"
@@ -266,7 +266,7 @@ func runMonkey(logLevelStr string, opts struct {
 		CandidateMinFusionScore:           candidateMinFusionScore,
 		ImageFingerprintRegions:           buildImageFingerprintRegionsConfig(staticCfg),
 		ImageSimilaritySSIMThreshold:      staticCfg.ImageSimilaritySSIMThreshold.OrDefault(0),
-		ImageFingerprintHammingThreshold:  staticCfg.ImageFingerprintHammingThreshold.OrDefault(fingerprint.DefaultHammingThreshold),
+		ImageFingerprintHammingThreshold:  staticCfg.ImageFingerprintHammingThreshold.OrDefault(config.DefaultImageFingerprintHammingThreshold),
 		ArtifactDir:                       artifactDir,
 	}
 

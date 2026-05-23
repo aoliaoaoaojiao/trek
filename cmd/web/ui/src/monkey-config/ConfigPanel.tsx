@@ -109,6 +109,19 @@ type Props = {
   setUctRecentActionWindow: (value: string) => void
   uctLoopEscapeExploreBoost: string
   setUctLoopEscapeExploreBoost: (value: string) => void
+  // 后端默认值
+  defaultScrollInferThreshold: number
+  defaultImageSimilarityThreshold: number
+  defaultImageFingerprintHammingThreshold: number
+  defaultPageControlCacheTTLSeconds: number
+  defaultExploreOCRTimeoutMs: number
+  defaultLLMTimeoutMs: number
+  defaultUctTwoStateLoopPenalty: number
+  defaultUctEdgeRepeatPenalty: number
+  defaultUctEdgeRepeatThreshold: number
+  defaultUctActionCooldownPenalty: number
+  defaultUctRecentActionWindow: number
+  defaultUctLoopEscapeExploreBoost: number
   reuseEpsilon: string
   setReuseEpsilon: (value: string) => void
   reuseGamma: string
@@ -468,29 +481,29 @@ export function ConfigPanel(props: Props) {
               step="1"
               value={props.scrollInferThreshold}
               onChange={(e) => props.setScrollInferThreshold(e.target.value)}
-              placeholder={props.pageControlStrategy === "llm" ? "LLM 模式下固定禁用" : "留空=使用默认值 5"}
+              placeholder={props.pageControlStrategy === "llm" ? "LLM 模式下固定禁用" : `留空=使用默认值 ${props.defaultScrollInferThreshold}`}
               disabled={props.pageControlStrategy === "llm"}
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            {renderFieldTitle("图片相似度 SSIM 阈值", "默认：0.995，取值范围 0~1，越接近 1 越严格。")}
-            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} max={1} step="0.001" value={props.imageSimilarityThreshold} onChange={(e) => props.setImageSimilarityThreshold(e.target.value)} placeholder="留空=使用默认值 0.995" />
+            {renderFieldTitle("图片相似度 SSIM 阈值", `默认：${props.defaultImageSimilarityThreshold}，取值范围 0~1，越接近 1 越严格。`)}
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} max={1} step="0.001" value={props.imageSimilarityThreshold} onChange={(e) => props.setImageSimilarityThreshold(e.target.value)} placeholder={`留空=使用默认值 ${props.defaultImageSimilarityThreshold}`} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            {renderFieldTitle("图片指纹模糊匹配阈值", "默认：10。Hamming 距离 ≤ 阈值的截图会被合并为同一页面名。10 表示 512 bit 中允许约 2% 差异，可过滤状态栏时间/电量变化；设为 0 可关闭模糊匹配。")}
-            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.imageFingerprintHammingThreshold} onChange={(e) => props.setImageFingerprintHammingThreshold(e.target.value)} placeholder="留空=使用默认值 10" />
+            {renderFieldTitle("图片指纹模糊匹配阈值", `默认：${props.defaultImageFingerprintHammingThreshold}。Hamming 距离 ≤ 阈值的截图会被合并为同一页面名。允许约 2% 差异，可过滤状态栏时间/电量变化；设为 0 可关闭模糊匹配。`)}
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.imageFingerprintHammingThreshold} onChange={(e) => props.setImageFingerprintHammingThreshold(e.target.value)} placeholder={`留空=使用默认值 ${props.defaultImageFingerprintHammingThreshold}`} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            {renderFieldTitle("页面缓存 TTL(秒)", "默认：1800（30分钟）。OCR/LLM 页面理解结果的缓存有效期，过期后会重新识别。设为 0 表示永不过期。")}
-            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.pageControlCacheTTLSeconds} onChange={(e) => props.setPageControlCacheTTLSeconds(e.target.value)} placeholder="留空=使用默认值 1800" />
+            {renderFieldTitle("页面缓存 TTL(秒)", `默认：${props.defaultPageControlCacheTTLSeconds}（${Math.floor(props.defaultPageControlCacheTTLSeconds / 60)}分钟）。OCR/LLM 页面理解结果的缓存有效期，过期后会重新识别。设为 0 表示永不过期。`)}
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.pageControlCacheTTLSeconds} onChange={(e) => props.setPageControlCacheTTLSeconds(e.target.value)} placeholder={`留空=使用默认值 ${props.defaultPageControlCacheTTLSeconds}`} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            {renderFieldTitle("OCR 超时(ms)", "默认：10000，统一控制 OCR 请求超时：页面理解（page_control_strategy=ocr）、goja 脚本 trek.ocr.recognize()。")}
-            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.exploreOCRTimeoutMs} onChange={(e) => props.setExploreOCRTimeoutMs(e.target.value)} placeholder="留空=使用默认值 10000" />
+            {renderFieldTitle("OCR 超时(ms)", `默认：${props.defaultExploreOCRTimeoutMs}，统一控制 OCR 请求超时：页面理解（page_control_strategy=ocr）、goja 脚本 trek.ocr.recognize()。`)}
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.exploreOCRTimeoutMs} onChange={(e) => props.setExploreOCRTimeoutMs(e.target.value)} placeholder={`留空=使用默认值 ${props.defaultExploreOCRTimeoutMs}`} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            {renderFieldTitle("LLM 超时(ms)", "默认：15000，统一控制所有 LLM 请求超时：页面理解（page_control_strategy=llm）、goja 脚本 trek.llm.chat()。含一次自动重试，实际最大等待约为 2×超时+2s。")}
-            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.llmTimeoutMs} onChange={(e) => props.setLLMTimeoutMs(e.target.value)} placeholder="留空=使用默认值 15000" />
+            {renderFieldTitle("LLM 超时(ms)", `默认：${props.defaultLLMTimeoutMs}，统一控制所有 LLM 请求超时：页面理解（page_control_strategy=llm）、goja 脚本 trek.llm.chat()。含一次自动重试，实际最大等待约为 2×超时+2s。`)}
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.llmTimeoutMs} onChange={(e) => props.setLLMTimeoutMs(e.target.value)} placeholder={`留空=使用默认值 ${props.defaultLLMTimeoutMs}`} />
           </label>
           <div className="md:col-span-2 rounded-md border bg-background p-3">
             <p className="mb-2 text-sm font-medium">有效触控区域</p>
@@ -578,28 +591,28 @@ export function ConfigPanel(props: Props) {
                 当前已选择 `uctbandit`，下面显示该算法专属调参。
               </p>
               <label className="flex flex-col gap-1 text-sm">
-                {renderFieldTitle("双态循环惩罚", "默认：-3.0。检测到 A↔B 往返循环时追加负奖励，降低重复选择概率。")}
-                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctTwoStateLoopPenalty} onChange={(e) => props.setUctTwoStateLoopPenalty(e.target.value)} placeholder="留空=使用默认值 -3.0" />
+                {renderFieldTitle("双态循环惩罚", `默认：${props.defaultUctTwoStateLoopPenalty}。检测到 A↔B 往返循环时追加负奖励，降低重复选择概率。`)}
+                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctTwoStateLoopPenalty} onChange={(e) => props.setUctTwoStateLoopPenalty(e.target.value)} placeholder={`留空=使用默认值 ${props.defaultUctTwoStateLoopPenalty}`} />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                {renderFieldTitle("边重复惩罚", "默认：-1.0。同一状态转移边重复过多时按次数叠加惩罚。")}
-                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctEdgeRepeatPenalty} onChange={(e) => props.setUctEdgeRepeatPenalty(e.target.value)} placeholder="留空=使用默认值 -1.0" />
+                {renderFieldTitle("边重复惩罚", `默认：${props.defaultUctEdgeRepeatPenalty}。同一状态转移边重复过多时按次数叠加惩罚。`)}
+                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctEdgeRepeatPenalty} onChange={(e) => props.setUctEdgeRepeatPenalty(e.target.value)} placeholder={`留空=使用默认值 ${props.defaultUctEdgeRepeatPenalty}`} />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                {renderFieldTitle("边重复阈值", "默认：2。同一条边重复超过该次数后才开始施加边重复惩罚。")}
-                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.uctEdgeRepeatThreshold} onChange={(e) => props.setUctEdgeRepeatThreshold(e.target.value)} placeholder="留空=使用默认值 2" />
+                {renderFieldTitle("边重复阈值", `默认：${props.defaultUctEdgeRepeatThreshold}。同一条边重复超过该次数后才开始施加边重复惩罚。`)}
+                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.uctEdgeRepeatThreshold} onChange={(e) => props.setUctEdgeRepeatThreshold(e.target.value)} placeholder={`留空=使用默认值 ${props.defaultUctEdgeRepeatThreshold}`} />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                {renderFieldTitle("动作冷却惩罚", "默认：1.5。短时间内在同一页反复选同一动作时逐步降权，防止重复点击同一按钮。")}
-                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctActionCooldownPenalty} onChange={(e) => props.setUctActionCooldownPenalty(e.target.value)} placeholder="留空=使用默认值 1.5" />
+                {renderFieldTitle("动作冷却惩罚", `默认：${props.defaultUctActionCooldownPenalty}。短时间内在同一页反复选同一动作时逐步降权，防止重复点击同一按钮。`)}
+                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctActionCooldownPenalty} onChange={(e) => props.setUctActionCooldownPenalty(e.target.value)} placeholder={`留空=使用默认值 ${props.defaultUctActionCooldownPenalty}`} />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                {renderFieldTitle("最近动作窗口", "默认：6。记录最近多少次动作选择，用于计算动作冷却惩罚。")}
-                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.uctRecentActionWindow} onChange={(e) => props.setUctRecentActionWindow(e.target.value)} placeholder="留空=使用默认值 6" />
+                {renderFieldTitle("最近动作窗口", `默认：${props.defaultUctRecentActionWindow}。记录最近多少次动作选择，用于计算动作冷却惩罚。`)}
+                <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.uctRecentActionWindow} onChange={(e) => props.setUctRecentActionWindow(e.target.value)} placeholder={`留空=使用默认值 ${props.defaultUctRecentActionWindow}`} />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                {renderFieldTitle("脱环探索增益", "默认：0.40。检测到回环或同状态卡死时临时提高随机探索概率以尽快脱困。")}
-                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctLoopEscapeExploreBoost} onChange={(e) => props.setUctLoopEscapeExploreBoost(e.target.value)} placeholder="留空=使用默认值 0.40" />
+                {renderFieldTitle("脱环探索增益", `默认：${props.defaultUctLoopEscapeExploreBoost}。检测到回环或同状态卡死时临时提高随机探索概率以尽快脱困。`)}
+                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctLoopEscapeExploreBoost} onChange={(e) => props.setUctLoopEscapeExploreBoost(e.target.value)} placeholder={`留空=使用默认值 ${props.defaultUctLoopEscapeExploreBoost}`} />
               </label>
             </>
           ) : null}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+	"trek/internal/config"
 	"trek/internal/engine/core/types"
 	"trek/logger"
 
@@ -29,12 +30,12 @@ func DefaultAgentConfig() AgentConfig {
 		UCTWeight:              0.6,
 		BanditWeight:           0.3,
 		HeuristicWeight:        0.1,
-		BackPenalty:            -2.0,   // 增加 Back 惩罚，从 -1.0 改为 -2.0，减少返回旧页面的倾向
-		EscapeBonus:            3.0,
-		ExploreRatio:           0.60,
-		ActionCooldownPenalty:  1.5,
-		RecentActionWindow:     6,
-		LoopEscapeExploreBoost: 0.40,
+		BackPenalty:            config.DefaultBackPenalty,
+		EscapeBonus:            config.DefaultEscapeBonus,
+		ExploreRatio:           config.DefaultExploreRatio,
+		ActionCooldownPenalty:  config.DefaultActionCooldownPenalty,
+		RecentActionWindow:     config.DefaultRecentActionWindow,
+		LoopEscapeExploreBoost: config.DefaultLoopEscapeExploreBoost,
 	}
 }
 

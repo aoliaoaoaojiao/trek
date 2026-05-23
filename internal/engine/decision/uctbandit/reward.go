@@ -1,6 +1,9 @@
 package uctbandit
 
-import "trek/logger"
+import (
+	"trek/internal/config"
+	"trek/logger"
+)
 
 // RewardConfig 定义 reward 计算的参数配置。
 type RewardConfig struct {
@@ -20,17 +23,17 @@ type RewardConfig struct {
 // DefaultRewardConfig 返回第一阶段的默认 reward 参数。
 func DefaultRewardConfig() RewardConfig {
 	return RewardConfig{
-		NewStateReward:        5.0,
-		NewEdgeReward:         3.0,
-		StructureChangeReward: 2.0,
-		NoOpPenalty:           -2.0,
-		ShortLoopPenalty:      -3.0,   // 增加短环惩罚，从 -2.0 改为 -3.0
-		TwoStateLoopPenalty:   -6.0,   // 增加双状态往返惩罚，从 -3.0 改为 -6.0，超过 NewStateReward 避免 A↔B 循环
-		EdgeRepeatPenalty:     -1.0,
-		EdgeRepeatThreshold:   2,
-		EmptyResultPenalty:    -3.0,
-		ShortLoopWindow:       5,      // 扩大检测窗口，从 3 改为 5
-		StagnationThreshold:   2,
+		NewStateReward:        config.DefaultNewStateReward,
+		NewEdgeReward:         config.DefaultNewEdgeReward,
+		StructureChangeReward: config.DefaultStructureChangeReward,
+		NoOpPenalty:           config.DefaultNoOpPenalty,
+		ShortLoopPenalty:      config.DefaultShortLoopPenalty,
+		TwoStateLoopPenalty:   config.DefaultTwoStateLoopPenalty,
+		EdgeRepeatPenalty:     config.DefaultEdgeRepeatPenalty,
+		EdgeRepeatThreshold:   config.DefaultEdgeRepeatThreshold,
+		EmptyResultPenalty:    config.DefaultEmptyResultPenalty,
+		ShortLoopWindow:       config.DefaultShortLoopWindow,
+		StagnationThreshold:   config.DefaultStagnationThreshold,
 	}
 }
 

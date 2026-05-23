@@ -103,6 +103,7 @@ export function App() {
   const [fileLevel, setFileLevel] = useState("info")
   const [scrollInferThreshold, setScrollInferThreshold] = useState("")
   const [imageSimilarityThreshold, setImageSimilarityThreshold] = useState("")
+  const [imageFingerprintHammingThreshold, setImageFingerprintHammingThreshold] = useState("")
   const [exploreOCRTimeoutMs, setExploreOCRTimeoutMs] = useState("")
   const [llmTimeoutMs, setLLMTimeoutMs] = useState("")
   const [recoveryCooldownSteps, setRecoveryCooldownSteps] = useState("")
@@ -243,6 +244,7 @@ export function App() {
       keep_step_records: boolModeToValue(keepStepRecordsMode),
       scroll_infer_threshold: parseOptionalNumber(scrollInferThreshold),
       image_similarity_ssim_threshold: parseOptionalNumber(imageSimilarityThreshold),
+      image_fingerprint_hamming_threshold: parseOptionalNumber(imageFingerprintHammingThreshold),
       explore_ocr_timeout_ms: parseOptionalNumber(exploreOCRTimeoutMs),
       llm_timeout_ms: parseOptionalNumber(llmTimeoutMs),
       recovery_cooldown_steps: parseOptionalNumber(recoveryCooldownSteps),
@@ -291,6 +293,7 @@ export function App() {
       fileLevel,
       highValuePageVisitLimit,
       imageSimilarityThreshold,
+      imageFingerprintHammingThreshold,
       keepStepRecordsMode,
       llmTimeoutMs,
       pageControlStrategy,
@@ -503,6 +506,7 @@ export function App() {
     }
     setScrollInferThreshold(imported.scroll_infer_threshold != null ? String(imported.scroll_infer_threshold) : "")
     setImageSimilarityThreshold(imported.image_similarity_ssim_threshold != null ? String(imported.image_similarity_ssim_threshold) : "")
+    setImageFingerprintHammingThreshold(imported.image_fingerprint_hamming_threshold != null ? String(imported.image_fingerprint_hamming_threshold) : "")
     setExploreOCRTimeoutMs(imported.explore_ocr_timeout_ms != null ? String(imported.explore_ocr_timeout_ms) : "")
     setLLMTimeoutMs(imported.llm_timeout_ms != null ? String(imported.llm_timeout_ms) : "")
     setRecoveryCooldownSteps(imported.recovery_cooldown_steps != null ? String(imported.recovery_cooldown_steps) : "")
@@ -714,6 +718,8 @@ export function App() {
       setScrollInferThreshold={setScrollInferThreshold}
       imageSimilarityThreshold={imageSimilarityThreshold}
       setImageSimilarityThreshold={setImageSimilarityThreshold}
+      imageFingerprintHammingThreshold={imageFingerprintHammingThreshold}
+      setImageFingerprintHammingThreshold={setImageFingerprintHammingThreshold}
       exploreOCRTimeoutMs={exploreOCRTimeoutMs}
       setExploreOCRTimeoutMs={setExploreOCRTimeoutMs}
       llmTimeoutMs={llmTimeoutMs}

@@ -9,6 +9,7 @@ export type ConfigPayload = {
   keep_step_records: boolean | null
   scroll_infer_threshold: number | null
   image_similarity_ssim_threshold: number | null
+  image_fingerprint_hamming_threshold: number | null
   explore_ocr_timeout_ms: number | null
   llm_timeout_ms: number | null
   recovery_cooldown_steps: number | null
@@ -56,6 +57,7 @@ export type PartialConfigPayload = Partial<{
   keep_step_records: boolean | null
   scroll_infer_threshold: number | null
   image_similarity_ssim_threshold: number | null
+  image_fingerprint_hamming_threshold: number | null
   explore_ocr_timeout_ms: number | null
   llm_timeout_ms: number | null
   recovery_cooldown_steps: number | null

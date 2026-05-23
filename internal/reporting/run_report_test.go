@@ -84,13 +84,12 @@ func TestRenderRunReportMarkdown(t *testing.T) {
 	text := string(content)
 	expected := []string{
 		"# Trek 运行报告",
-		"停止原因：completed",
-		"高频页面",
-		"HomePage：2",
-		"页面：HomePage",
-		"可交互控件数：1",
-		"最近失败步骤",
-		"前页面=HomePage",
+		"停止原因 | completed",
+		"页面索引",
+		"`HomePage`",
+		"P1 —",
+		"问题 & 警告",
+		"click failed",
 	}
 	for _, item := range expected {
 		if !strings.Contains(text, item) {

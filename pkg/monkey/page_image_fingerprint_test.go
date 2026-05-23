@@ -6,6 +6,8 @@ import (
 	"image/color"
 	"image/draw"
 	"image/png"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"trek/internal/testutil"
@@ -146,4 +148,91 @@ func mustMutateContentAreaFixture(t *testing.T, src []byte) []byte {
 		t.Fatalf("重新编码内容区变更图片失败: %v", err)
 	}
 	return buf.Bytes()
+}
+
+func readTestStarImage(t *testing.T, name string) []byte {
+	t.Helper()
+	path := filepath.Join("..", "..", "testdata", "ImgPageTest", "star", name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("读取测试图片失败: path=%s err=%v", path, err)
+	}
+	return data
+}
+
+func TestFuzzyPageNameMatcher_StarScreenshots_SamePage(t *testing.T) {
+	starA := readTestStarImage(t, "star_a.png")
+	starB := readTestStarImage(t, "star_b.png")
+	starC := readTestStarImage(t, "star_c.png")
+
+	matcher := NewFuzzyPageNameMatcher(6)
+
+	nameA := matcher.Resolve(starA, nil)
+	nameB := matcher.Resolve(starB, nil)
+	nameC := matcher.Resolve(starC, nil)
+
+	if nameA == "" || nameB == "" || nameC == "" {
+		t.Fatalf("页面名不应为空: A=%q B=%q C=%q", nameA, nameB, nameC)
+	}
+
+	// 三张相似截图应映射到同一个页面名
+	if nameA != nameB {
+		t.Fatalf("star_a 和 star_b 应映射到同一页面名: A=%q B=%q", nameA, nameB)
+	}
+	if nameA != nameC {
+		t.Fatalf("star_a 和 star_c 应映射到同一页面名: A=%q C=%q", nameA, nameC)
+	}
+}
+
+func TestFuzzyPageNameMatcher_ThresholdZero_Disabled(t *testing.T) {
+	starA := readTestStarImage(t, "star_a.png")
+	starB := readTestStarImage(t, "star_b.png")
+
+	matcher := NewFuzzyPageNameMatcher(0)
+
+	nameA := matcher.Resolve(starA, nil)
+	nameB := matcher.Resolve(starB, nil)
+
+	if nameA == "" || nameB == "" {
+		t.Fatalf("页面名不应为空: A=%q B=%q", nameA, nameB)
+	}
+
+	// 阈值为 0 时禁用模糊匹配，应返回不同页面名
+	if nameA == nameB {
+		t.Fatalf("阈值为 0 时不应合并: A=%q B=%q", nameA, nameB)
+	}
+}
+
+func TestFuzzyPageNameMatcher_DifferentPage_DifferentName(t *testing.T) {
+	gameNav := testutil.ReadRootFixture(t, testutil.FixtureGameNavigation)
+	starA := readTestStarImage(t, "star_a.png")
+
+	matcher := NewFuzzyPageNameMatcher(6)
+
+	nameNav := matcher.Resolve(gameNav, nil)
+	nameStar := matcher.Resolve(starA, nil)
+
+	if nameNav == "" || nameStar == "" {
+		t.Fatalf("页面名不应为空: nav=%q star=%q", nameNav, nameStar)
+	}
+
+	// 完全不同的界面应返回不同的页面名
+	if nameNav == nameStar {
+		t.Fatalf("不同界面不应映射到同一页面名: nav=%q star=%q", nameNav, nameStar)
+	}
+}
+
+func TestFuzzyPageNameMatcher穩態(t *testing.T) {
+	starA := readTestStarImage(t, "star_a.png")
+
+	matcher := NewFuzzyPageNameMatcher(6)
+
+	// 第一次见到
+	name1 := matcher.Resolve(starA, nil)
+	// 第二次见到同一张图
+	name2 := matcher.Resolve(starA, nil)
+
+	if name1 != name2 {
+		t.Fatalf("同一张图多次调用应返回相同页面名: first=%q second=%q", name1, name2)
+	}
 }

@@ -6,6 +6,8 @@ import (
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
+	"math/bits"
+	"strings"
 )
 
 const (
@@ -226,4 +228,36 @@ func grayAt(img image.Image, x, y int) uint8 {
 	// RGBA 返回 16 位通道，这里按 Rec.601 近似换算为 8 位灰度。
 	gray := (299*r + 587*g + 114*b + 500) / 1000
 	return uint8(gray >> 8)
+}
+
+// DefaultHammingThreshold 是默认的 Hamming 距离阈值。
+// 对于默认 2 region（512 bit）指纹，阈值 6 表示允许约 1.2% 的 bit 差异。
+const DefaultHammingThreshold = 6
+
+// HammingDistance 计算两个 IMGPage: 指纹之间的 Hamming 距离（不同 bit 数）。
+// 两个指纹的 region 数必须相同，否则返回 -1。
+func HammingDistance(a, b string) int {
+	aBytes := fingerprintHashBytes(a)
+	bBytes := fingerprintHashBytes(b)
+	if aBytes == nil || bBytes == nil || len(aBytes) != len(bBytes) {
+		return -1
+	}
+	distance := 0
+	for i := range aBytes {
+		distance += bits.OnesCount8(aBytes[i] ^ bBytes[i])
+	}
+	return distance
+}
+
+// fingerprintHashBytes 从 "IMGPage:xxxx" 格式中提取原始哈希字节。
+func fingerprintHashBytes(name string) []byte {
+	hexStr := strings.TrimPrefix(name, Prefix+":")
+	if len(hexStr) == 0 {
+		return nil
+	}
+	decoded, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return nil
+	}
+	return decoded
 }

@@ -106,7 +106,7 @@ func runMonkey(logLevelStr string, opts struct {
 	defer signal.Stop(sigCh)
 	go func() {
 		<-sigCh
-		logger.Warnf("收到中断信号，正在优雅退出...")
+		logger.Warnf("收到中断信号，正在退出...")
 		cancel()
 		<-sigCh
 		logger.Warnf("二次中断，强制退出")
@@ -265,6 +265,7 @@ func runMonkey(logLevelStr string, opts struct {
 		CandidateMinFusionScore:           candidateMinFusionScore,
 		ImageFingerprintRegions:           buildImageFingerprintRegionsConfig(staticCfg),
 		ImageSimilaritySSIMThreshold:      staticCfg.ImageSimilaritySSIMThreshold.OrDefault(0),
+		ImageFingerprintHammingThreshold:  staticCfg.ImageFingerprintHammingThreshold.OrDefault(6),
 		ArtifactDir:                       artifactDir,
 	}
 

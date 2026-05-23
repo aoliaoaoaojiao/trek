@@ -18,7 +18,16 @@ func resolveBasePageNameByStrategy(ctx context.Context, r *Runner, xml string, s
 	strategy := normalizePageNameStrategy(r.cfg.PageNameStrategy, r.cfg.PageSourceType)
 	switch strategy {
 	case PageNameStrategyImageFingerprint:
-		if pageName := resolveImageFingerprintPageName(screenshot, r.cfg.ImageSignatureFunc, r.cfg.ImageFingerprintRegions); pageName != "" {
+		if r.cfg.ImageSignatureFunc != nil {
+			if pageName := resolveImageFingerprintPageName(screenshot, r.cfg.ImageSignatureFunc, r.cfg.ImageFingerprintRegions); pageName != "" {
+				return pageName
+			}
+		}
+		if r.fuzzyMatcher != nil && r.fuzzyMatcher.threshold > 0 {
+			if pageName := r.fuzzyMatcher.Resolve(screenshot, r.cfg.ImageFingerprintRegions); pageName != "" {
+				return pageName
+			}
+		} else if pageName := resolveImageFingerprintPageName(screenshot, nil, r.cfg.ImageFingerprintRegions); pageName != "" {
 			return pageName
 		}
 		if r.cfg.PageNameResolverEx != nil {

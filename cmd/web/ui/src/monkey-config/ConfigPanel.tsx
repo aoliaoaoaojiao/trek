@@ -73,6 +73,8 @@ type Props = {
   setScrollInferThreshold: (value: string) => void
   imageSimilarityThreshold: string
   setImageSimilarityThreshold: (value: string) => void
+  imageFingerprintHammingThreshold: string
+  setImageFingerprintHammingThreshold: (value: string) => void
   exploreOCRTimeoutMs: string
   setExploreOCRTimeoutMs: (value: string) => void
   llmTimeoutMs: string
@@ -471,6 +473,10 @@ export function ConfigPanel(props: Props) {
           <label className="flex flex-col gap-1 text-sm">
             {renderFieldTitle("图片相似度 SSIM 阈值", "默认：0.995，取值范围 0~1，越接近 1 越严格。")}
             <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} max={1} step="0.001" value={props.imageSimilarityThreshold} onChange={(e) => props.setImageSimilarityThreshold(e.target.value)} placeholder="留空=使用默认值 0.995" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            {renderFieldTitle("图片指纹模糊匹配阈值", "默认：6。Hamming 距离 ≤ 阈值的截图会被合并为同一页面名。6 表示 512 bit 中允许约 1.2% 差异；设为 0 可关闭模糊匹配。")}
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.imageFingerprintHammingThreshold} onChange={(e) => props.setImageFingerprintHammingThreshold(e.target.value)} placeholder="留空=使用默认值 6" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             {renderFieldTitle("OCR 超时(ms)", "默认：10000，统一控制 OCR 请求超时：页面理解（page_control_strategy=ocr）、goja 脚本 trek.ocr.recognize()。")}

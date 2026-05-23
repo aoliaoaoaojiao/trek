@@ -98,15 +98,18 @@ type ArtifactSummary struct {
 	FileCount       int    `json:"file_count,omitempty"`
 	ScreenshotCount int    `json:"screenshot_count,omitempty"`
 	XMLCount        int    `json:"xml_count,omitempty"`
+	StepTimelineFile string `json:"step_timeline_file,omitempty"`
 }
 
 // PageSummary 表示页面级人工复盘摘要。
 type PageSummary struct {
 	PageName                 string           `json:"page_name"`
+	Label                    string           `json:"label,omitempty"`
 	VisitCount               int              `json:"visit_count"`
 	ActionCount              int              `json:"action_count"`
 	InteractableControlCount int              `json:"interactable_control_count"`
 	ArtifactDir              string           `json:"artifact_dir,omitempty"`
+	RepresentativeScreenshot string           `json:"representative_screenshot,omitempty"`
 	ControlsDetailFile       string           `json:"controls_detail_file,omitempty"`
 	TopActions               map[string]int   `json:"top_actions,omitempty"`
 	Controls                 []ControlSummary `json:"controls,omitempty"`
@@ -197,12 +200,12 @@ func RenderRunReport(format string, metadata RunMetadata, report *monkey.Report)
 // BuildRunReportEnvelope 构建最终报告结构，并按需输出原始页面产物。
 func BuildRunReportEnvelope(metadata RunMetadata, report *monkey.Report, artifactDir string) (RunReportEnvelope, error) {
 	envelope := buildEnvelope(metadata, report)
-	pages := buildPageSummaries(envelope.StepRecords)
-	envelope.Pages = pages
 	if strings.TrimSpace(artifactDir) == "" {
+		envelope.Pages = buildPageSummaries(envelope.StepRecords)
 		return envelope, nil
 	}
-	summary, records, pages, err := writeArtifacts(artifactDir, envelope.StepRecords, pages)
+	// 先从 XML 构建页面摘要，再写产物并释放 XML 内存
+	summary, records, pages, err := writeArtifacts(artifactDir, envelope.StepRecords)
 	if err != nil {
 		return RunReportEnvelope{}, err
 	}
@@ -260,152 +263,363 @@ func renderMarkdown(envelope RunReportEnvelope) string {
 	summary := envelope.Summary
 	meta := envelope.Metadata
 
+	// ── 标题 & 运行概览 ──
 	b.WriteString("# Trek 运行报告\n\n")
-	b.WriteString("## 执行摘要\n\n")
-	b.WriteString(fmt.Sprintf("- 生成时间：%s\n", formatTime(envelope.GeneratedAt)))
-	b.WriteString(fmt.Sprintf("- 包名：%s\n", fallbackText(meta.PackageName, "-")))
-	b.WriteString(fmt.Sprintf("- 设备序列号：%s\n", fallbackText(meta.DeviceSerial, "-")))
-	b.WriteString(fmt.Sprintf("- 算法：%s\n", fallbackText(meta.Algorithm, "-")))
-	b.WriteString(fmt.Sprintf("- 停止原因：%s\n", summary.StopReason))
-	b.WriteString(fmt.Sprintf("- 运行时长：%d ms\n", summary.DurationMs))
-	b.WriteString(fmt.Sprintf("- 执行步数：%d / %d\n", summary.StepsTotal, summary.StepsPlanned))
-	b.WriteString(fmt.Sprintf("- 成功 / 失败：%d / %d\n", summary.StepsSucceeded, summary.StepsFailed))
-	b.WriteString(fmt.Sprintf("- 页面源：%s\n", fallbackText(meta.PageSourceType, "-")))
-	b.WriteString(fmt.Sprintf("- 页面控件策略：%s\n", fallbackText(meta.PageControlStrategy, "raw")))
-	b.WriteString(fmt.Sprintf("- 截图采集：%t\n", meta.CaptureScreenshot))
-	b.WriteString(fmt.Sprintf("- 保留步骤记录：%t\n", meta.KeepStepRecords))
+
+	stopReasonText := string(summary.StopReason)
+	if summary.StopReason == "context_canceled" {
+		stopReasonText = "context_canceled (手动中断)"
+	}
+	b.WriteString("| 项目 | 值 |\n|---|---|\n")
+	b.WriteString(fmt.Sprintf("| 包名 | `%s` |\n", fallbackText(meta.PackageName, "-")))
+	if s := strings.TrimSpace(meta.DeviceSerial); s != "" {
+		b.WriteString(fmt.Sprintf("| 设备 | %s |\n", s))
+	}
+	b.WriteString(fmt.Sprintf("| 算法 | %s |\n", fallbackText(meta.Algorithm, "-")))
+	b.WriteString(fmt.Sprintf("| 停止原因 | %s |\n", stopReasonText))
+	b.WriteString(fmt.Sprintf("| 运行时长 | %s |\n", formatDuration(summary.DurationMs)))
+	b.WriteString(fmt.Sprintf("| 步数 | %d / %d（成功 %d / 失败 %d） |\n", summary.StepsTotal, summary.StepsPlanned, summary.StepsSucceeded, summary.StepsFailed))
+	b.WriteString(fmt.Sprintf("| 页面源 | %s |\n", fallbackText(meta.PageSourceType, "-")))
+	b.WriteString(fmt.Sprintf("| 控件策略 | %s |\n", fallbackText(meta.PageControlStrategy, "raw")))
 	if strings.TrimSpace(meta.ConfigPath) != "" {
-		b.WriteString(fmt.Sprintf("- 配置文件：%s\n", meta.ConfigPath))
+		b.WriteString(fmt.Sprintf("| 配置文件 | `%s` |\n", filepath.Base(meta.ConfigPath)))
 	}
 	if envelope.Artifacts != nil {
-		b.WriteString(fmt.Sprintf("- 原始产物目录：%s\n", fallbackText(envelope.Artifacts.RootDir, "-")))
+		b.WriteString(fmt.Sprintf("| 产物目录 | `%s` |\n", fallbackText(envelope.Artifacts.RootDir, "-")))
 	}
+	b.WriteString(fmt.Sprintf("| 生成时间 | %s |\n", formatTime(envelope.GeneratedAt)))
 	b.WriteString("\n")
 
+	// ── 前置检查（仅在异常时展示） ──
 	if envelope.Preflight != nil {
-		b.WriteString("## 前置检查\n\n")
-		b.WriteString(fmt.Sprintf("- ADB 就绪：%t\n", envelope.Preflight.ADBReady))
-		b.WriteString(fmt.Sprintf("- 设备就绪：%t\n", envelope.Preflight.DeviceReady))
-		b.WriteString(fmt.Sprintf("- 页面源就绪：%t\n", envelope.Preflight.PageSourceReady))
-		b.WriteString(fmt.Sprintf("- UIA 就绪：%t\n", envelope.Preflight.UIAReady))
-		b.WriteString(fmt.Sprintf("- 设备名称：%s\n", fallbackText(envelope.Preflight.DeviceName, "-")))
-		b.WriteString(fmt.Sprintf("- 页面源类型：%s\n", fallbackText(envelope.Preflight.PageSourceType, "-")))
-		b.WriteString(fmt.Sprintf("- 细节：%s\n", fallbackText(envelope.Preflight.Detail, "-")))
-		if summary.PreflightError != "" {
-			b.WriteString(fmt.Sprintf("- 前置检查错误：%s\n", summary.PreflightError))
+		allReady := envelope.Preflight.ADBReady && envelope.Preflight.DeviceReady && envelope.Preflight.PageSourceReady
+		if !allReady || summary.PreflightError != "" {
+			b.WriteString("## 前置检查\n\n")
+			if summary.PreflightError != "" {
+				b.WriteString(fmt.Sprintf("> **错误**: %s\n\n", summary.PreflightError))
+			}
+			b.WriteString(fmt.Sprintf("- ADB: %s | 设备: %s | 页面源: %s | UIA: %s\n",
+				readyIcon(envelope.Preflight.ADBReady),
+				readyIcon(envelope.Preflight.DeviceReady),
+				readyIcon(envelope.Preflight.PageSourceReady),
+				readyIcon(envelope.Preflight.UIAReady),
+			))
+			b.WriteString("\n")
+		}
+	}
+
+	// ── 关键指标 ──
+	if summary.RecoveryCooldownEnterCount > 0 || summary.OutOfAppRecoveries > 0 || summary.CandidateEnhancementCalls > 0 || summary.RecoveryLLMCalls > 0 {
+		b.WriteString("## 关键指标\n\n")
+		if summary.OutOfAppRecoveries > 0 {
+			b.WriteString(fmt.Sprintf("- 离开应用恢复: **%d** 次\n", summary.OutOfAppRecoveries))
+		}
+		if summary.RecoveryCooldownEnterCount > 0 {
+			b.WriteString(fmt.Sprintf("- 恢复冷却: 进入 **%d** 次，命中 **%d** 步\n", summary.RecoveryCooldownEnterCount, summary.RecoveryCooldownStepCount))
+		}
+		if summary.CandidateEnhancementCalls > 0 {
+			b.WriteString(fmt.Sprintf("- 候选增强: 调用 %d / 命中 %d\n", summary.CandidateEnhancementCalls, summary.CandidateEnhancementSelects))
+		}
+		if summary.RecoveryLLMCalls > 0 {
+			b.WriteString(fmt.Sprintf("- 恢复 LLM: 调用 %d", summary.RecoveryLLMCalls))
+			if summary.RecoveryLLMBudgetDenied > 0 {
+				b.WriteString(fmt.Sprintf("（预算拒绝 %d）", summary.RecoveryLLMBudgetDenied))
+			}
+			b.WriteString("\n")
+		}
+		if summary.EnhancementLLMBudgetDenied > 0 {
+			b.WriteString(fmt.Sprintf("- 增强 LLM 预算拒绝: %d\n", summary.EnhancementLLMBudgetDenied))
 		}
 		b.WriteString("\n")
 	}
 
-	b.WriteString("## 关键统计\n\n")
-	b.WriteString(fmt.Sprintf("- 离开应用自动拉回：%d\n", summary.OutOfAppRecoveries))
-	b.WriteString(fmt.Sprintf("- 恢复冷却进入次数：%d\n", summary.RecoveryCooldownEnterCount))
-	b.WriteString(fmt.Sprintf("- 恢复冷却命中步数：%d\n", summary.RecoveryCooldownStepCount))
-	b.WriteString(fmt.Sprintf("- 候选增强调用 / 命中：%d / %d\n", summary.CandidateEnhancementCalls, summary.CandidateEnhancementSelects))
-	b.WriteString(fmt.Sprintf("- 恢复 LLM 调用：%d\n", summary.RecoveryLLMCalls))
-	b.WriteString(fmt.Sprintf("- 恢复 LLM 预算拒绝：%d\n", summary.RecoveryLLMBudgetDenied))
-	b.WriteString(fmt.Sprintf("- 增强 LLM 预算拒绝：%d\n", summary.EnhancementLLMBudgetDenied))
-	b.WriteString("\n")
-
-	if envelope.Artifacts != nil {
+	// ── 产物导出 ──
+	if envelope.Artifacts != nil && envelope.Artifacts.FileCount > 0 {
 		b.WriteString("## 产物导出\n\n")
-		b.WriteString(fmt.Sprintf("- 页面目录数：%d\n", envelope.Artifacts.PageCount))
-		b.WriteString(fmt.Sprintf("- 截图文件数：%d\n", envelope.Artifacts.ScreenshotCount))
-		b.WriteString(fmt.Sprintf("- XML 文件数：%d\n", envelope.Artifacts.XMLCount))
-		b.WriteString(fmt.Sprintf("- 总文件数：%d\n", envelope.Artifacts.FileCount))
+		b.WriteString(fmt.Sprintf("- %d 个页面目录，共 %d 个文件（截图 %d / XML %d）\n",
+			envelope.Artifacts.PageCount, envelope.Artifacts.FileCount, envelope.Artifacts.ScreenshotCount, envelope.Artifacts.XMLCount))
+		if envelope.Artifacts.StepTimelineFile != "" {
+			b.WriteString(fmt.Sprintf("- [步骤时间线](%s)\n", envelope.Artifacts.StepTimelineFile))
+		}
 		b.WriteString("\n")
 	}
 
-	writeTopSection(&b, "高频页面", summary.PageVisitCount)
-	writeTopSection(&b, "高频动作", summary.ActionCount)
-	writePageDetails(&b, envelope.Pages)
-	writeRecentFailures(&b, envelope.StepRecords)
+	// ── 页面索引 ──
+	pageIDMap := buildPageIDMap(envelope.Pages)
+	if len(envelope.Pages) > 0 {
+		b.WriteString("## 页面索引\n\n")
+
+		// 图片网格：每行 5 张，可横向滚动
+		hasImages := false
+		for _, page := range envelope.Pages {
+			if page.RepresentativeScreenshot != "" {
+				hasImages = true
+				break
+			}
+		}
+		if hasImages {
+			b.WriteString("<div style=\"overflow-x:auto; margin-bottom:16px;\">\n")
+			b.WriteString("<table style=\"border-collapse:collapse;\">\n")
+			perPageRow := 5
+			for i := 0; i < len(envelope.Pages); i += perPageRow {
+				end := i + perPageRow
+				if end > len(envelope.Pages) {
+					end = len(envelope.Pages)
+				}
+				// 图片行
+				b.WriteString("<tr>\n")
+				for _, page := range envelope.Pages[i:end] {
+					id := pageIDMap[page.PageName]
+					b.WriteString("<td style=\"padding:8px; text-align:center; vertical-align:top; width:180px;\">\n")
+					b.WriteString(fmt.Sprintf("<a href=\"#page-%s\">\n", id))
+					if page.RepresentativeScreenshot != "" {
+						b.WriteString(fmt.Sprintf("<img src=\"%s\" style=\"max-width:160px; max-height:280px; border-radius:6px; border:1px solid #333;\" />\n", page.RepresentativeScreenshot))
+					} else {
+						b.WriteString("<div style=\"width:160px; height:280px; background:#1a1a2e; border-radius:6px; border:1px solid #333; display:flex; align-items:center; justify-content:center; color:#666; font-size:12px;\">无截图</div>\n")
+					}
+					b.WriteString("</a>\n</td>\n")
+				}
+				// 补齐空位
+				for j := len(envelope.Pages[i:end]); j < perPageRow; j++ {
+					b.WriteString("<td style=\"padding:8px; width:180px;\"></td>\n")
+				}
+				b.WriteString("</tr>\n")
+				// 信息行
+				b.WriteString("<tr>\n")
+				for _, page := range envelope.Pages[i:end] {
+					id := pageIDMap[page.PageName]
+					label := escapeMarkdownCell(truncatePageName(page.PageName, 30))
+					if page.Label != "" {
+						label = escapeMarkdownCell(truncatePageName(page.Label, 20))
+					}
+					b.WriteString(fmt.Sprintf("<td style=\"padding:4px 8px; text-align:center; vertical-align:top; font-size:13px;\">\n<a href=\"#page-%s\" style=\"color:inherit; text-decoration:none;\"><b>P%s</b> %s</a><br/><span style=\"color:#888; font-size:11px;\">%d 访问 / %d 操作</span>\n</td>\n",
+						id, id, label, page.VisitCount, page.ActionCount))
+				}
+				for j := len(envelope.Pages[i:end]); j < perPageRow; j++ {
+					b.WriteString("<td style=\"padding:4px 8px; width:180px;\"></td>\n")
+				}
+				b.WriteString("</tr>\n")
+			}
+			b.WriteString("</table>\n")
+			b.WriteString("</div>\n\n")
+		}
+	}
+
+	// ── 高频动作 ──
+	if len(summary.ActionCount) > 0 {
+		b.WriteString("## 动作统计\n\n")
+		top := topPairs(summary.ActionCount, defaultTopCount)
+		for _, item := range top {
+			b.WriteString(fmt.Sprintf("- **%s**: %d 次\n", item.Name, item.Count))
+		}
+		b.WriteString("\n")
+	}
+
+	// ── 问题 & 警告 ──
+	writeIssuesSection(&b, envelope.StepRecords)
+
+	// ── 页面详情 ──
+	writePageDetailsCompact(&b, envelope.Pages, pageIDMap)
 
 	return b.String()
 }
 
-func writeTopSection(b *strings.Builder, title string, counts map[string]int) {
-	b.WriteString("## " + title + "\n\n")
-	top := topPairs(counts, defaultTopCount)
-	if len(top) == 0 {
-		b.WriteString("- 无\n\n")
+// renderStepTimeline 将步骤时间线渲染为独立 MD 内容。
+func renderStepTimeline(records []monkey.StepRecord, pageIDMap map[string]string) string {
+	var b strings.Builder
+	b.WriteString("# 步骤时间线\n\n")
+	b.WriteString("| # | 页面 | 操作 | 结果 | 耗时 | 截图 |\n")
+	b.WriteString("|---:|---|---|---|---:|---|\n")
+	for _, r := range records {
+		pageName := firstNonEmpty(r.BeforePageName, r.PageName)
+		pageID := pageIDMap[pageName]
+		if pageID == "" {
+			pageID = "-"
+		}
+		action := fallbackText(r.Action, "-")
+		result := "OK"
+		if strings.TrimSpace(r.Err) != "" {
+			result = "FAIL"
+		}
+		screenshotLinks := ""
+		if r.BeforeArtifactRef != nil && r.BeforeArtifactRef.ScreenshotFile != "" {
+			screenshotLinks = fmt.Sprintf("[前](%s)", r.BeforeArtifactRef.ScreenshotFile)
+		}
+		if r.AfterArtifactRef != nil && r.AfterArtifactRef.ScreenshotFile != "" {
+			if screenshotLinks != "" {
+				screenshotLinks += " "
+			}
+			screenshotLinks += fmt.Sprintf("[后](%s)", r.AfterArtifactRef.ScreenshotFile)
+		}
+		if screenshotLinks == "" {
+			screenshotLinks = "-"
+		}
+		resultText := result
+		if result == "FAIL" {
+			resultText = fmt.Sprintf("**FAIL** %s", truncateErr(r.Err, 60))
+		}
+		b.WriteString(fmt.Sprintf("| %d | P%s | %s | %s | %s | %s |\n",
+			r.Step, pageID, escapeMarkdownCell(action), resultText, formatDuration(r.DurationMs), screenshotLinks))
+	}
+	return b.String()
+}
+
+func writeIssuesSection(b *strings.Builder, records []monkey.StepRecord) {
+	hasIssues := false
+	for _, r := range records {
+		if strings.TrimSpace(r.Err) != "" {
+			hasIssues = true
+			break
+		}
+	}
+	if !hasIssues {
 		return
 	}
-	for _, item := range top {
-		b.WriteString(fmt.Sprintf("- %s：%d\n", fallbackText(item.Name, "<empty>"), item.Count))
+	b.WriteString("## 问题 & 警告\n\n")
+	failures := make([]monkey.StepRecord, 0)
+	for _, r := range records {
+		if strings.TrimSpace(r.Err) != "" {
+			failures = append(failures, r)
+		}
+	}
+	for _, r := range failures {
+		pageName := firstNonEmpty(r.BeforePageName, r.PageName)
+		b.WriteString(fmt.Sprintf("- **Step %d** `%s` %s: %s\n",
+			r.Step,
+			escapeMarkdownCell(truncatePageName(pageName, 40)),
+			fallbackText(r.Action, "-"),
+			r.Err,
+		))
 	}
 	b.WriteString("\n")
 }
 
-func writeRecentFailures(b *strings.Builder, records []monkey.StepRecord) {
-	b.WriteString("## 最近失败步骤\n\n")
-	failures := make([]monkey.StepRecord, 0, 5)
-	for i := len(records) - 1; i >= 0; i-- {
-		record := records[i]
-		if strings.TrimSpace(record.Err) == "" {
-			continue
-		}
-		failures = append(failures, record)
-		if len(failures) >= 5 {
-			break
-		}
-	}
-	if len(failures) == 0 {
-		b.WriteString("- 无\n")
+func writePageDetailsCompact(b *strings.Builder, pages []PageSummary, pageIDMap map[string]string) {
+	if len(pages) == 0 {
 		return
 	}
-	for _, record := range failures {
-		b.WriteString(fmt.Sprintf("- Step %d | 前页面=%s | 操作=%s | 后页面=%s | 错误=%s | 耗时=%d ms\n",
-			record.Step,
-			fallbackText(firstNonEmpty(record.BeforePageName, record.PageName), "-"),
-			fallbackText(record.Action, "-"),
-			fallbackText(firstNonEmpty(record.AfterPageName, record.PageName), "-"),
-			record.Err,
-			record.DurationMs,
-		))
+	b.WriteString("## 页面详情\n\n")
+	for _, page := range pages {
+		id := pageIDMap[page.PageName]
+		header := escapeMarkdownCell(truncatePageName(page.PageName, 80))
+		if page.Label != "" {
+			header = fmt.Sprintf("%s (%s)", escapeMarkdownCell(truncatePageName(page.Label, 40)), header)
+		}
+		b.WriteString(fmt.Sprintf("<a id=\"page-%s\"></a>\n\n### P%s — %s\n\n", id, id, header))
+		if page.RepresentativeScreenshot != "" {
+			b.WriteString(fmt.Sprintf("<img src=\"%s\" style=\"max-width:240px; max-height:420px; border-radius:6px; border:1px solid #333; margin-bottom:12px;\" />\n\n", page.RepresentativeScreenshot))
+		}
+		if page.ArtifactDir != "" {
+			b.WriteString(fmt.Sprintf("- 产物: `%s`\n", page.ArtifactDir))
+		}
+		if len(page.TopActions) > 0 {
+			b.WriteString(fmt.Sprintf("- 动作: %s\n", formatCountMapInline(page.TopActions)))
+		}
+		if len(page.TopControls) > 0 {
+			b.WriteString("\n| 文本/描述 | 类型 | 动作 | 出现 | 执行 |\n")
+			b.WriteString("|---|---|---|---:|---|\n")
+			for _, c := range page.TopControls {
+				b.WriteString(fmt.Sprintf("| %s | %s | %s | %d | %s |\n",
+					escapeMarkdownCell(fallbackText(c.Label, "-")),
+					escapeMarkdownCell(fallbackText(c.ControlType, "-")),
+					escapeMarkdownCell(strings.Join(c.Actions, ", ")),
+					c.SeenCount,
+					escapeMarkdownCell(formatCountMapInline(c.ExecutedBy)),
+				))
+			}
+		}
+		b.WriteString("\n")
 	}
 }
 
-func writePageDetails(b *strings.Builder, pages []PageSummary) {
-	b.WriteString("## 页面详情\n\n")
-	if len(pages) == 0 {
-		b.WriteString("- 无\n\n")
-		return
+// formatDuration 将毫秒转换为人类可读的时长格式。
+func formatDuration(ms int64) string {
+	if ms <= 0 {
+		return "0s"
 	}
-	for _, page := range pages {
-		b.WriteString(fmt.Sprintf("### 页面：%s\n\n", fallbackText(page.PageName, "UnknownPage")))
-		b.WriteString(fmt.Sprintf("- 出现次数：%d\n", page.VisitCount))
-		b.WriteString(fmt.Sprintf("- 执行操作次数：%d\n", page.ActionCount))
-		b.WriteString(fmt.Sprintf("- 可交互控件数：%d\n", page.InteractableControlCount))
-		if page.ArtifactDir != "" {
-			b.WriteString(fmt.Sprintf("- 产物目录：%s\n", page.ArtifactDir))
-		}
-		if page.ControlsDetailFile != "" {
-			b.WriteString(fmt.Sprintf("- 完整控件明细：%s\n", page.ControlsDetailFile))
-		}
-		if len(page.TopActions) > 0 {
-			b.WriteString(fmt.Sprintf("- 常见操作：%s\n", formatCountMapInline(page.TopActions)))
-		}
-		b.WriteString("\n")
-		if len(page.TopControls) == 0 {
-			b.WriteString("- 控件详情：无\n\n")
+	d := time.Duration(ms) * time.Millisecond
+	if d < time.Second {
+		return fmt.Sprintf("%dms", ms)
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%.1fs", float64(ms)/1000)
+	}
+	minutes := int(d.Minutes())
+	seconds := int(d.Seconds()) % 60
+	if minutes < 60 {
+		return fmt.Sprintf("%dm %ds", minutes, seconds)
+	}
+	hours := minutes / 60
+	minutes = minutes % 60
+	return fmt.Sprintf("%dh %dm %ds", hours, minutes, seconds)
+}
+
+func readyIcon(ready bool) string {
+	if ready {
+		return "OK"
+	}
+	return "MISSING"
+}
+
+func buildPageIDMap(pages []PageSummary) map[string]string {
+	m := make(map[string]string, len(pages))
+	for i, page := range pages {
+		m[page.PageName] = strconv.Itoa(i + 1)
+	}
+	return m
+}
+
+func truncatePageName(name string, maxLen int) string {
+	trimmed := strings.TrimSpace(name)
+	if len(trimmed) <= maxLen {
+		return trimmed
+	}
+	if maxLen <= 3 {
+		return trimmed[:maxLen]
+	}
+	return trimmed[:maxLen-3] + "..."
+}
+
+func truncateErr(err string, maxLen int) string {
+	trimmed := strings.TrimSpace(err)
+	if len(trimmed) <= maxLen {
+		return trimmed
+	}
+	if maxLen <= 3 {
+		return trimmed[:maxLen]
+	}
+	return trimmed[:maxLen-3] + "..."
+}
+
+// buildPageLabel 从控件文本中提取人类可读的页面标签。
+func buildPageLabel(controls []ControlSummary) string {
+	var texts []string
+	for _, c := range controls {
+		label := strings.TrimSpace(c.Label)
+		if label == "" || label == "<empty>" {
 			continue
 		}
-		b.WriteString("| 文本/描述 | 类型 | 坐标 | 可执行动作 | 出现次数 | 实际执行 |\n")
-		b.WriteString("|---|---|---|---|---:|---|\n")
-		for _, control := range page.TopControls {
-			b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %d | %s |\n",
-				escapeMarkdownCell(fallbackText(control.Label, "-")),
-				escapeMarkdownCell(fallbackText(control.ControlType, "-")),
-				escapeMarkdownCell(fallbackText(control.Bounds, "-")),
-				escapeMarkdownCell(strings.Join(control.Actions, ", ")),
-				control.SeenCount,
-				escapeMarkdownCell(formatCountMapInline(control.ExecutedBy)),
-			))
-		}
-		b.WriteString("\n")
+		texts = append(texts, label)
 	}
+	if len(texts) == 0 {
+		return ""
+	}
+	// 去重并限制数量
+	seen := make(map[string]struct{}, len(texts))
+	unique := texts[:0]
+	for _, t := range texts {
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		unique = append(unique, t)
+		if len(unique) >= 4 {
+			break
+		}
+	}
+	return strings.Join(unique, ", ")
 }
+
 
 func topPairs(counts map[string]int, limit int) []pair {
 	if len(counts) == 0 || limit <= 0 {
@@ -453,17 +667,20 @@ func fallbackText(text string, fallback string) string {
 	return trimmed
 }
 
-func writeArtifacts(rootDir string, records []monkey.StepRecord, pages []PageSummary) (*ArtifactSummary, []monkey.StepRecord, []PageSummary, error) {
+func writeArtifacts(rootDir string, records []monkey.StepRecord) (*ArtifactSummary, []monkey.StepRecord, []PageSummary, error) {
 	targetRoot := strings.TrimSpace(rootDir)
 	if targetRoot == "" {
-		return nil, records, pages, nil
+		return nil, records, nil, nil
 	}
 	if err := os.MkdirAll(targetRoot, 0755); err != nil {
 		return nil, nil, nil, fmt.Errorf("创建产物目录失败: %w", err)
 	}
 
 	cloned := append([]monkey.StepRecord(nil), records...)
-	updatedPages := append([]PageSummary(nil), pages...)
+
+	// 在写产物之前先从 XML 构建页面摘要（XML 稍后会被释放）
+	pages := buildPageSummaries(cloned)
+
 	pageDirs := make(map[string]struct{})
 	screenshotCount := 0
 	xmlCount := 0
@@ -497,15 +714,23 @@ func writeArtifacts(rootDir string, records []monkey.StepRecord, pages []PageSum
 		if record.AfterArtifactRef != nil {
 			pageDirs[record.AfterArtifactRef.PageDir] = struct{}{}
 		}
+
+		// 释放 XML 和截图内存
+		record.BeforeXML = ""
+		record.AfterXML = ""
+		record.BeforeScreenshot = nil
+		record.AfterScreenshot = nil
 	}
 
-	for index := range updatedPages {
-		page := &updatedPages[index]
+	// 为每个页面填充产物目录并写入控件明细
+	for index := range pages {
+		page := &pages[index]
 		dirName := sanitizePageDirName(page.PageName)
 		if dirName == "" {
 			dirName = "UnknownPage"
 		}
 		page.ArtifactDir = filepath.ToSlash(filepath.Join(targetRoot, dirName))
+		page.RepresentativeScreenshot = findFirstScreenshot(targetRoot, dirName, filepath.Base(targetRoot))
 		detailPath, err := writePageControlsDetail(targetRoot, dirName, *page)
 		if err != nil {
 			return nil, nil, nil, err
@@ -514,13 +739,26 @@ func writeArtifacts(rootDir string, records []monkey.StepRecord, pages []PageSum
 		pageDirs[dirName] = struct{}{}
 	}
 
+	// 写入步骤时间线独立文件
+	var stepTimelineFile string
+	if len(cloned) > 0 {
+		pageIDMap := buildPageIDMap(pages)
+		timelineContent := renderStepTimeline(cloned, pageIDMap)
+		timelinePath := filepath.Join(targetRoot, "step-timeline.md")
+		if err := os.WriteFile(timelinePath, []byte(timelineContent), 0644); err != nil {
+			return nil, nil, nil, fmt.Errorf("写入步骤时间线失败: %w", err)
+		}
+		stepTimelineFile = filepath.ToSlash(timelinePath)
+	}
+
 	return &ArtifactSummary{
-		RootDir:         targetRoot,
-		PageCount:       len(pageDirs),
-		FileCount:       screenshotCount + xmlCount,
-		ScreenshotCount: screenshotCount,
-		XMLCount:        xmlCount,
-	}, cloned, updatedPages, nil
+		RootDir:          targetRoot,
+		PageCount:        len(pageDirs),
+		FileCount:        screenshotCount + xmlCount,
+		ScreenshotCount:  screenshotCount,
+		XMLCount:         xmlCount,
+		StepTimelineFile: stepTimelineFile,
+	}, cloned, pages, nil
 }
 
 type artifactFileCounter struct {
@@ -624,6 +862,38 @@ func detectImageExt(data []byte) string {
 	return ".png"
 }
 
+// findFirstScreenshot 在页面产物目录中找到第一个截图，用作代表图。
+// 优先 before，没有则 fallback 到 after。
+// artifactDirName 是产物目录相对于 md 报告文件的路径前缀（如 "run-report_artifacts"）。
+func findFirstScreenshot(rootDir string, pageDirName string, artifactDirName string) string {
+	dirPath := filepath.Join(rootDir, pageDirName)
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return ""
+	}
+	var fallback string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasPrefix(name, "step-") {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(name))
+		if ext != ".png" && ext != ".jpg" && ext != ".jpeg" {
+			continue
+		}
+		if strings.Contains(name, "-before") {
+			return filepath.ToSlash(filepath.Join(artifactDirName, pageDirName, name))
+		}
+		if fallback == "" && strings.Contains(name, "-after") {
+			fallback = filepath.ToSlash(filepath.Join(artifactDirName, pageDirName, name))
+		}
+	}
+	return fallback
+}
+
 type pageAggregate struct {
 	PageName    string
 	VisitCount  int
@@ -702,6 +972,7 @@ func buildPageSummaries(records []monkey.StepRecord) []PageSummary {
 		})
 		summary := PageSummary{
 			PageName:                 page.PageName,
+			Label:                    buildPageLabel(topControls),
 			VisitCount:               page.VisitCount,
 			ActionCount:              page.ActionCount,
 			InteractableControlCount: len(topControls),

@@ -388,7 +388,7 @@ func (r *Runner) appendRecord(report *Report, record StepRecord, stepStart time.
 		record.AfterScreenshot = append([]byte(nil), after.Screenshot...)
 	}
 
-	// 实时写盘：截图 + XML 立即落盘，写完释放内存
+	// 实时写盘：截图 + XML 立即落盘，释放截图内存（XML 保留至报告生成阶段）
 	if r.cfg.ArtifactDir != "" {
 		if ref, err := writeStepSnapshotArtifacts(r.cfg.ArtifactDir, record, "before",
 			record.BeforePageName, record.BeforeXML, record.BeforeScreenshot); err == nil && ref != nil {
@@ -404,8 +404,6 @@ func (r *Runner) appendRecord(report *Report, record StepRecord, stepStart time.
 		}
 		record.BeforeScreenshot = nil
 		record.AfterScreenshot = nil
-		record.BeforeXML = ""
-		record.AfterXML = ""
 	}
 
 	report.Records = append(report.Records, record)

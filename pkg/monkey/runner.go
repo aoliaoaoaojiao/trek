@@ -129,6 +129,7 @@ type Config struct {
 	ImageSignatureFunc                func([]byte) string
 	ImageFingerprintRegions           []ImageFingerprintRegion
 	ImageSimilaritySSIMThreshold      float64
+	ImageFingerprintHammingThreshold  int
 	ArtifactDir                       string // 产物实时写入目录；为空则不实时写盘
 }
 
@@ -299,6 +300,7 @@ type Runner struct {
 	healthMonitor          *healthSignalMonitor
 	orientationMonitor     *screenOrientationMonitor
 	blockDetector          *blockDetector
+	fuzzyMatcher           *FuzzyPageNameMatcher
 	recoveryState          *recoveryStateMachine
 	recoveryPlanner        recovery.RecoveryPlanner
 	candidateEnhanceBudget recovery.LLMBudget
@@ -354,6 +356,7 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 		cfg:                    cfg,
 		rng:                    rand.New(rand.NewSource(time.Now().UnixNano())),
 		blockDetector:          newBlockDetector(cfg.BlockNoChangeThreshold, cfg.TwoStateLoopThreshold, cfg.HighVisitThreshold, cfg.LowRewardWindow).withImageSignatureFunc(cfg.ImageSignatureFunc).withImageSimilarity(cfg.ImageSimilaritySSIMThreshold, cfg.ImageFingerprintRegions),
+		fuzzyMatcher:           NewFuzzyPageNameMatcher(cfg.ImageFingerprintHammingThreshold),
 		recoveryState:          newRecoveryStateMachineWithCooldown(cfg.RecoveryCooldownSteps),
 		candidateEnhanceBudget: enhanceBudget,
 		lastEnhancementStep:    -1,

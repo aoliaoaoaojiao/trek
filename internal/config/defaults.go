@@ -37,14 +37,13 @@ const (
 	DefaultStructureChangeReward = 2.0
 
 	// DefaultNoOpPenalty 页面无变化的惩罚。
-	DefaultNoOpPenalty = -2.0
+	DefaultNoOpPenalty = -1.0
 
 	// DefaultShortLoopPenalty 短环惩罚。
-	DefaultShortLoopPenalty = -3.0
+	DefaultShortLoopPenalty = -2.0
 
 	// DefaultTwoStateLoopPenalty 双状态往返惩罚（A↔B）。
-	// 设置为超过 NewStateReward 以避免 A↔B 循环产生正收益。
-	DefaultTwoStateLoopPenalty = -6.0
+	DefaultTwoStateLoopPenalty = -3.0
 
 	// DefaultEdgeRepeatPenalty 重复边惩罚。
 	DefaultEdgeRepeatPenalty = -1.0
@@ -56,7 +55,7 @@ const (
 	DefaultEmptyResultPenalty = -3.0
 
 	// DefaultShortLoopWindow 短环检测窗口大小。
-	DefaultShortLoopWindow = 5
+	DefaultShortLoopWindow = 3
 
 	// DefaultStagnationThreshold 停滞阈值。
 	DefaultStagnationThreshold = 2
@@ -65,20 +64,20 @@ const (
 // UCT-Bandit agent 相关默认值
 const (
 	// DefaultBackPenalty Back 动作惩罚，减少返回旧页面倾向。
-	DefaultBackPenalty = -2.0
+	DefaultBackPenalty = -1.0
 
 	// DefaultEscapeBonus 逃逸加成。
 	DefaultEscapeBonus = 3.0
 
 	// DefaultExploreRatio ε-贪心探索率。
-	DefaultExploreRatio = 0.60
+	DefaultExploreRatio = 0.15
 
 	// DefaultActionCooldownPenalty 同状态同动作近期重复惩罚。
-	DefaultActionCooldownPenalty = 1.5
+	DefaultActionCooldownPenalty = 0.8
 
 	// DefaultRecentActionWindow 近期动作窗口大小。
 	DefaultRecentActionWindow = 6
 
 	// DefaultLoopEscapeExploreBoost 检测到回环时的探索增益。
-	DefaultLoopEscapeExploreBoost = 0.40
+	DefaultLoopEscapeExploreBoost = 0.25
 )

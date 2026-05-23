@@ -365,7 +365,7 @@ func (a *Agent) heuristicBonus(c *Candidate) float64 {
 
 	// 未访问动作加成：未尝试的按钮应有更强的探索动力
 	if !c.Action.IsVisited() {
-		bonus += 2.0
+		bonus += 1.0
 	}
 
 	// 点击动作倾向

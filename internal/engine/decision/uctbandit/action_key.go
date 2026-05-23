@@ -9,21 +9,31 @@ import (
 )
 
 // BuildActionKey 为动作生成稳定的归一化 key。
-// actionType + widgetType + resourceID_or_empty + textPattern + positionBucket
+// Click: 同一 resourceID 的控件 = 同一动作，不区分点击位置
+// Scroll: 按方向区分（上/下/左/右），不区分起始位置
 func BuildActionKey(actionType types.ActionType, widgetType, resourceID, text string, normX, normY float64) string {
-	textPattern := classifyTextPattern(text)
-	positionBucket := classifyPosition(normX, normY)
 	resID := resourceID
 	if resID == "" {
 		resID = "no_res_id"
 	}
 
-	return fmt.Sprintf("%s|%s|%s|%s|%s",
+	// Scroll 动作按方向区分
+	if isScrollAction(actionType) {
+		direction := classifyScrollDirection(actionType)
+		return fmt.Sprintf("%s|%s|%s",
+			actionType.String(),
+			resID,
+			direction,
+		)
+	}
+
+	// Click 等动作：同一控件 = 同一动作
+	textPattern := classifyTextPattern(text)
+	return fmt.Sprintf("%s|%s|%s|%s",
 		actionType.String(),
 		widgetType,
 		resID,
 		textPattern,
-		positionBucket,
 	)
 }
 
@@ -105,4 +115,30 @@ func isNumberLike(text string) bool {
 		}
 	}
 	return digitCount > 0
+}
+
+// isScrollAction 判断是否为滑动类动作。
+func isScrollAction(actionType types.ActionType) bool {
+	switch actionType {
+	case types.SCROLL_BOTTOM_UP, types.SCROLL_TOP_DOWN,
+		types.SCROLL_LEFT_RIGHT, types.SCROLL_RIGHT_LEFT:
+		return true
+	}
+	return false
+}
+
+// classifyScrollDirection 将滑动动作归类为方向。
+func classifyScrollDirection(actionType types.ActionType) string {
+	switch actionType {
+	case types.SCROLL_BOTTOM_UP:
+		return "scroll_up"
+	case types.SCROLL_TOP_DOWN:
+		return "scroll_down"
+	case types.SCROLL_LEFT_RIGHT:
+		return "scroll_right"
+	case types.SCROLL_RIGHT_LEFT:
+		return "scroll_left"
+	default:
+		return "scroll_unknown"
+	}
 }

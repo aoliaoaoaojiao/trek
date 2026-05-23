@@ -424,13 +424,23 @@ func renderMarkdown(envelope RunReportEnvelope) string {
 	return b.String()
 }
 
-// renderStepTimeline 将步骤时间线渲染为独立 MD 内容。
+// renderStepTimeline 将步骤时间线渲染为独立 MD 内容，每步显示前后截图，10步一个章节。
 func renderStepTimeline(records []monkey.StepRecord, pageIDMap map[string]string) string {
 	var b strings.Builder
 	b.WriteString("# 步骤时间线\n\n")
-	b.WriteString("| # | 页面 | 操作 | 结果 | 耗时 | 截图 |\n")
-	b.WriteString("|---:|---|---|---|---:|---|\n")
-	for _, r := range records {
+	imgStyle := "max-height:100px; max-width:100%; object-fit:contain; border:1px solid #444; border-radius:3px; vertical-align:middle;"
+
+	const stepsPerSection = 10
+	for i, r := range records {
+		// 每10步输出一个章节标题
+		if r.Step == 1 || (r.Step-1)%stepsPerSection == 0 {
+			sectionEnd := r.Step + stepsPerSection - 1
+			if sectionEnd > len(records) {
+				sectionEnd = len(records)
+			}
+			b.WriteString(fmt.Sprintf("## step %d-%d\n\n", r.Step, sectionEnd))
+		}
+
 		pageName := firstNonEmpty(r.BeforePageName, r.PageName)
 		pageID := pageIDMap[pageName]
 		if pageID == "" {
@@ -441,25 +451,59 @@ func renderStepTimeline(records []monkey.StepRecord, pageIDMap map[string]string
 		if strings.TrimSpace(r.Err) != "" {
 			result = "FAIL"
 		}
-		screenshotLinks := ""
-		if r.BeforeArtifactRef != nil && r.BeforeArtifactRef.ScreenshotFile != "" {
-			screenshotLinks = fmt.Sprintf("[前](%s)", r.BeforeArtifactRef.ScreenshotFile)
-		}
-		if r.AfterArtifactRef != nil && r.AfterArtifactRef.ScreenshotFile != "" {
-			if screenshotLinks != "" {
-				screenshotLinks += " "
+		// 页面理解策略描述
+		strategyDesc := "-"
+		if r.ScriptTransformed {
+			strategyDesc = "脚本转换"
+		} else if strategy := strings.TrimSpace(r.PageControlStrategy); strategy != "" {
+			if r.CacheHit {
+				strategyDesc = "命中缓存"
+			} else {
+				switch strings.ToLower(strategy) {
+				case "ocr":
+					strategyDesc = "调用OCR"
+				case "llm":
+					strategyDesc = "调用LLM"
+				case "raw":
+					strategyDesc = "用户页面源"
+				default:
+					strategyDesc = strategy
+				}
 			}
-			screenshotLinks += fmt.Sprintf("[后](%s)", r.AfterArtifactRef.ScreenshotFile)
 		}
-		if screenshotLinks == "" {
-			screenshotLinks = "-"
-		}
+		// 结果文字
 		resultText := result
 		if result == "FAIL" {
 			resultText = fmt.Sprintf("**FAIL** %s", truncateErr(r.Err, 60))
 		}
-		b.WriteString(fmt.Sprintf("| %d | P%s | %s | %s | %s | %s |\n",
-			r.Step, pageID, escapeMarkdownCell(action), resultText, formatDuration(r.DurationMs), screenshotLinks))
+		// 截图
+		beforeImg := ""
+		if r.BeforeArtifactRef != nil && r.BeforeArtifactRef.ScreenshotFile != "" {
+			beforeImg = fmt.Sprintf("<div style=\"padding:4px 10px; text-align:center;\"><img src=\"%s\" style=\"%s\" title=\"前\" /></div>\n", r.BeforeArtifactRef.ScreenshotFile, imgStyle)
+		}
+		afterImg := ""
+		if r.AfterArtifactRef != nil && r.AfterArtifactRef.ScreenshotFile != "" {
+			afterImg = fmt.Sprintf("<div style=\"padding:4px 10px; text-align:center;\"><img src=\"%s\" style=\"%s\" title=\"后\" /></div>\n", r.AfterArtifactRef.ScreenshotFile, imgStyle)
+		}
+		// 输出
+		b.WriteString(fmt.Sprintf("### step%d\n", r.Step))
+		b.WriteString("操作前\n")
+		if beforeImg != "" {
+			b.WriteString(beforeImg)
+		}
+		b.WriteString("操作后\n\n")
+		if afterImg != "" {
+			b.WriteString(afterImg)
+		}
+		b.WriteString(fmt.Sprintf("页面：P%s\n\n", pageID))
+		b.WriteString(fmt.Sprintf("操作：%s\n\n", escapeMarkdownCell(action)))
+		b.WriteString(fmt.Sprintf("结果：%s\n\n", resultText))
+		b.WriteString(fmt.Sprintf("页面理解：%s\n\n", strategyDesc))
+		b.WriteString(fmt.Sprintf("耗时：%s\n", formatDuration(r.DurationMs)))
+		// 章节之间空一行（除了最后一个）
+		if i < len(records)-1 && (r.Step)%stepsPerSection == 0 {
+			b.WriteString("\n")
+		}
 	}
 	return b.String()
 }

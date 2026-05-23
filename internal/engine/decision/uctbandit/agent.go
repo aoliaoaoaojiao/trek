@@ -29,12 +29,12 @@ func DefaultAgentConfig() AgentConfig {
 		UCTWeight:              0.6,
 		BanditWeight:           0.3,
 		HeuristicWeight:        0.1,
-		BackPenalty:            -1.0,
+		BackPenalty:            -2.0,   // 增加 Back 惩罚，从 -1.0 改为 -2.0，减少返回旧页面的倾向
 		EscapeBonus:            3.0,
-		ExploreRatio:           0.15,
-		ActionCooldownPenalty:  0.8,
+		ExploreRatio:           0.60,
+		ActionCooldownPenalty:  1.5,
 		RecentActionWindow:     6,
-		LoopEscapeExploreBoost: 0.25,
+		LoopEscapeExploreBoost: 0.40,
 	}
 }
 
@@ -362,9 +362,9 @@ func (a *Agent) heuristicBonus(c *Candidate) float64 {
 
 	var bonus float64
 
-	// 未访问动作加成
+	// 未访问动作加成：未尝试的按钮应有更强的探索动力
 	if !c.Action.IsVisited() {
-		bonus += 1.0
+		bonus += 2.0
 	}
 
 	// 点击动作倾向
@@ -581,15 +581,31 @@ func (a *Agent) countRecentSelectionHits(stateID, actionKey string) int {
 }
 
 func (a *Agent) isLikelyLooping() bool {
-	if len(a.recentStates) < 4 {
+	n := len(a.recentStates)
+	if n < 4 {
 		return false
 	}
-	n := len(a.recentStates)
+
+	// 检测 A-B-A-B 交替循环
 	a1 := a.recentStates[n-4]
 	b1 := a.recentStates[n-3]
 	a2 := a.recentStates[n-2]
 	b2 := a.recentStates[n-1]
-	return a1 == a2 && b1 == b2 && a1 != b1
+	if a1 == a2 && b1 == b2 && a1 != b1 {
+		return true
+	}
+
+	// 检测 A-A-A-A 同状态卡死：最近 3 个状态全部相同
+	if n >= 3 {
+		s1 := a.recentStates[n-3]
+		s2 := a.recentStates[n-2]
+		s3 := a.recentStates[n-1]
+		if s1 == s2 && s2 == s3 {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (a *Agent) increaseEdgeTransitionCount(prevStateID, nextStateID string) int {

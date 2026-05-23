@@ -75,6 +75,8 @@ type Props = {
   setImageSimilarityThreshold: (value: string) => void
   imageFingerprintHammingThreshold: string
   setImageFingerprintHammingThreshold: (value: string) => void
+  pageControlCacheTTLSeconds: string
+  setPageControlCacheTTLSeconds: (value: string) => void
   exploreOCRTimeoutMs: string
   setExploreOCRTimeoutMs: (value: string) => void
   llmTimeoutMs: string
@@ -475,8 +477,12 @@ export function ConfigPanel(props: Props) {
             <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} max={1} step="0.001" value={props.imageSimilarityThreshold} onChange={(e) => props.setImageSimilarityThreshold(e.target.value)} placeholder="留空=使用默认值 0.995" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            {renderFieldTitle("图片指纹模糊匹配阈值", "默认：6。Hamming 距离 ≤ 阈值的截图会被合并为同一页面名。6 表示 512 bit 中允许约 1.2% 差异；设为 0 可关闭模糊匹配。")}
-            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.imageFingerprintHammingThreshold} onChange={(e) => props.setImageFingerprintHammingThreshold(e.target.value)} placeholder="留空=使用默认值 6" />
+            {renderFieldTitle("图片指纹模糊匹配阈值", "默认：10。Hamming 距离 ≤ 阈值的截图会被合并为同一页面名。10 表示 512 bit 中允许约 2% 差异，可过滤状态栏时间/电量变化；设为 0 可关闭模糊匹配。")}
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.imageFingerprintHammingThreshold} onChange={(e) => props.setImageFingerprintHammingThreshold(e.target.value)} placeholder="留空=使用默认值 10" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            {renderFieldTitle("页面缓存 TTL(秒)", "默认：1800（30分钟）。OCR/LLM 页面理解结果的缓存有效期，过期后会重新识别。设为 0 表示永不过期。")}
+            <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.pageControlCacheTTLSeconds} onChange={(e) => props.setPageControlCacheTTLSeconds(e.target.value)} placeholder="留空=使用默认值 1800" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             {renderFieldTitle("OCR 超时(ms)", "默认：10000，统一控制 OCR 请求超时：页面理解（page_control_strategy=ocr）、goja 脚本 trek.ocr.recognize()。")}
@@ -584,16 +590,16 @@ export function ConfigPanel(props: Props) {
                 <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.uctEdgeRepeatThreshold} onChange={(e) => props.setUctEdgeRepeatThreshold(e.target.value)} placeholder="留空=使用默认值 2" />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                {renderFieldTitle("动作冷却惩罚", "默认：0.8。短时间内在同一页反复选同一动作时逐步降权。")}
-                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctActionCooldownPenalty} onChange={(e) => props.setUctActionCooldownPenalty(e.target.value)} placeholder="留空=使用默认值 0.8" />
+                {renderFieldTitle("动作冷却惩罚", "默认：1.5。短时间内在同一页反复选同一动作时逐步降权，防止重复点击同一按钮。")}
+                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctActionCooldownPenalty} onChange={(e) => props.setUctActionCooldownPenalty(e.target.value)} placeholder="留空=使用默认值 1.5" />
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 {renderFieldTitle("最近动作窗口", "默认：6。记录最近多少次动作选择，用于计算动作冷却惩罚。")}
                 <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.uctRecentActionWindow} onChange={(e) => props.setUctRecentActionWindow(e.target.value)} placeholder="留空=使用默认值 6" />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                {renderFieldTitle("脱环探索增益", "默认：0.25。检测到明显回环时临时提高随机探索概率以尽快脱困。")}
-                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctLoopEscapeExploreBoost} onChange={(e) => props.setUctLoopEscapeExploreBoost(e.target.value)} placeholder="留空=使用默认值 0.25" />
+                {renderFieldTitle("脱环探索增益", "默认：0.40。检测到回环或同状态卡死时临时提高随机探索概率以尽快脱困。")}
+                <input className="rounded-md border bg-background px-3 py-2" type="number" step="0.1" value={props.uctLoopEscapeExploreBoost} onChange={(e) => props.setUctLoopEscapeExploreBoost(e.target.value)} placeholder="留空=使用默认值 0.40" />
               </label>
             </>
           ) : null}

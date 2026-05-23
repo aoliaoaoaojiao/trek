@@ -57,8 +57,10 @@ type ActionInput struct {
 
 // PageInfo 页面信息，包含页面名和 XML。
 type PageInfo struct {
-	PageName string
-	XML      string
+	PageName      string
+	XML           string
+	CacheHit      bool // 是否命中页面理解缓存
+	ScriptTransformed bool // 是否经过 goja 脚本转换
 }
 
 // PageSnapshot 页面快照，包含页面名、XML 和截图。
@@ -684,21 +686,29 @@ func (s *Coordinator) TransformPageInfoWithInput(pageName string, input ActionIn
 func (s *Coordinator) buildPageInfoByStrategy(pageName string, input ActionInput, applyPluginTransform bool, forceRefresh bool) (PageInfo, error) {
 	resolvedPageName := strings.TrimSpace(pageName)
 	resolvedXML := strings.TrimSpace(input.XMLDescOfGuiTree)
+	scriptTransformed := false
 
-	if applyPluginTransform {
+	// 只有存在脚本插件时才调用转换
+	if applyPluginTransform && s.runtime.HasScriptPlugin() {
 		newPage, newXML, err := s.runtime.TransformPageInfoWithInput(pageName, input.XMLDescOfGuiTree, input.Screenshot)
 		if err != nil {
 			return PageInfo{}, err
 		}
+		// 脚本返回了非空值就算转换
 		if strings.TrimSpace(newPage) != "" {
 			resolvedPageName = strings.TrimSpace(newPage)
+			scriptTransformed = true
 		}
-		resolvedXML = strings.TrimSpace(newXML)
+		if strings.TrimSpace(newXML) != "" {
+			resolvedXML = strings.TrimSpace(newXML)
+			scriptTransformed = true
+		}
 	}
 
 	info := PageInfo{
-		PageName: resolvedPageName,
-		XML:      resolvedXML,
+		PageName:          resolvedPageName,
+		XML:               resolvedXML,
+		ScriptTransformed: scriptTransformed,
 	}
 	if len(input.Screenshot) == 0 {
 		return info, nil
@@ -711,6 +721,7 @@ func (s *Coordinator) buildPageInfoByStrategy(pageName string, input ActionInput
 	if cachedXML, ok := s.loadPageControlCache(strategy, input.Screenshot, forceRefresh); ok {
 		logger.Debugf("coordinator 页面控件缓存命中: strategy=%s page=%s", strategy, resolvedPageName)
 		info.XML = cachedXML
+		info.CacheHit = true
 		return info, nil
 	}
 

@@ -231,8 +231,9 @@ func grayAt(img image.Image, x, y int) uint8 {
 }
 
 // DefaultHammingThreshold 是默认的 Hamming 距离阈值。
-// 对于默认 2 region（512 bit）指纹，阈值 6 表示允许约 1.2% 的 bit 差异。
-const DefaultHammingThreshold = 6
+// 对于默认 2 region（512 bit）指纹，阈值 10 表示允许约 2% 的 bit 差异。
+// 状态栏时间/电量变化通常导致 10-20 bits 差异，阈值 10 可以过滤这些噪声。
+const DefaultHammingThreshold = 10
 
 // HammingDistance 计算两个 IMGPage: 指纹之间的 Hamming 距离（不同 bit 数）。
 // 两个指纹的 region 数必须相同，否则返回 -1。

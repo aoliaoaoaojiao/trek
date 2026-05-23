@@ -23,13 +23,13 @@ func DefaultRewardConfig() RewardConfig {
 		NewStateReward:        5.0,
 		NewEdgeReward:         3.0,
 		StructureChangeReward: 2.0,
-		NoOpPenalty:           -1.0,
-		ShortLoopPenalty:      -2.0,
-		TwoStateLoopPenalty:   -3.0,
+		NoOpPenalty:           -2.0,
+		ShortLoopPenalty:      -3.0,   // 增加短环惩罚，从 -2.0 改为 -3.0
+		TwoStateLoopPenalty:   -6.0,   // 增加双状态往返惩罚，从 -3.0 改为 -6.0，超过 NewStateReward 避免 A↔B 循环
 		EdgeRepeatPenalty:     -1.0,
 		EdgeRepeatThreshold:   2,
 		EmptyResultPenalty:    -3.0,
-		ShortLoopWindow:       3,
+		ShortLoopWindow:       5,      // 扩大检测窗口，从 3 改为 5
 		StagnationThreshold:   2,
 	}
 }

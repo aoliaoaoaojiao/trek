@@ -17,6 +17,7 @@ import (
 
 	"github.com/beevik/etree"
 
+	"trek/logger"
 	"trek/pkg/driver/common"
 	"trek/pkg/monkey"
 )
@@ -970,8 +971,10 @@ type interactableControl struct {
 
 func buildPageSummaries(records []monkey.StepRecord) []PageSummary {
 	pageMap := make(map[string]*pageAggregate)
-	for _, record := range records {
+	for i, record := range records {
 		pageName := strings.TrimSpace(firstNonEmpty(record.BeforePageName, record.PageName))
+		logger.Debugf("report buildPageSummaries step=%d pageName=%s action=%s widgetInfo=%s targetBounds=%s",
+			i+1, pageName, record.Action, record.ActionWidgetInfo, record.ActionTargetBounds)
 		if pageName != "" {
 			page := ensurePageAggregate(pageMap, pageName)
 			page.VisitCount++
@@ -979,7 +982,9 @@ func buildPageSummaries(records []monkey.StepRecord) []PageSummary {
 				page.ActionCount++
 				page.Actions[action]++
 			}
-			mergePageControls(page, extractInteractableControls(record.BeforeXML))
+			xmlControls := extractInteractableControls(record.BeforeXML)
+			logger.Debugf("report buildPageSummaries step=%d beforeXML controls=%d", i+1, len(xmlControls))
+			mergePageControls(page, xmlControls)
 			markExecutedControl(page, record.Action, record.BeforeXML, record.ActionWidgetInfo, record.ActionTargetBounds)
 		}
 		afterPageName := strings.TrimSpace(record.AfterPageName)
@@ -1085,28 +1090,35 @@ func markExecutedControl(page *pageAggregate, action string, xmlText string, wid
 	if action == "" {
 		return
 	}
-	targetXPath, targetPath := extractWidgetLocator(widgetInfo)
-	for _, control := range extractInteractableControls(xmlText) {
+	targetXPath, _ := extractWidgetLocator(widgetInfo)
+	logger.Debugf("report markExecutedControl page=%s action=%s targetXPath=%s targetBounds=%s controls=%d",
+		page.PageName, action, targetXPath, targetBounds, len(page.Controls))
+	xmlControls := extractInteractableControls(xmlText)
+	logger.Debugf("report markExecutedControl xmlControls=%d", len(xmlControls))
+	for _, control := range xmlControls {
 		item, ok := page.Controls[control.Key]
 		if !ok {
+			logger.Debugf("report markExecutedControl controlKey=%s NOT in page.Controls (xpath=%s bounds=%s)", control.Key, control.XPath, control.Bounds)
 			continue
 		}
 		if !controlSupportsAction(control, action) {
+			logger.Debugf("report markExecutedControl controlKey=%s supportsAction=false", control.Key)
 			continue
 		}
-		if targetXPath != "" && control.XPath == targetXPath {
-			item.ExecutedBy[action]++
-			return
-		}
-		if targetPath != "" && control.Path == targetPath {
-			item.ExecutedBy[action]++
-			return
-		}
+		// 优先使用 bounds 匹配，因为合成 XML 中所有控件的 path 相同无区分度
 		if targetBounds != "" && sameBounds(control.Bounds, targetBounds) {
+			logger.Debugf("report markExecutedControl MATCHED by bounds: controlKey=%s bounds=%s targetBounds=%s", control.Key, control.Bounds, targetBounds)
+			item.ExecutedBy[action]++
+			return
+		}
+		// 其次 xpath 匹配
+		if targetXPath != "" && control.XPath == targetXPath {
+			logger.Debugf("report markExecutedControl MATCHED by xpath: controlKey=%s xpath=%s", control.Key, control.XPath)
 			item.ExecutedBy[action]++
 			return
 		}
 	}
+	logger.Debugf("report markExecutedControl NO MATCH found for action=%s targetBounds=%s targetXPath=%s", action, targetBounds, targetXPath)
 }
 
 func extractInteractableControls(xmlText string) []interactableControl {
@@ -1176,13 +1188,18 @@ func buildInteractableControl(elem *etree.Element) (interactableControl, bool) {
 		className = elem.Tag
 	}
 	bounds := strings.TrimSpace(elem.SelectAttrValue("bounds", ""))
-	key := strings.Join([]string{label, className, bounds}, "|")
+	// 使用 XPath 作为唯一标识符，避免相同文本/类名/bounds 的控件被合并
+	xpath := buildAbsoluteXPath(elem)
+	key := xpath
+	if key == "" {
+		key = strings.Join([]string{label, className, bounds}, "|")
+	}
 	return interactableControl{
 		Key:         key,
 		Label:       label,
 		ControlType: className,
 		Bounds:      bounds,
-		Path:        elem.GetPath(),
+		Path:        buildAbsoluteXPath(elem),
 		XPath:       buildAbsoluteXPath(elem),
 		Actions:     dedupeStrings(actions),
 	}, true
@@ -1266,6 +1283,7 @@ func controlSupportsAction(control interactableControl, action string) bool {
 func extractWidgetLocator(widgetInfo string) (xpath string, path string) {
 	text := strings.TrimSpace(widgetInfo)
 	if text == "" {
+		logger.Debugf("report extractWidgetLocator widgetInfo is empty")
 		return "", ""
 	}
 	if match := widgetXPathRegex.FindStringSubmatch(text); len(match) >= 2 {
@@ -1274,11 +1292,18 @@ func extractWidgetLocator(widgetInfo string) (xpath string, path string) {
 	if match := widgetPathRegex.FindStringSubmatch(text); len(match) >= 2 {
 		path = strings.TrimSpace(match[1])
 	}
+	logger.Debugf("report extractWidgetLocator xpath=%s path=%s (widgetInfo=%s)", xpath, path, text)
 	return xpath, path
 }
 
 func sameBounds(left string, right string) bool {
-	return normalizeBoundsString(left) != "" && normalizeBoundsString(left) == normalizeBoundsString(right)
+	leftNorm := normalizeBoundsString(left)
+	rightNorm := normalizeBoundsString(right)
+	matched := leftNorm != "" && leftNorm == rightNorm
+	if !matched {
+		logger.Debugf("report sameBounds NO MATCH left=%q -> %q right=%q -> %q", left, leftNorm, right, rightNorm)
+	}
+	return matched
 }
 
 func normalizeBoundsString(value string) string {
@@ -1286,8 +1311,19 @@ func normalizeBoundsString(value string) string {
 	if text == "" {
 		return ""
 	}
+	// 统一处理两种 bounds 格式：
+	// 1. XML 格式: "[10,20][100,60]" (整数，两个括号对)
+	// 2. Rect.String() 格式: "[10.000,20.000,100.000,60.000]" (浮点数，一个括号对)
 	replacer := strings.NewReplacer(" ", "", "][", ",", "[", "", "]", "")
-	return replacer.Replace(text)
+	normalized := replacer.Replace(text)
+	// 移除所有浮点数的小数部分，统一为整数比较
+	parts := strings.Split(normalized, ",")
+	for i, part := range parts {
+		if idx := strings.Index(part, "."); idx != -1 {
+			parts[i] = part[:idx]
+		}
+	}
+	return strings.Join(parts, ",")
 }
 
 func sortedKeys(set map[string]struct{}) []string {

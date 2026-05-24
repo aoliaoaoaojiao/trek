@@ -929,6 +929,10 @@ func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candida
 		if label == "" {
 			label = strings.TrimSpace(item.Intent)
 		}
+		// 截断过长的标签，避免合成 XML 节点名过长
+		if len([]rune(label)) > 15 {
+			label = string([]rune(label)[:12]) + "..."
+		}
 		nodes = append(nodes, syntheticNode{
 			Text:        label,
 			Class:       resolveSyntheticWidgetClass(label, item.Command.Act),

@@ -17,6 +17,7 @@ import (
 	"trek/internal/engine/decision/monkey"
 	_ "trek/internal/engine/decision/reuse"
 	_ "trek/internal/engine/decision/uctbandit"
+	"trek/internal/engine/decision/shared/elements"
 	"trek/internal/engine/memory"
 	"trek/internal/engine/pagecache"
 	"trek/internal/engine/perception"
@@ -57,10 +58,11 @@ type ActionInput struct {
 
 // PageInfo 页面信息，包含页面名和 XML。
 type PageInfo struct {
-	PageName      string
-	XML           string
-	CacheHit      bool // 是否命中页面理解缓存
-	ScriptTransformed bool // 是否经过 goja 脚本转换
+	PageName          string
+	XML               string
+	CacheHit          bool            // 是否命中页面理解缓存
+	ScriptTransformed bool            // 是否经过 goja 脚本转换
+	Element           types.IElement  // 解析后的元素树
 }
 
 // PageSnapshot 页面快照，包含页面名、XML 和截图。
@@ -68,7 +70,8 @@ type PageSnapshot struct {
 	PageName   string
 	XML        string
 	Screenshot []byte
-	Signature  string // pageSignature 缓存，避免每步重复 FNV 哈希
+	Signature  string          // pageSignature 缓存，避免每步重复 FNV 哈希
+	Element    types.IElement  // 解析后的元素树
 }
 
 // StepResultInput 步骤结果输入，用于向引擎报告步骤执行结果。
@@ -710,6 +713,14 @@ func (s *Coordinator) buildPageInfoByStrategy(pageName string, input ActionInput
 		XML:               resolvedXML,
 		ScriptTransformed: scriptTransformed,
 	}
+
+	// 为 raw XML 或脚本转换后的 XML 创建 IElement
+	if strings.TrimSpace(resolvedXML) != "" {
+		if elem, err := elements.CreateAndroidElementFromXml(resolvedXML); err == nil {
+			info.Element = elem
+		}
+	}
+
 	if len(input.Screenshot) == 0 {
 		return info, nil
 	}
@@ -722,6 +733,10 @@ func (s *Coordinator) buildPageInfoByStrategy(pageName string, input ActionInput
 		logger.Debugf("coordinator 页面控件缓存命中: strategy=%s page=%s", strategy, resolvedPageName)
 		info.XML = cachedXML
 		info.CacheHit = true
+		// 为缓存的 XML 创建 IElement
+		if elem, err := elements.CreateAndroidElementFromXml(cachedXML); err == nil {
+			info.Element = elem
+		}
 		return info, nil
 	}
 
@@ -739,12 +754,13 @@ func (s *Coordinator) buildPageInfoByStrategy(pageName string, input ActionInput
 		return PageInfo{}, err
 	}
 
-	syntheticXML := buildSyntheticXMLFromCandidates(strategy, candidates, input.Screenshot)
+	syntheticXML, elem := buildSyntheticXMLFromCandidates(strategy, candidates, input.Screenshot)
 	if strings.TrimSpace(syntheticXML) == "" {
 		return info, nil
 	}
 	s.storePageControlCache(strategy, input.Screenshot, syntheticXML)
 	info.XML = syntheticXML
+	info.Element = elem
 	return info, nil
 }
 
@@ -891,7 +907,7 @@ func normalizePageControlStrategy(strategy string) string {
 	}
 }
 
-func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candidate, screenshot []byte) string {
+func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candidate, screenshot []byte) (string, types.IElement) {
 	width, height := decodeScreenshotSize(screenshot)
 	if width <= 0 {
 		width = 1000
@@ -941,7 +957,7 @@ func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candida
 		})
 	}
 	if len(nodes) == 0 {
-		return ""
+		return "", nil
 	}
 
 	rootExtraAttr := ""
@@ -966,7 +982,15 @@ func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candida
 		b.WriteString("\n")
 	}
 	b.WriteString("  </node>\n</hierarchy>")
-	return b.String()
+	syntheticXML := b.String()
+
+	// 创建 IElement 对象
+	elem, err := elements.CreateAndroidElementFromXml(syntheticXML)
+	if err != nil {
+		logger.Warnf("coordinator 创建合成 XML IElement 失败: %v", err)
+		return syntheticXML, nil
+	}
+	return syntheticXML, elem
 }
 
 func pageControlCacheKey(strategy string, screenshot []byte) string {

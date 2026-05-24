@@ -380,11 +380,13 @@ func (r *Runner) appendRecord(report *Report, record StepRecord, stepStart time.
 	if before != nil {
 		record.BeforePageName = strings.TrimSpace(before.PageName)
 		record.BeforeXML = before.XML
+		record.BeforeElement = before.Element
 		record.BeforeScreenshot = append([]byte(nil), before.Screenshot...)
 	}
 	if after != nil {
 		record.AfterPageName = strings.TrimSpace(after.PageName)
 		record.AfterXML = after.XML
+		record.AfterElement = after.Element
 		record.AfterScreenshot = append([]byte(nil), after.Screenshot...)
 	}
 

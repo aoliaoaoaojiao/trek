@@ -179,6 +179,8 @@ type StepRecord struct {
 	AfterPageName      string          `json:"after_page_name,omitempty"`
 	BeforeXML          string          `json:"-"`
 	AfterXML           string          `json:"-"`
+	BeforeElement      types.IElement  `json:"-"`
+	AfterElement       types.IElement  `json:"-"`
 	BeforeScreenshot   []byte          `json:"-"`
 	AfterScreenshot    []byte          `json:"-"`
 	BeforeArtifactRef  *StepArtifactRef `json:"before_artifact,omitempty"`
@@ -551,7 +553,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			screenshot, _ = r.driver.Screenshot(ctx)
 		}
 		screenshot = r.cropScreenshotForEffectiveTouchArea(screenshot)
-		pageName, xml, strategy, cacheHit, scriptTransformed := r.resolvePageInfo(ctx, xml, screenshot)
+		pageName, xml, strategy, cacheHit, scriptTransformed, element := r.resolvePageInfo(ctx, xml, screenshot)
 		record.PageControlStrategy = strategy
 		record.CacheHit = cacheHit
 		record.ScriptTransformed = scriptTransformed
@@ -561,6 +563,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			XML:        xml,
 			Screenshot: screenshot,
 			Signature:  pageSignature(pageName, xml),
+			Element:    element,
 		}
 
 		record.PageName = pageName
@@ -689,7 +692,7 @@ func (r *Runner) capturePageSnapshot(ctx context.Context, pageSource common.IPag
 	if strings.TrimSpace(pageName) == "" {
 		pageName = fallbackPageName
 	}
-	nextPageName, nextXML, _, _, _ := r.resolvePageInfo(ctx, xml, screenshot)
+	nextPageName, nextXML, _, _, _, nextElement := r.resolvePageInfo(ctx, xml, screenshot)
 	if strings.TrimSpace(nextPageName) == "" {
 		nextPageName = pageName
 	}
@@ -698,6 +701,7 @@ func (r *Runner) capturePageSnapshot(ctx context.Context, pageSource common.IPag
 		XML:        nextXML,
 		Screenshot: screenshot,
 		Signature:  pageSignature(nextPageName, nextXML),
+		Element:    nextElement,
 	}
 }
 
@@ -831,7 +835,7 @@ func (r *Runner) detectANRBySystem() bool {
 	return err == nil && anr
 }
 
-func (r *Runner) resolvePageInfo(ctx context.Context, xml string, screenshot []byte) (string, string, string, bool, bool) {
+func (r *Runner) resolvePageInfo(ctx context.Context, xml string, screenshot []byte) (string, string, string, bool, bool, types.IElement) {
 	pageName := r.resolveBasePageName(ctx, xml, screenshot)
 	// Goja resolvePageName 钩子：允许插件自定义页面名生成
 	if resolver, ok := r.decider.(GojaPageNameResolver); ok && resolver != nil {
@@ -845,7 +849,7 @@ func (r *Runner) resolvePageInfo(ctx context.Context, xml string, screenshot []b
 	}
 	transformer, ok := r.decider.(PageInfoTransformer)
 	if !ok || transformer == nil {
-		return pageName, xml, r.cfg.PageControlStrategy, false, false
+		return pageName, xml, r.cfg.PageControlStrategy, false, false, nil
 	}
 	pageInfo, err := transformer.TransformPageInfoWithInput(pageName, coordinator.ActionInput{
 		XMLDescOfGuiTree: xml,
@@ -853,7 +857,7 @@ func (r *Runner) resolvePageInfo(ctx context.Context, xml string, screenshot []b
 	})
 	if err != nil {
 		logger.Warnf("transform page info failed, use fallback: %v", err)
-		return pageName, xml, r.cfg.PageControlStrategy, false, false
+		return pageName, xml, r.cfg.PageControlStrategy, false, false, nil
 	}
 	nextPageName := strings.TrimSpace(pageInfo.PageName)
 	if nextPageName == "" {
@@ -863,7 +867,7 @@ func (r *Runner) resolvePageInfo(ctx context.Context, xml string, screenshot []b
 	if nextXML == "" {
 		nextXML = xml
 	}
-	return nextPageName, nextXML, r.cfg.PageControlStrategy, pageInfo.CacheHit, pageInfo.ScriptTransformed
+	return nextPageName, nextXML, r.cfg.PageControlStrategy, pageInfo.CacheHit, pageInfo.ScriptTransformed, pageInfo.Element
 }
 
 func (r *Runner) resolveBasePageName(ctx context.Context, xml string, screenshot []byte) string {

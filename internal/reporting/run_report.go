@@ -17,6 +17,7 @@ import (
 
 	"github.com/beevik/etree"
 
+	"trek/internal/engine/core/types"
 	"trek/logger"
 	"trek/pkg/driver/common"
 	"trek/pkg/monkey"
@@ -967,6 +968,7 @@ type interactableControl struct {
 	Path        string
 	XPath       string
 	Actions     []string
+	Element     types.IElement
 }
 
 func buildPageSummaries(records []monkey.StepRecord) []PageSummary {
@@ -982,16 +984,27 @@ func buildPageSummaries(records []monkey.StepRecord) []PageSummary {
 				page.ActionCount++
 				page.Actions[action]++
 			}
-			xmlControls := extractInteractableControls(record.BeforeXML)
+			// 优先使用 IElement，为空时回退到 XML 解析
+			var xmlControls []interactableControl
+			if record.BeforeElement != nil {
+				xmlControls = extractControlsFromElement(record.BeforeElement)
+			} else {
+				xmlControls = extractInteractableControls(record.BeforeXML)
+			}
 			logger.Debugf("report buildPageSummaries step=%d beforeXML controls=%d", i+1, len(xmlControls))
 			mergePageControls(page, xmlControls)
-			markExecutedControl(page, record.Action, record.BeforeXML, record.ActionWidgetInfo, record.ActionTargetBounds)
+			markExecutedControl(page, record.Action, record.BeforeElement, record.BeforeXML, record.ActionWidgetInfo, record.ActionTargetBounds)
 		}
 		afterPageName := strings.TrimSpace(record.AfterPageName)
 		if afterPageName != "" && afterPageName != pageName {
 			page := ensurePageAggregate(pageMap, afterPageName)
 			page.VisitCount++
-			mergePageControls(page, extractInteractableControls(record.AfterXML))
+			// 优先使用 IElement，为空时回退到 XML 解析
+			if record.AfterElement != nil {
+				mergePageControls(page, extractControlsFromElement(record.AfterElement))
+			} else {
+				mergePageControls(page, extractInteractableControls(record.AfterXML))
+			}
 		}
 	}
 
@@ -1082,7 +1095,7 @@ func mergePageControls(page *pageAggregate, controls []interactableControl) {
 	}
 }
 
-func markExecutedControl(page *pageAggregate, action string, xmlText string, widgetInfo string, targetBounds string) {
+func markExecutedControl(page *pageAggregate, action string, element types.IElement, xmlText string, widgetInfo string, targetBounds string) {
 	if page == nil {
 		return
 	}
@@ -1093,7 +1106,13 @@ func markExecutedControl(page *pageAggregate, action string, xmlText string, wid
 	targetXPath, _ := extractWidgetLocator(widgetInfo)
 	logger.Debugf("report markExecutedControl page=%s action=%s targetXPath=%s targetBounds=%s controls=%d",
 		page.PageName, action, targetXPath, targetBounds, len(page.Controls))
-	xmlControls := extractInteractableControls(xmlText)
+	// 优先使用 IElement，为空时回退到 XML 解析
+	var xmlControls []interactableControl
+	if element != nil {
+		xmlControls = extractControlsFromElement(element)
+	} else {
+		xmlControls = extractInteractableControls(xmlText)
+	}
 	logger.Debugf("report markExecutedControl xmlControls=%d", len(xmlControls))
 	for _, control := range xmlControls {
 		item, ok := page.Controls[control.Key]
@@ -1233,6 +1252,107 @@ func buildAbsoluteXPath(node *etree.Element) string {
 		segments[i], segments[j] = segments[j], segments[i]
 	}
 	return "/" + strings.Join(segments, "/")
+}
+
+// extractControlsFromElement 从 IElement 树中提取可交互控件。
+func extractControlsFromElement(elem types.IElement) []interactableControl {
+	if elem == nil {
+		return nil
+	}
+	controls := make([]interactableControl, 0)
+	seen := make(map[string]struct{})
+	var walk func(e types.IElement)
+	walk = func(e types.IElement) {
+		if e == nil {
+			return
+		}
+		if control, ok := buildInteractableControlFromElement(e); ok {
+			if _, exists := seen[control.Key]; !exists {
+				controls = append(controls, control)
+				seen[control.Key] = struct{}{}
+			}
+		}
+		for _, child := range e.GetChildren() {
+			walk(child)
+		}
+	}
+	walk(elem)
+	return controls
+}
+
+// buildInteractableControlFromElement 从 IElement 构建 interactableControl。
+func buildInteractableControlFromElement(elem types.IElement) (interactableControl, bool) {
+	if elem == nil {
+		return interactableControl{}, false
+	}
+	actions := make([]string, 0, 4)
+	if elem.GetClickable() {
+		actions = append(actions, "CLICK")
+	}
+	if elem.GetLongClickable() {
+		actions = append(actions, "LONG_CLICK")
+	}
+	if elem.GetEditable() || strings.Contains(strings.ToLower(getClassName(elem)), "edittext") {
+		actions = append(actions, "INPUT")
+		if !containsString(actions, "CLICK") {
+			actions = append(actions, "CLICK")
+		}
+	}
+	if elem.GetScrollType() != types.NONE {
+		actions = append(actions, "SCROLL")
+	}
+	if len(actions) == 0 {
+		return interactableControl{}, false
+	}
+
+	label := strings.TrimSpace(firstNonEmpty(elem.GetText(), getContentDesc(elem), getResourceID(elem), getClassName(elem)))
+	className := strings.TrimSpace(getClassName(elem))
+	if className == "" {
+		className = getClassName(elem)
+	}
+	bounds := ""
+	if rect := elem.GetBounds(); rect != nil {
+		bounds = rect.String()
+	}
+	xpath := elem.GetXPath()
+	path := elem.GetPath()
+
+	key := xpath
+	if key == "" {
+		key = strings.Join([]string{label, className, bounds}, "|")
+	}
+
+	return interactableControl{
+		Key:         key,
+		Label:       label,
+		ControlType: className,
+		Bounds:      bounds,
+		Path:        path,
+		XPath:       xpath,
+		Actions:     dedupeStrings(actions),
+		Element:     elem,
+	}, true
+}
+
+func getClassName(elem types.IElement) string {
+	if v := elem.GetAttr("class"); v != nil {
+		return fmt.Sprintf("%v", v)
+	}
+	return ""
+}
+
+func getContentDesc(elem types.IElement) string {
+	if v := elem.GetAttr("content-desc"); v != nil {
+		return fmt.Sprintf("%v", v)
+	}
+	return ""
+}
+
+func getResourceID(elem types.IElement) string {
+	if v := elem.GetAttr("resource-id"); v != nil {
+		return fmt.Sprintf("%v", v)
+	}
+	return ""
 }
 
 func attrBool(elem *etree.Element, name string) bool {

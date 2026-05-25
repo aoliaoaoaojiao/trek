@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/png"
 	"math"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -395,6 +396,11 @@ func (r *Runner) appendRecord(report *Report, record StepRecord, stepStart time.
 		if ref, err := writeStepSnapshotArtifacts(r.cfg.ArtifactDir, record, "before",
 			record.BeforePageName, record.BeforeXML, record.BeforeScreenshot); err == nil && ref != nil {
 			record.BeforeArtifactRef = ref
+			// 保存原始截图 + 标注截图
+			pageDirPath := filepath.Join(r.cfg.ArtifactDir, ref.PageDir)
+			saveOriginalIfNew(pageDirPath, record.BeforeScreenshot)
+			prefix := buildArtifactFilePrefix(record, "before")
+			annotateAndSaveMarked(pageDirPath, prefix, record.BeforeScreenshot, record.Action, record.ActionTargetBounds)
 		} else if err != nil {
 			logger.Warnf("monkey step=%d 写入 before 产物失败: %v", record.Step, err)
 		}

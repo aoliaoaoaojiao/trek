@@ -10,8 +10,8 @@ func TestResolveArtifactDir(t *testing.T) {
 		want        string
 	}{
 		{name: "explicit artifact dir", reportFile: "log/report.json", artifactDir: "log/raw", want: "log/raw"},
-		{name: "derive from report json", reportFile: "log/report.json", want: "log/report_artifacts"},
-		{name: "derive from report md", reportFile: "log/report.md", want: "log/report_artifacts"},
+		{name: "derive from report json", reportFile: "log/report.json", want: "log/report_run-report_artifacts"},
+		{name: "derive from report md", reportFile: "log/report.md", want: "log/report_run-report_artifacts"},
 		{name: "empty", want: ""},
 	}
 

@@ -478,22 +478,26 @@ func renderStepTimeline(records []monkey.StepRecord, pageIDMap map[string]string
 		if result == "FAIL" {
 			resultText = fmt.Sprintf("**FAIL** %s", truncateErr(r.Err, 60))
 		}
-		// 截图
+		// 截图：优先使用标注截图
 		beforeImg := ""
 		if r.BeforeArtifactRef != nil && r.BeforeArtifactRef.ScreenshotFile != "" {
-			beforeImg = fmt.Sprintf("<div style=\"padding:4px 10px; text-align:center;\"><img src=\"%s\" style=\"%s\" title=\"前\" /></div>\n", r.BeforeArtifactRef.ScreenshotFile, imgStyle)
+			imgSrc := r.BeforeArtifactRef.ScreenshotFile
+			if marked := markedScreenshotPath(imgSrc); marked != "" {
+				imgSrc = marked
+			}
+			beforeImg = fmt.Sprintf("<div style=\"padding:4px 10px; text-align:center;\"><img src=\"%s\" style=\"%s\" /></div>\n", imgSrc, imgStyle)
 		}
 		afterImg := ""
 		if r.AfterArtifactRef != nil && r.AfterArtifactRef.ScreenshotFile != "" {
-			afterImg = fmt.Sprintf("<div style=\"padding:4px 10px; text-align:center;\"><img src=\"%s\" style=\"%s\" title=\"后\" /></div>\n", r.AfterArtifactRef.ScreenshotFile, imgStyle)
+			afterImg = fmt.Sprintf("<div style=\"padding:4px 10px; text-align:center;\"><img src=\"%s\" style=\"%s\" /></div>\n", r.AfterArtifactRef.ScreenshotFile, imgStyle)
 		}
 		// 输出
 		b.WriteString(fmt.Sprintf("### step%d\n", r.Step))
-		b.WriteString("操作前\n")
+		b.WriteString("操作\n")
 		if beforeImg != "" {
 			b.WriteString(beforeImg)
 		}
-		b.WriteString("操作后\n\n")
+		b.WriteString("\n")
 		if afterImg != "" {
 			b.WriteString(afterImg)
 		}
@@ -728,6 +732,7 @@ func writeArtifacts(rootDir string, records []monkey.StepRecord) (*ArtifactSumma
 	pages := buildPageSummaries(cloned)
 
 	pageDirs := make(map[string]struct{})
+	originalSaved := make(map[string]bool)
 	screenshotCount := 0
 	xmlCount := 0
 
@@ -744,11 +749,39 @@ func writeArtifacts(rootDir string, records []monkey.StepRecord) (*ArtifactSumma
 			screenshotCount += beforeFiles.screenshotCount
 			xmlCount += beforeFiles.xmlCount
 		}
+
+		// 保存原始截图（每个页面首次出现时）和生成标注截图
+		if record.BeforeArtifactRef != nil {
+			pageDirName := record.BeforeArtifactRef.PageDir
+			pageDirPath := filepath.Join(targetRoot, pageDirName)
+
+			// 首次遇到该页面时保存原始截图
+			if !originalSaved[pageDirName] && len(record.BeforeScreenshot) > 0 {
+				ext := detectImageExt(record.BeforeScreenshot)
+				origPath := filepath.Join(pageDirPath, "original"+ext)
+				if err := os.MkdirAll(pageDirPath, 0755); err == nil {
+					_ = os.WriteFile(origPath, record.BeforeScreenshot, 0644)
+				}
+				originalSaved[pageDirName] = true
+			}
+
+			// 生成标注截图
+			if len(record.BeforeScreenshot) > 0 && isAnnotatableAction(record.Action) {
+				marked, err := annotateAction(record.BeforeScreenshot, record.Action, record.ActionTargetBounds)
+				if err == nil && len(marked) > 0 {
+					prefix := buildArtifactFilePrefix(*record, "before")
+					markedPath := filepath.Join(pageDirPath, prefix+"-marked.png")
+					_ = os.WriteFile(markedPath, marked, 0644)
+				}
+			}
+		}
 		if record.BeforeArtifactRef != nil {
 			pageDirs[record.BeforeArtifactRef.PageDir] = struct{}{}
 		}
 
-		if record.AfterArtifactRef == nil {
+		// 只有最后一步才写 After 产物（中间步骤的 After 等于下一步的 Before，已覆盖）
+		isLastStep := index == len(cloned)-1
+		if isLastStep && record.AfterArtifactRef == nil {
 			afterRef, afterFiles, err := writeStepSnapshotArtifacts(targetRoot, *record, "after", record.AfterPageName, record.AfterXML, record.AfterScreenshot)
 			if err != nil {
 				return nil, nil, nil, err
@@ -756,6 +789,20 @@ func writeArtifacts(rootDir string, records []monkey.StepRecord) (*ArtifactSumma
 			record.AfterArtifactRef = afterRef
 			screenshotCount += afterFiles.screenshotCount
 			xmlCount += afterFiles.xmlCount
+
+			// After 页面如果是新页面，也保存原始截图
+			if afterRef != nil {
+				afterPageDir := afterRef.PageDir
+				if !originalSaved[afterPageDir] && len(record.AfterScreenshot) > 0 {
+					afterDirPath := filepath.Join(targetRoot, afterPageDir)
+					ext := detectImageExt(record.AfterScreenshot)
+					origPath := filepath.Join(afterDirPath, "original"+ext)
+					if err := os.MkdirAll(afterDirPath, 0755); err == nil {
+						_ = os.WriteFile(origPath, record.AfterScreenshot, 0644)
+					}
+					originalSaved[afterPageDir] = true
+				}
+			}
 		}
 		if record.AfterArtifactRef != nil {
 			pageDirs[record.AfterArtifactRef.PageDir] = struct{}{}
@@ -995,15 +1042,24 @@ func buildPageSummaries(records []monkey.StepRecord) []PageSummary {
 			mergePageControls(page, xmlControls)
 			markExecutedControl(page, record.Action, record.BeforeElement, record.BeforeXML, record.ActionWidgetInfo, record.ActionTargetBounds)
 		}
+		// After 页面发现：每步都处理，但不提取控件（下一步的 Before 会覆盖）
 		afterPageName := strings.TrimSpace(record.AfterPageName)
 		if afterPageName != "" && afterPageName != pageName {
+			ensurePageAggregate(pageMap, afterPageName)
+		}
+	}
+	// 最后一步的 After 控件单独提取（没有下一步来覆盖）
+	if len(records) > 0 {
+		last := records[len(records)-1]
+		afterPageName := strings.TrimSpace(last.AfterPageName)
+		beforePageName := strings.TrimSpace(firstNonEmpty(last.BeforePageName, last.PageName))
+		if afterPageName != "" && afterPageName != beforePageName {
 			page := ensurePageAggregate(pageMap, afterPageName)
 			page.VisitCount++
-			// 优先使用 IElement，为空时回退到 XML 解析
-			if record.AfterElement != nil {
-				mergePageControls(page, extractControlsFromElement(record.AfterElement))
+			if last.AfterElement != nil {
+				mergePageControls(page, extractControlsFromElement(last.AfterElement))
 			} else {
-				mergePageControls(page, extractInteractableControls(record.AfterXML))
+				mergePageControls(page, extractInteractableControls(last.AfterXML))
 			}
 		}
 	}
@@ -1466,6 +1522,13 @@ func sumCountMap(counts map[string]int) int {
 	return total
 }
 
+// markedScreenshotPath 根据原始截图路径返回标注截图路径（去掉扩展名加 -marked.png）。
+func markedScreenshotPath(screenshotFile string) string {
+	ext := filepath.Ext(screenshotFile)
+	base := strings.TrimSuffix(screenshotFile, ext)
+	return base + "-marked.png"
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if trimmed := strings.TrimSpace(value); trimmed != "" {
@@ -1496,7 +1559,11 @@ func escapeMarkdownCell(text string) string {
 }
 
 func writePageControlsDetail(rootDir string, pageDirName string, page PageSummary) (string, error) {
-	outputPath := filepath.Join(rootDir, pageDirName, "controls.md")
+	pageDir := filepath.Join(rootDir, pageDirName)
+	if err := os.MkdirAll(pageDir, 0755); err != nil {
+		return "", fmt.Errorf("创建页面目录失败(%s): %w", pageDir, err)
+	}
+	outputPath := filepath.Join(pageDir, "controls.md")
 	var b strings.Builder
 	b.WriteString("# 页面控件明细\n\n")
 	b.WriteString(fmt.Sprintf("- 页面名：%s\n", fallbackText(page.PageName, "UnknownPage")))

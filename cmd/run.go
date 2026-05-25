@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"trek/internal/config"
@@ -114,10 +115,6 @@ func runMonkey(logLevelStr string, opts struct {
 		os.Exit(1)
 	}()
 
-	// 提前解析产物目录，供 Config 实时写盘使用
-	reportFile := strings.TrimSpace(opts.reportFile)
-	artifactDir := resolveArtifactDir(reportFile, opts.artifactDir)
-
 	staticCfg := scripting.StaticConfig{}
 	if opts.configPath != "" {
 		cfg, err := scripting.LoadStaticConfigFile(opts.configPath)
@@ -138,12 +135,8 @@ func runMonkey(logLevelStr string, opts struct {
 	if staticCfg.KeepStepRecords.IsSet() && !keepStepRecordsCLISet {
 		opts.keepStepRecords = staticCfg.KeepStepRecords.Get()
 	}
-	if strings.TrimSpace(opts.reportFile) != "" || strings.TrimSpace(opts.artifactDir) != "" {
-		if !opts.keepStepRecords {
-			fmt.Println("检测到报告/产物输出需求，已自动启用 keep-step-records")
-		}
-		opts.keepStepRecords = true
-	}
+	// 报告输出需要每步记录，始终启用
+	opts.keepStepRecords = true
 	exploreOCRTimeout := time.Duration(staticCfg.ExploreOCRTimeoutMs.OrDefault(10000)) * time.Millisecond
 	recoveryCooldownSteps := staticCfg.RecoveryCooldownSteps.OrDefault(2)
 	llmTimeout := time.Duration(staticCfg.LLMTimeoutMs.OrDefault(15000)) * time.Millisecond
@@ -215,6 +208,13 @@ func runMonkey(logLevelStr string, opts struct {
 	if packageName == "" {
 		return fmt.Errorf("参数 --package 不能为空，或使用 --auto-current-app 自动获取")
 	}
+
+	// 解析报告输出路径：未指定时默认为 {packageName}_{时间戳}.json
+	reportFile := strings.TrimSpace(opts.reportFile)
+	if reportFile == "" {
+		reportFile = packageName + "_" + time.Now().Format("20060102_150405") + ".json"
+	}
+	artifactDir := resolveArtifactDir(reportFile, opts.artifactDir)
 
 	// 解析决策算法类型
 	algorithmType, err := resolveAlgorithmType(opts.algorithm)
@@ -294,6 +294,7 @@ func runMonkey(logLevelStr string, opts struct {
 		ConfigPath:          opts.configPath,
 	}
 	var report *monkey.Report
+	var reportWg sync.WaitGroup
 	defer func() {
 		if report == nil {
 			return
@@ -303,22 +304,27 @@ func runMonkey(logLevelStr string, opts struct {
 		fmt.Printf("页面统计: %+v\n", report.PageVisitCount)
 		fmt.Printf("恢复冷却统计: cooldown_enter=%d cooldown_step_hits=%d\n",
 			report.RecoveryCooldownEnterCount, report.RecoveryCooldownStepCount)
-		if reportFile != "" {
-			if wErr := reporting.WriteRunReportWithArtifacts(reportFile, opts.reportFormat, artifactDir, metadata, report); wErr != nil {
-				fmt.Fprintf(os.Stderr, "写入运行报告失败: %v\n", wErr)
-			} else {
-				fmt.Printf("报告已输出: %s\n", reportFile)
-				if artifactDir != "" {
+		reportWg.Add(1)
+		go func() {
+			defer reportWg.Done()
+			if reportFile != "" {
+				if wErr := reporting.WriteRunReportWithArtifacts(reportFile, opts.reportFormat, artifactDir, metadata, report); wErr != nil {
+					fmt.Fprintf(os.Stderr, "写入运行报告失败: %v\n", wErr)
+				} else {
+					fmt.Printf("报告已输出: %s\n", reportFile)
+					if artifactDir != "" {
+						fmt.Printf("页面产物已输出: %s\n", artifactDir)
+					}
+				}
+			} else if artifactDir != "" {
+				if _, wErr := reporting.BuildRunReportEnvelope(metadata, report, artifactDir); wErr != nil {
+					fmt.Fprintf(os.Stderr, "写入页面产物失败: %v\n", wErr)
+				} else {
 					fmt.Printf("页面产物已输出: %s\n", artifactDir)
 				}
 			}
-		} else if artifactDir != "" {
-			if _, wErr := reporting.BuildRunReportEnvelope(metadata, report, artifactDir); wErr != nil {
-				fmt.Fprintf(os.Stderr, "写入页面产物失败: %v\n", wErr)
-			} else {
-				fmt.Printf("页面产物已输出: %s\n", artifactDir)
-			}
-		}
+		}()
+		reportWg.Wait()
 	}()
 
 	report, err = runner.Run(ctx)
@@ -342,7 +348,7 @@ func resolveArtifactDir(reportFile string, artifactDir string) string {
 	if strings.TrimSpace(base) == "" {
 		return ""
 	}
-	return base + "_artifacts"
+	return base + "_run-report_artifacts"
 }
 
 const (

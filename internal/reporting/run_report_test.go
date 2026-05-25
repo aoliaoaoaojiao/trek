@@ -130,7 +130,8 @@ func TestWriteRunReportWithArtifactsGroupedByPage(t *testing.T) {
 	if envelope.Artifacts.PageCount != 2 {
 		t.Fatalf("页面目录数错误: %+v", envelope.Artifacts)
 	}
-	if envelope.Artifacts.ScreenshotCount != 2 || envelope.Artifacts.XMLCount != 2 {
+	// 方案B：只写 Before 产物，最后一步才写 After
+	if envelope.Artifacts.ScreenshotCount != 1 || envelope.Artifacts.XMLCount != 1 {
 		t.Fatalf("产物计数错误: %+v", envelope.Artifacts)
 	}
 	if len(envelope.Pages) == 0 || envelope.Pages[0].InteractableControlCount == 0 {
@@ -138,8 +139,12 @@ func TestWriteRunReportWithArtifactsGroupedByPage(t *testing.T) {
 	}
 
 	step := envelope.StepRecords[0]
-	if step.BeforeArtifactRef == nil || step.AfterArtifactRef == nil {
-		t.Fatalf("预期步骤记录包含产物引用: %+v", step)
+	if step.BeforeArtifactRef == nil {
+		t.Fatalf("预期步骤记录包含 Before 产物引用: %+v", step)
+	}
+	// 中间步骤不再写 After 产物
+	if step.AfterArtifactRef != nil {
+		t.Fatalf("中间步骤不应有 After 产物引用: %+v", step)
 	}
 	if step.BeforeArtifactRef.PageDir != "HomePage" {
 		t.Fatalf("页面目录命名错误: %+v", step.BeforeArtifactRef)
@@ -147,8 +152,6 @@ func TestWriteRunReportWithArtifactsGroupedByPage(t *testing.T) {
 	for _, relativePath := range []string{
 		step.BeforeArtifactRef.ScreenshotFile,
 		step.BeforeArtifactRef.XMLFile,
-		step.AfterArtifactRef.ScreenshotFile,
-		step.AfterArtifactRef.XMLFile,
 		envelope.Pages[0].ControlsDetailFile,
 	} {
 		fullPath := relativePath

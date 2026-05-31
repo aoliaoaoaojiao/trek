@@ -32,23 +32,17 @@ const (
 	defaultOrientationMonitorInterval              = 300 * time.Millisecond
 	defaultBlockNoChangeThreshold                  = 3
 	defaultRecoveryCooldownSteps                   = 2
-	defaultTwoStateLoopThreshold                   = 2
-	defaultHighVisitThreshold                      = 8
-	defaultLowRewardWindow                         = 6
 	defaultCandidateEnhancementMinStepGap          = 12
 	defaultCandidateAmbiguityTopGapThreshold       = 0.15
 	defaultHighValuePageVisitLimit                 = 2
 	defaultCandidateRiskDropThreshold              = 2.1
 	defaultCandidateMinFusionScore                 = -0.3
-	defaultImageSimilaritySSIMThreshold            = 0.995
 	maxRecentTraceEntries                          = 8
 )
 
 const (
-	blockReasonScrollNoChange   = "scroll_no_change"
-	blockReasonSamePageNoChange = "same_page_no_change"
-	blockReasonTwoStatePingPong = "two_state_ping_pong"
-	blockReasonHighVisitLowGain = "high_visit_low_reward"
+	blockReasonSameActionNoChange = "same_action_no_change"
+	blockReasonSamePageNoChange   = "same_page_no_change"
 )
 
 // StopReason 表示 Monkey 运行停止原因。
@@ -121,14 +115,10 @@ type Config struct {
 	CandidateEnhancementMinStepGap    int
 	CandidateAmbiguityTopGapThreshold float64
 	HighValuePageVisitLimit           int
-	TwoStateLoopThreshold             int
-	HighVisitThreshold                int
-	LowRewardWindow                   int
 	CandidateRiskDropThreshold        float64
 	CandidateMinFusionScore           float64
 	ImageSignatureFunc                func([]byte) string
 	ImageFingerprintRegions           []ImageFingerprintRegion
-	ImageSimilaritySSIMThreshold      float64
 	ImageFingerprintHammingThreshold  int
 	ArtifactDir                       string // 产物实时写入目录；为空则不实时写盘
 }
@@ -367,7 +357,7 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 		driver:                 driver,
 		cfg:                    cfg,
 		rng:                    rand.New(rand.NewSource(time.Now().UnixNano())),
-		blockDetector:          newBlockDetector(cfg.BlockNoChangeThreshold, cfg.TwoStateLoopThreshold, cfg.HighVisitThreshold, cfg.LowRewardWindow).withImageSignatureFunc(cfg.ImageSignatureFunc).withImageSimilarity(cfg.ImageSimilaritySSIMThreshold, cfg.ImageFingerprintRegions),
+		blockDetector:          newBlockDetector(cfg.BlockNoChangeThreshold),
 		fuzzyMatcher:           NewFuzzyPageNameMatcher(cfg.ImageFingerprintHammingThreshold),
 		recoveryState:          newRecoveryStateMachineWithCooldown(cfg.RecoveryCooldownSteps),
 		candidateEnhanceBudget: enhanceBudget,
@@ -623,6 +613,9 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		if err = r.execute(cmd); err != nil {
 			record.Err = err.Error()
 			afterPage := r.capturePageSnapshot(ctx, pageSource, pageName)
+			if afterPage != nil {
+				afterPage.Screenshot = beforePage.Screenshot
+			}
 			r.invalidatePageControlCache(beforePage.Screenshot)
 			r.notifyTraversalOutcome(step, beforePage, afterPage, cmd, false)
 			r.recordRecoveryOutcome(false)
@@ -653,10 +646,13 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		}
 
 		afterPage := r.capturePageSnapshot(ctx, pageSource, pageName)
+		if afterPage != nil {
+			afterPage.Screenshot = beforePage.Screenshot
+		}
 		escaped := afterPage != nil &&
 			beforePage.Signature != afterPage.Signature
 		r.notifyTraversalOutcome(step, beforePage, afterPage, cmd, true)
-		if r.shouldEnableBlockRecovery() && r.blockDetector.Observe(cmd, beforePage, afterPage) {
+		if r.shouldEnableBlockRecovery() && r.blockDetector.Observe(pageName, buildActionKey(cmd), cmd.Act, escaped) {
 			blockReason := r.blockDetector.LastReason()
 			r.handleBlockDetectedWithPage(blockReason, &beforePage)
 			report.BlockDetectionCount++
@@ -695,27 +691,22 @@ func (r *Runner) capturePageSnapshot(ctx context.Context, pageSource common.IPag
 			return nil
 		}
 	}
-	var screenshot []byte
-	if r.cfg.CaptureScreenshot || r.isScreenshotPageSource() {
-		screenshot, _ = r.driver.Screenshot(ctx)
-	}
-	if xml == "" && len(screenshot) == 0 {
+	if xml == "" {
 		return nil
 	}
-	pageName := r.resolvePageNameByExOrFallback(xml, screenshot)
+	pageName := r.resolvePageNameByExOrFallback(xml, nil)
 	if strings.TrimSpace(pageName) == "" {
 		pageName = fallbackPageName
 	}
-	nextPageName, nextXML, _, _, _, nextElement := r.resolvePageInfo(ctx, xml, screenshot)
+	nextPageName, nextXML, _, _, _, nextElement := r.resolvePageInfo(ctx, xml, nil)
 	if strings.TrimSpace(nextPageName) == "" {
 		nextPageName = pageName
 	}
 	return &coordinator.PageSnapshot{
-		PageName:   nextPageName,
-		XML:        nextXML,
-		Screenshot: screenshot,
-		Signature:  pageSignature(nextPageName, nextXML),
-		Element:    nextElement,
+		PageName:  nextPageName,
+		XML:       nextXML,
+		Signature: pageSignature(nextPageName, nextXML),
+		Element:   nextElement,
 	}
 }
 

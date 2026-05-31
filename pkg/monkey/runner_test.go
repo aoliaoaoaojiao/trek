@@ -1581,18 +1581,8 @@ func TestRunnerDetectTwoStatePingPongAndTriggerRecovery(t *testing.T) {
 		},
 		recoveryAction: &types.ActionCommand{Act: types.BACK},
 	}
-	// 调用顺序：before1,after1,before2,after2,...
-	// 构造成 after 序列 A,B,A,B，且每步 before!=after，触发两状态往返检测。
-	pageSource := &fakePageSource{
-		xmls: []string{
-			`<node class="PageB"/>`, `<node class="PageA"/>`,
-			`<node class="PageA"/>`, `<node class="PageB"/>`,
-			`<node class="PageB"/>`, `<node class="PageA"/>`,
-			`<node class="PageA"/>`, `<node class="PageB"/>`,
-			`<node class="PageB"/>`, `<node class="PageA"/>`,
-			`<node class="PageA"/>`, `<node class="PageB"/>`,
-		},
-	}
+	// 每步返回相同的 XML（同页面），触发 same_page_no_change 阻塞
+	pageSource := &fakePageSource{xml: `<node class="PageA"/>`}
 	driver := &fakeDriver{pageSource: pageSource}
 
 	// 需要足够步数：第一次恢复尝试 BACK，若仍未脱离阻塞，第二次恢复走 decider
@@ -1602,7 +1592,7 @@ func TestRunnerDetectTwoStatePingPongAndTriggerRecovery(t *testing.T) {
 		KeepStepRecords:        true,
 		StopOnCrash:            true,
 		StopOnANR:              true,
-		BlockNoChangeThreshold: 3,
+		BlockNoChangeThreshold: 5,
 	})
 	if err != nil {
 		t.Fatalf("创建 runner 失败: %v", err)
@@ -1933,60 +1923,37 @@ func TestRunnerExploreLLMEnhancementSkipsWhenCandidatesDistinct(t *testing.T) {
 	}
 }
 
-func TestBlockDetectorUsesStableReasonForScrollNoChange(t *testing.T) {
-	detector := newBlockDetector(3, 0, 0, 0)
+func TestBlockDetectorUsesStableReasonForSameAction(t *testing.T) {
+	detector := newBlockDetector(3)
 	cmd := &types.ActionCommand{Act: types.SCROLL_BOTTOM_UP, Pos: *types.NewRect(0, 0, 1, 1)}
-	before := session.PageSnapshot{PageName: "MainActivity", XML: `<node class="MainActivity"/>`}
-	after := &session.PageSnapshot{PageName: "MainActivity", XML: `<node class="MainActivity"/>`}
 
 	triggered := false
 	for i := 0; i < 3; i++ {
-		triggered = detector.Observe(cmd, before, after)
+		triggered = detector.Observe("MainActivity", buildActionKey(cmd), cmd.Act, false)
 	}
 	if !triggered {
-		t.Fatalf("预期触发 scroll_no_change")
+		t.Fatalf("预期触发 same_action_no_change")
 	}
-	if detector.LastReason() != blockReasonScrollNoChange {
-		t.Fatalf("预期 reason=%s，实际: %s", blockReasonScrollNoChange, detector.LastReason())
+	if detector.LastReason() != blockReasonSameActionNoChange {
+		t.Fatalf("预期 reason=%s，实际: %s", blockReasonSameActionNoChange, detector.LastReason())
 	}
 }
 
 func TestBlockDetectorDetectsSamePageNoChange(t *testing.T) {
-	detector := newBlockDetector(3, 0, 0, 0)
-	cmd := &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}
-	before := session.PageSnapshot{PageName: "MainActivity", XML: `<node class="MainActivity"/>`}
-	after := &session.PageSnapshot{PageName: "MainActivity", XML: `<node class="MainActivity"/>`}
+	detector := newBlockDetector(3)
+	cmd1 := &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}
+	cmd2 := &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.5, 0.5, 0.6, 0.6)}
+	cmd3 := &types.ActionCommand{Act: types.SCROLL_BOTTOM_UP, Pos: *types.NewRect(0, 0, 1, 1)}
 
 	triggered := false
-	for i := 0; i < 3; i++ {
-		triggered = detector.Observe(cmd, before, after)
-	}
+	triggered = detector.Observe("MainActivity", buildActionKey(cmd1), cmd1.Act, false)
+	triggered = detector.Observe("MainActivity", buildActionKey(cmd2), cmd2.Act, false)
+	triggered = detector.Observe("MainActivity", buildActionKey(cmd3), cmd3.Act, false)
 	if !triggered {
 		t.Fatalf("预期触发 same_page_no_change")
 	}
 	if detector.LastReason() != blockReasonSamePageNoChange {
 		t.Fatalf("预期 reason=%s，实际: %s", blockReasonSamePageNoChange, detector.LastReason())
-	}
-}
-
-func TestBlockDetectorDetectsHighVisitLowReward(t *testing.T) {
-	detector := newBlockDetector(20, 0, 0, 0)
-	cmd := &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)}
-	after := &session.PageSnapshot{PageName: "PageA", XML: `<node class="PageA"/>`}
-
-	triggered := false
-	for i := 0; i < defaultHighVisitThreshold; i++ {
-		before := session.PageSnapshot{
-			PageName: "PageB",
-			XML:      `<node class="PageB_` + strings.Repeat("x", i+1) + `"/>`,
-		}
-		triggered = detector.Observe(cmd, before, after)
-	}
-	if !triggered {
-		t.Fatalf("预期触发 high_visit_low_reward")
-	}
-	if detector.LastReason() != blockReasonHighVisitLowGain {
-		t.Fatalf("预期 reason=%s，实际: %s", blockReasonHighVisitLowGain, detector.LastReason())
 	}
 }
 
@@ -2042,14 +2009,14 @@ func TestHandleBlockDetectedWithPageInvalidatesPageControlCacheForLowRewardReaso
 		t.Fatalf("预期 same_page_no_change 触发一次缓存失效，实际: %d", decider.invalidatedCount)
 	}
 
-	runner.handleBlockDetectedWithPage(blockReasonHighVisitLowGain, page)
+	runner.handleBlockDetectedWithPage(blockReasonSameActionNoChange, page)
 	if decider.invalidatedCount != 2 {
-		t.Fatalf("预期 high_visit_low_reward 再触发一次缓存失效，实际: %d", decider.invalidatedCount)
+		t.Fatalf("预期 same_action_no_change 再触发一次缓存失效，实际: %d", decider.invalidatedCount)
 	}
 
-	runner.handleBlockDetectedWithPage(blockReasonScrollNoChange, page)
+	runner.handleBlockDetectedWithPage("unknown_reason", page)
 	if decider.invalidatedCount != 2 {
-		t.Fatalf("scroll_no_change 不应触发缓存失效，实际: %d", decider.invalidatedCount)
+		t.Fatalf("未知 reason 不应触发缓存失效，实际: %d", decider.invalidatedCount)
 	}
 }
 

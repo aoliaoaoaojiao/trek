@@ -80,23 +80,11 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.HighValuePageVisitLimit <= 0 {
 		cfg.HighValuePageVisitLimit = defaultHighValuePageVisitLimit
 	}
-	if cfg.TwoStateLoopThreshold <= 0 {
-		cfg.TwoStateLoopThreshold = defaultTwoStateLoopThreshold
-	}
-	if cfg.HighVisitThreshold <= 0 {
-		cfg.HighVisitThreshold = defaultHighVisitThreshold
-	}
-	if cfg.LowRewardWindow <= 0 {
-		cfg.LowRewardWindow = defaultLowRewardWindow
-	}
 	if cfg.CandidateRiskDropThreshold <= 0 {
 		cfg.CandidateRiskDropThreshold = defaultCandidateRiskDropThreshold
 	}
 	if cfg.CandidateMinFusionScore == 0 {
 		cfg.CandidateMinFusionScore = defaultCandidateMinFusionScore
-	}
-	if cfg.ImageSimilaritySSIMThreshold <= 0 || cfg.ImageSimilaritySSIMThreshold > 1 {
-		cfg.ImageSimilaritySSIMThreshold = defaultImageSimilaritySSIMThreshold
 	}
 	if len(cfg.EffectiveTouchAreas) > 0 {
 		filtered := make([]EffectiveTouchArea, 0, len(cfg.EffectiveTouchAreas))

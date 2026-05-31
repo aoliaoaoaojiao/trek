@@ -144,9 +144,6 @@ func runMonkey(logLevelStr string, opts struct {
 	// 统一全局超时：goja trek.llm.chat() / trek.ocr.recognize() 默认使用配置值
 	scripting.SetDefaultLLMTimeout(llmTimeout)
 	scripting.SetDefaultOCRTimeout(exploreOCRTimeout)
-	recoveryTwoStateLoopThreshold := staticCfg.RecoveryTwoStateLoopThreshold.OrDefault(2)
-	recoveryHighVisitThreshold := staticCfg.RecoveryHighVisitThreshold.OrDefault(8)
-	recoveryLowRewardWindow := staticCfg.RecoveryLowRewardWindow.OrDefault(6)
 	candidateAmbiguityTopGapThreshold := staticCfg.CandidateAmbiguityTopGapThreshold.OrDefault(0.15)
 	highValuePageVisitLimit := staticCfg.HighValuePageVisitLimit.OrDefault(2)
 	candidateRiskDropThreshold := staticCfg.CandidateRiskDropThreshold.OrDefault(2.1)
@@ -257,15 +254,11 @@ func runMonkey(logLevelStr string, opts struct {
 		StopOnANR:                         true,
 		EffectiveTouchAreas:               buildEffectiveTouchAreasConfig(staticCfg, packageName, deviceSerial),
 		RecoveryCooldownSteps:             recoveryCooldownSteps,
-		TwoStateLoopThreshold:             recoveryTwoStateLoopThreshold,
-		HighVisitThreshold:                recoveryHighVisitThreshold,
-		LowRewardWindow:                   recoveryLowRewardWindow,
 		CandidateAmbiguityTopGapThreshold: candidateAmbiguityTopGapThreshold,
 		HighValuePageVisitLimit:           highValuePageVisitLimit,
 		CandidateRiskDropThreshold:        candidateRiskDropThreshold,
 		CandidateMinFusionScore:           candidateMinFusionScore,
 		ImageFingerprintRegions:           buildImageFingerprintRegionsConfig(staticCfg),
-		ImageSimilaritySSIMThreshold:      staticCfg.ImageSimilaritySSIMThreshold.OrDefault(0),
 		ImageFingerprintHammingThreshold:  staticCfg.ImageFingerprintHammingThreshold.OrDefault(config.DefaultImageFingerprintHammingThreshold),
 		ArtifactDir:                       artifactDir,
 	}

@@ -121,7 +121,7 @@ func (r *Runner) handleBlockDetectedWithPage(reason string, page *coordinator.Pa
 
 func shouldInvalidatePageControlCacheOnBlock(reason string) bool {
 	switch strings.TrimSpace(reason) {
-	case blockReasonSamePageNoChange, blockReasonHighVisitLowGain:
+	case blockReasonSameActionNoChange, blockReasonSamePageNoChange:
 		return true
 	default:
 		return false

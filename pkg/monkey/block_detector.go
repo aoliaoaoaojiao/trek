@@ -1,6 +1,7 @@
 package monkey
 
 import (
+	"fmt"
 	"hash/fnv"
 	"strconv"
 	"strings"
@@ -8,186 +9,113 @@ import (
 	"trek/pkg/coordinator"
 )
 
-// blockDetector 检测遍历过程中的卡死模式：滚动无变化、同页面无移动、两状态乒乓、高访问低收益。
+// blockDetector 基于 (pageName, actionKey, escaped) 检测遍历卡死模式。
 //
-// 签名分为两层：
-//   - 骨架签名（pageFingerprintName）：仅基于 XML 结构，忽略动态文本/内容。
-//     同一界面动态加载数据后骨架不变，用于判断"是否在同一个界面"。
-//   - 内容签名（pageSignature）：基于页面名+XML 全文哈希，用于判断内容是否有实质变化。
+// 判断条件（任一触发即阻塞）：
+//   - 条件 1：连续 N 步 (pageName, actionKey) 完全相同，且 escaped=false（同按钮反复点没反应）
+//   - 条件 2：连续 N 步 pageName 完全相同，且 escaped=false（同页面任何操作都没反应）
 type blockDetector struct {
-	noChangeThreshold         int
-	twoStateLoopThreshold     int
-	highVisitThreshold        int
-	lowRewardWindow           int
-	consecutiveNoChangeScroll int
-	consecutiveSamePageNoMove int
-	consecutiveTwoStateLoops  int
-	recentAfterSigs           []string // 骨架签名，用于两状态乒乓检测（A→B→A→B）
-	recentObservedSigs        []string // 骨架签名，用于高访问低收益检测
-	pageVisitCount            map[string]int
-	lastReason                string
-	imageSignatureFunc        func(screenshot []byte) string // 可选，XML 不可用时用图片签名替代
-	imageFingerprintRegions   []ImageFingerprintRegion
-	imageSimilarityThreshold  float64
+	threshold          int
+	recentTraces       []traceRecord
+	lastReason         string
+	ignoredActionTypes map[types.ActionType]bool
 }
 
-func newBlockDetector(noChangeThreshold int, twoStateLoopThreshold int, highVisitThreshold int, lowRewardWindow int) *blockDetector {
-	if noChangeThreshold <= 0 {
-		noChangeThreshold = defaultBlockNoChangeThreshold
-	}
-	if twoStateLoopThreshold <= 0 {
-		twoStateLoopThreshold = defaultTwoStateLoopThreshold
-	}
-	if highVisitThreshold <= 0 {
-		highVisitThreshold = defaultHighVisitThreshold
-	}
-	if lowRewardWindow <= 0 {
-		lowRewardWindow = defaultLowRewardWindow
+type traceRecord struct {
+	pageName  string
+	actionKey string
+	escaped   bool
+}
+
+func newBlockDetector(threshold int) *blockDetector {
+	if threshold <= 0 {
+		threshold = defaultBlockNoChangeThreshold
 	}
 	return &blockDetector{
-		noChangeThreshold:     noChangeThreshold,
-		twoStateLoopThreshold: twoStateLoopThreshold,
-		highVisitThreshold:    highVisitThreshold,
-		lowRewardWindow:       lowRewardWindow,
-		recentAfterSigs:       make([]string, 0, 8),
-		recentObservedSigs:    make([]string, 0, 16),
-		pageVisitCount:        make(map[string]int),
+		threshold:    threshold,
+		recentTraces: make([]traceRecord, 0, threshold+1),
+		ignoredActionTypes: map[types.ActionType]bool{
+			types.NOP:           true,
+			types.START:         true,
+			types.RESTART:       true,
+			types.CLEAN_RESTART: true,
+			types.ACTIVATE:      true,
+			types.BACK:          true,
+		},
 	}
 }
 
-func (d *blockDetector) withImageSignatureFunc(f func([]byte) string) *blockDetector {
-	d.imageSignatureFunc = f
-	return d
-}
-
-func (d *blockDetector) withImageSimilarity(threshold float64, regions []ImageFingerprintRegion) *blockDetector {
-	d.imageSimilarityThreshold = threshold
-	d.imageFingerprintRegions = append([]ImageFingerprintRegion(nil), regions...)
-	return d
-}
-
-// resolveSkeleton 解析骨架签名：优先 XML 结构指纹，XML 不可用时降级到图片签名。
-func (d *blockDetector) resolveSkeleton(xml string, screenshot []byte) string {
-	sig := pageFingerprintName(xml)
-	if sig != "" && sig != "UnknownPage" {
-		return sig
+// Observe 记录一步的结果并检测阻塞。
+// pageName: 当前页面名（来自 page_name_strategy）
+// actionKey: 动作类型+操作区域，格式 "CLICK@[0.100,0.200,0.300,0.400]"
+// escaped: 动作后页面是否发生了变化
+func (d *blockDetector) Observe(pageName, actionKey string, act types.ActionType, escaped bool) bool {
+	if d == nil {
+		return false
 	}
-	if d != nil && d.imageSignatureFunc != nil && len(screenshot) > 0 {
-		if imgSig := d.imageSignatureFunc(screenshot); imgSig != "" {
-			return imgSig
-		}
-	}
-	return sig
-}
+	pageName = strings.TrimSpace(pageName)
+	actionKey = strings.TrimSpace(actionKey)
 
-func (d *blockDetector) Observe(cmd *types.ActionCommand, before coordinator.PageSnapshot, after *coordinator.PageSnapshot) bool {
-	if d == nil || cmd == nil || after == nil {
-		d.Reset()
+	// 忽略系统级动作（BACK/RESTART 等），不纳入阻塞判断
+	if d.ignoredActionTypes[act] || pageName == "" {
+		d.recentTraces = d.recentTraces[:0]
 		return false
 	}
 
-	triggerNoChangeScroll := false
-	triggerSamePageNoMove := false
-	triggerTwoStateLoop := false
-	triggerHighVisitLowGain := false
-
-	// 骨架签名：仅基于 XML 结构，同一界面动态加载数据后不变
-	// XML 不可用时降级到图片签名
-	beforeSkeleton := d.resolveSkeleton(before.XML, before.Screenshot)
-	afterSkeleton := d.resolveSkeleton(after.XML, after.Screenshot)
-	// 内容签名：基于页面名+XML 全文，用于检测内容是否有实质变化
-	afterContent := cachedSignaturePtr(after)
-
-	if !isBlockDetectorIgnoredAction(cmd.Act) && afterSkeleton != "" {
-		d.pageVisitCount[afterSkeleton]++
-		d.pushObservedSignature(afterSkeleton)
+	d.recentTraces = append(d.recentTraces, traceRecord{
+		pageName:  pageName,
+		actionKey: actionKey,
+		escaped:   escaped,
+	})
+	// 保留最近 threshold+1 条记录即可判断
+	maxLen := d.threshold + 1
+	if len(d.recentTraces) > maxLen {
+		d.recentTraces = d.recentTraces[len(d.recentTraces)-maxLen:]
 	}
 
-	// 滚动无变化：骨架相同即为同一界面（内容可变，如动态加载）
-	if cmd.IsScrollAction() && beforeSkeleton != "" && beforeSkeleton == afterSkeleton && d.isVisuallyUnchanged(before.Screenshot, after.Screenshot) {
-		d.consecutiveNoChangeScroll++
-	} else {
-		d.consecutiveNoChangeScroll = 0
-	}
-	if d.consecutiveNoChangeScroll >= d.noChangeThreshold {
-		triggerNoChangeScroll = true
-		d.lastReason = blockReasonScrollNoChange
+	if len(d.recentTraces) < d.threshold {
+		return false
 	}
 
-	// 同页面无移动：骨架和内容都相同才算"什么都没发生"
-	if !isBlockDetectorIgnoredAction(cmd.Act) && !cmd.IsScrollAction() && beforeSkeleton != "" && beforeSkeleton == afterSkeleton {
-		beforeContent := cachedSignature(before)
-		if beforeContent == afterContent && d.isVisuallyUnchanged(before.Screenshot, after.Screenshot) {
-			d.consecutiveSamePageNoMove++
-		} else {
-			d.consecutiveSamePageNoMove = 0
+	tail := d.recentTraces[len(d.recentTraces)-d.threshold:]
+
+	// 条件 1：连续 N 步 (pageName, actionKey) 完全相同，且都没跳出
+	sameAction := true
+	samePage := true
+	allStuck := true
+	for _, t := range tail {
+		if t.escaped {
+			allStuck = false
+			break
 		}
-	} else {
-		d.consecutiveSamePageNoMove = 0
-	}
-	if d.consecutiveSamePageNoMove >= d.noChangeThreshold {
-		triggerSamePageNoMove = true
-		d.lastReason = blockReasonSamePageNoChange
-	}
-
-	// 两状态乒乓：用骨架签名检测 A→B→A→B 模式
-	if !isBlockDetectorIgnoredAction(cmd.Act) && beforeSkeleton != "" && afterSkeleton != "" && beforeSkeleton != afterSkeleton {
-		d.pushAfterSignature(afterSkeleton)
-		if d.isTailABAB() {
-			d.consecutiveTwoStateLoops++
-		} else {
-			d.consecutiveTwoStateLoops = 0
+		if t.pageName != tail[0].pageName || t.actionKey != tail[0].actionKey {
+			sameAction = false
 		}
-	} else {
-		d.consecutiveTwoStateLoops = 0
-	}
-	if d.consecutiveTwoStateLoops >= d.twoStateLoopThreshold {
-		triggerTwoStateLoop = true
-		d.lastReason = blockReasonTwoStatePingPong
+		if t.pageName != tail[0].pageName {
+			samePage = false
+		}
 	}
 
-	if d.isHighVisitLowReward(afterSkeleton) {
-		triggerHighVisitLowGain = true
-		d.lastReason = blockReasonHighVisitLowGain
+	if !allStuck {
+		return false
 	}
 
-	if triggerTwoStateLoop {
-		d.lastReason = blockReasonTwoStatePingPong
-	} else if triggerNoChangeScroll {
-		d.lastReason = blockReasonScrollNoChange
-	} else if triggerSamePageNoMove {
+	if sameAction {
+		d.lastReason = blockReasonSameActionNoChange
+		return true
+	}
+	if samePage {
 		d.lastReason = blockReasonSamePageNoChange
-	} else if triggerHighVisitLowGain {
-		d.lastReason = blockReasonHighVisitLowGain
-	}
-
-	return triggerNoChangeScroll || triggerSamePageNoMove || triggerTwoStateLoop || triggerHighVisitLowGain
-}
-
-func (d *blockDetector) isVisuallyUnchanged(beforeScreenshot, afterScreenshot []byte) bool {
-	if d == nil {
 		return true
 	}
-	if len(beforeScreenshot) == 0 || len(afterScreenshot) == 0 {
-		return true
-	}
-	score, err := ComputeImageSSIMWithRegions(beforeScreenshot, afterScreenshot, d.imageFingerprintRegions)
-	if err != nil {
-		return true
-	}
-	return score >= d.imageSimilarityThreshold
+	return false
 }
 
 func (d *blockDetector) Reset() {
 	if d == nil {
 		return
 	}
-	d.consecutiveNoChangeScroll = 0
-	d.consecutiveSamePageNoMove = 0
-	d.consecutiveTwoStateLoops = 0
-	d.recentAfterSigs = d.recentAfterSigs[:0]
-	d.recentObservedSigs = d.recentObservedSigs[:0]
-	clear(d.pageVisitCount)
+	d.recentTraces = d.recentTraces[:0]
 	d.lastReason = ""
 }
 
@@ -198,62 +126,13 @@ func (d *blockDetector) LastReason() string {
 	return d.lastReason
 }
 
-func (d *blockDetector) pushAfterSignature(sig string) {
-	if d == nil || strings.TrimSpace(sig) == "" {
-		return
+// buildActionKey 生成包含动作类型和操作区域的 key。
+func buildActionKey(cmd *types.ActionCommand) string {
+	if cmd == nil {
+		return ""
 	}
-	d.recentAfterSigs = append(d.recentAfterSigs, sig)
-	if len(d.recentAfterSigs) > 8 {
-		d.recentAfterSigs = d.recentAfterSigs[len(d.recentAfterSigs)-8:]
-	}
-}
-
-func (d *blockDetector) pushObservedSignature(sig string) {
-	if d == nil || strings.TrimSpace(sig) == "" {
-		return
-	}
-	d.recentObservedSigs = append(d.recentObservedSigs, sig)
-	if len(d.recentObservedSigs) > 16 {
-		d.recentObservedSigs = d.recentObservedSigs[len(d.recentObservedSigs)-16:]
-	}
-}
-
-func (d *blockDetector) isTailABAB() bool {
-	if d == nil || len(d.recentAfterSigs) < 4 {
-		return false
-	}
-	n := len(d.recentAfterSigs)
-	a := d.recentAfterSigs[n-4]
-	b := d.recentAfterSigs[n-3]
-	c := d.recentAfterSigs[n-2]
-	e := d.recentAfterSigs[n-1]
-	return a == c && b == e && a != b
-}
-
-func (d *blockDetector) isHighVisitLowReward(afterSkeleton string) bool {
-	if d == nil || strings.TrimSpace(afterSkeleton) == "" {
-		return false
-	}
-	if d.pageVisitCount[afterSkeleton] < d.highVisitThreshold {
-		return false
-	}
-	if d.lowRewardWindow <= 0 || len(d.recentObservedSigs) < d.lowRewardWindow {
-		return false
-	}
-	start := len(d.recentObservedSigs) - d.lowRewardWindow
-	tail := d.recentObservedSigs[start:]
-	unique := make(map[string]struct{}, len(tail))
-	for _, sig := range tail {
-		if sig == "" {
-			continue
-		}
-		unique[sig] = struct{}{}
-	}
-	return len(unique) <= 2
-}
-
-func isBlockDetectorIgnoredAction(act types.ActionType) bool {
-	return act == types.NOP || act == types.START || act == types.RESTART || act == types.CLEAN_RESTART || act == types.ACTIVATE
+	pos := cmd.Pos
+	return fmt.Sprintf("%s@[%.3f,%.3f,%.3f,%.3f]", cmd.Act.String(), pos.Left, pos.Top, pos.Right, pos.Bottom)
 }
 
 func pageSignature(pageName string, xml string) string {

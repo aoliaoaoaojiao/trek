@@ -228,7 +228,7 @@ func runMonkey(logLevelStr string, opts struct {
 		ExploreOCRTimeout:    exploreOCRTimeout,
 		RecoveryLLMTimeout:   llmTimeout,
 		PageControlStrategy:  pageControlStrategy,
-		PageControlCacheFile: strings.TrimSpace(staticCfg.PageControlCacheFile),
+		PageControlCacheFile: resolvePageControlCacheFile(staticCfg.PageControlCacheFile),
 		PageControlCacheTTL:  pageControlCacheTTL,
 	})
 	if err != nil {
@@ -447,4 +447,14 @@ func buildImageFingerprintRegionsConfig(staticCfg scripting.StaticConfig) []monk
 		})
 	}
 	return regions
+}
+
+func resolvePageControlCacheFile(configured string) string {
+	if s := strings.TrimSpace(configured); s != "" {
+		return s
+	}
+	if s := strings.TrimSpace(os.Getenv("PAGE_CONTROL_CACHE_FILE")); s != "" {
+		return s
+	}
+	return "page_control_cache.sqlite"
 }

@@ -175,6 +175,8 @@ type StepRecord struct {
 	PageControlStrategy string          `json:"page_control_strategy,omitempty"`
 	CacheHit           bool            `json:"cache_hit,omitempty"`
 	ScriptTransformed  bool            `json:"script_transformed,omitempty"`
+	BlockDetected      bool            `json:"block_detected,omitempty"`
+	BlockReason        string          `json:"block_reason,omitempty"`
 	BeforePageName     string          `json:"before_page_name,omitempty"`
 	AfterPageName      string          `json:"after_page_name,omitempty"`
 	BeforeXML          string          `json:"-"`
@@ -209,6 +211,8 @@ type Report struct {
 	ConsecutiveFailures         int
 	ActionCount                 map[string]int
 	PageVisitCount              map[string]int
+	BlockDetectionCount         int
+	BlockReasonCount            map[string]int
 	OutOfAppRecoveries          int
 	RecoveryCooldownEnterCount  int
 	RecoveryCooldownStepCount   int
@@ -325,6 +329,9 @@ type Runner struct {
 	recoveryLLMCallCount   int
 	recoveryLLMDeniedCount int
 	enhanceLLMDeniedCount  int
+	cachedScreenW          int
+	cachedScreenH          int
+	recoveryTriedBack      bool
 }
 
 type recoveryAttempt struct {
@@ -380,6 +387,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		StepsPlanned:   r.cfg.MaxSteps,
 		ActionCount:    make(map[string]int),
 		PageVisitCount: make(map[string]int),
+		BlockReasonCount: make(map[string]int),
 	}
 	r.pageVisitCount = report.PageVisitCount
 	r.actionCount = report.ActionCount
@@ -601,6 +609,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		}
 		r.normalizePocoScrollCommand(step, cmd, xml)
 		r.applyEffectiveTouchArea(step, cmd, xml)
+		r.toAbsoluteCoordinates(cmd, screenshot)
 
 		record.Action = cmd.Act.String()
 		record.ActionTargetBounds = cmd.Pos.String()
@@ -648,9 +657,14 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			beforePage.Signature != afterPage.Signature
 		r.notifyTraversalOutcome(step, beforePage, afterPage, cmd, true)
 		if r.shouldEnableBlockRecovery() && r.blockDetector.Observe(cmd, beforePage, afterPage) {
-			r.handleBlockDetectedWithPage(r.blockDetector.LastReason(), &beforePage)
+			blockReason := r.blockDetector.LastReason()
+			r.handleBlockDetectedWithPage(blockReason, &beforePage)
+			report.BlockDetectionCount++
+			report.BlockReasonCount[blockReason]++
+			record.BlockDetected = true
+			record.BlockReason = blockReason
 			logger.Warnf("monkey step=%d detected block loop reason=%s mode=%s pending=%t",
-				step, r.blockDetector.LastReason(), r.recoveryState.Mode(), r.pendingBlockRecovery)
+				step, blockReason, r.recoveryState.Mode(), r.pendingBlockRecovery)
 			if r.pendingBlockRecovery {
 				r.blockDetector.Reset()
 			}

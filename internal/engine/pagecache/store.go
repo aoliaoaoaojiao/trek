@@ -21,6 +21,7 @@ type Entry struct {
 	RefreshedAt  time.Time
 	LastUsedAt   time.Time
 	CreatedAt    time.Time
+	HitCount     int
 }
 
 // Store 管理页面理解缓存的 SQLite 持久化。
@@ -41,6 +42,7 @@ type pageCacheRow struct {
 	LastUsedAt       time.Time `gorm:"index"`
 	RecordCreatedAt  time.Time `gorm:"column:record_created_at;index"`
 	RecordModifiedAt time.Time `gorm:"column:record_modified_at;index"`
+	HitCount         int       `gorm:"column:hit_count;index"`
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -101,8 +103,10 @@ func (s *Store) Get(cacheKey string) (Entry, bool) {
 		return Entry{}, false
 	}
 	now := time.Now()
+	row.HitCount++
 	_ = s.db.Model(&row).Updates(map[string]any{
 		"last_used_at": now,
+		"hit_count":    row.HitCount,
 	}).Error
 	return row.toEntry(), true
 }
@@ -132,6 +136,7 @@ func (s *Store) Put(entry Entry) error {
 	next := rowFromEntry(item)
 	next.ID = row.ID
 	next.CreatedAt = row.CreatedAt
+	next.HitCount = row.HitCount // 保留已有命中次数
 	return s.db.Save(&next).Error
 }
 
@@ -194,6 +199,7 @@ func rowFromEntry(entry Entry) pageCacheRow {
 		LastUsedAt:       item.LastUsedAt,
 		RecordCreatedAt:  item.CreatedAt,
 		RecordModifiedAt: item.RefreshedAt,
+		HitCount:         item.HitCount,
 	}
 }
 
@@ -206,6 +212,7 @@ func (row pageCacheRow) toEntry() Entry {
 		RefreshedAt:  row.RecordModifiedAt,
 		LastUsedAt:   row.LastUsedAt,
 		CreatedAt:    row.RecordCreatedAt,
+		HitCount:     row.HitCount,
 	}
 	if entry.CreatedAt.IsZero() {
 		entry.CreatedAt = row.CreatedAt

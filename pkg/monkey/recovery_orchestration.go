@@ -141,6 +141,10 @@ func (r *Runner) handleProgress(escaped bool) {
 		logger.Infof("recovery state transition on progress: from=%s to=%s",
 			beforeMode, r.recoveryState.Mode())
 	}
+	// 脱离 Recover 模式时重置 BACK 尝试标记
+	if beforeMode == TraversalModeRecover && r.recoveryState.Mode() != TraversalModeRecover {
+		r.recoveryTriedBack = false
+	}
 }
 
 func (r *Runner) advanceRecoveryStateOnStep() {
@@ -226,6 +230,17 @@ func (r *Runner) nextBlockRecoveryCommand(pageName string, input coordinator.Act
 		XML:        input.XMLDescOfGuiTree,
 		Screenshot: input.Screenshot,
 	}, nil, nil)
+
+	// 阻塞恢复优先尝试返回键：简单、通用，能快速脱离多数卡死页面。
+	// 如果返回后页面仍未变化，block detector 会再次触发，下一轮走 planner。
+	if !r.recoveryTriedBack {
+		r.recoveryTriedBack = true
+		fallback := &types.ActionCommand{Act: types.BACK}
+		r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(fallback, perception.SourceHeuristic)}
+		logger.Infof("block recovery: trying BACK")
+		return fallback, nil
+	}
+
 	knownFailed, knownSuccess, knownErr := r.collectBothKnownActions(ctx)
 	if knownErr != nil {
 		return nil, knownErr

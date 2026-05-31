@@ -7,6 +7,7 @@ import (
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -103,6 +104,7 @@ type Coordinator struct {
 type pageControlCacheEntry struct {
 	SyntheticXML string
 	RefreshedAt  time.Time
+	HitCount     int
 }
 
 type candidateProvider interface {
@@ -777,11 +779,17 @@ func (s *Coordinator) loadPageControlCache(strategy string, screenshot []byte, f
 	if !ok {
 		if s.pageControlStore != nil {
 			if persistent, ok := s.pageControlStore.Get(cacheKey); ok && strings.TrimSpace(persistent.SyntheticXML) != "" {
+				// Get() 已递增持久层 HitCount，此处 +1 用于 L1 的 TTL 判断
+				hitCount := persistent.HitCount
+				if hitCount <= 0 {
+					hitCount = 1
+				}
 				entry := pageControlCacheEntry{
 					SyntheticXML: persistent.SyntheticXML,
 					RefreshedAt:  chooseCacheRefreshTime(persistent.RefreshedAt, persistent.CreatedAt),
+					HitCount:     hitCount,
 				}
-				if s.isPageControlCacheExpired(entry.RefreshedAt) {
+				if s.isPageControlCacheExpired(entry.RefreshedAt, hitCount) {
 					return "", false
 				}
 				s.pageControlCache.Store(cacheKey, entry)
@@ -794,8 +802,14 @@ func (s *Coordinator) loadPageControlCache(strategy string, screenshot []byte, f
 	if !ok || strings.TrimSpace(entry.SyntheticXML) == "" {
 		return "", false
 	}
-	if s.isPageControlCacheExpired(entry.RefreshedAt) {
-		logger.Debugf("coordinator 页面控件缓存 TTL 已过期: strategy=%s", strategy)
+	// L1 命中：递增内存命中计数
+	entry.HitCount++
+	if entry.HitCount <= 1 {
+		entry.HitCount = 1
+	}
+	s.pageControlCache.Store(cacheKey, entry)
+	if s.isPageControlCacheExpired(entry.RefreshedAt, entry.HitCount) {
+		logger.Debugf("coordinator 页面控件缓存 TTL 已过期: strategy=%s hitCount=%d", strategy, entry.HitCount)
 		return "", false
 	}
 	return entry.SyntheticXML, true
@@ -810,6 +824,7 @@ func (s *Coordinator) storePageControlCache(strategy string, screenshot []byte, 
 	s.pageControlCache.Store(cacheKey, pageControlCacheEntry{
 		SyntheticXML: syntheticXML,
 		RefreshedAt:  now,
+		HitCount:     1,
 	})
 	if s.pageControlStore != nil {
 		_ = s.pageControlStore.Put(pagecache.Entry{
@@ -820,6 +835,7 @@ func (s *Coordinator) storePageControlCache(strategy string, screenshot []byte, 
 			RefreshedAt:  now,
 			LastUsedAt:   now,
 			CreatedAt:    now,
+			HitCount:     1,
 		})
 	}
 }
@@ -908,14 +924,6 @@ func normalizePageControlStrategy(strategy string) string {
 }
 
 func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candidate, screenshot []byte) (string, types.IElement) {
-	width, height := decodeScreenshotSize(screenshot)
-	if width <= 0 {
-		width = 1000
-	}
-	if height <= 0 {
-		height = 1000
-	}
-
 	type syntheticNode struct {
 		Text        string
 		Class       string
@@ -931,8 +939,8 @@ func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candida
 		if item.Command.Act != types.CLICK && item.Command.Act != types.LONG_CLICK && item.Command.Act != types.INPUT {
 			continue
 		}
-		bounds, ok := toPixelBounds(item.Command.Pos, width, height)
-		if !ok {
+		pos := item.Command.Pos
+		if pos.IsEmpty() {
 			continue
 		}
 		label := strings.TrimSpace(item.Metadata["ocr_text"])
@@ -953,7 +961,7 @@ func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candida
 			Text:        label,
 			Class:       resolveSyntheticWidgetClass(label, item.Command.Act),
 			ContentDesc: label,
-			Bounds:      fmt.Sprintf("[%d,%d][%d,%d]", bounds[0], bounds[1], bounds[2], bounds[3]),
+			Bounds:      fmt.Sprintf("[%.6f,%.6f][%.6f,%.6f]", pos.Left, pos.Top, pos.Right, pos.Bottom),
 		})
 	}
 	if len(nodes) == 0 {
@@ -968,7 +976,7 @@ func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candida
 	var b strings.Builder
 	b.WriteString(`<hierarchy rotation="0">`)
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf(`  <node index="0" text="" resource-id="" class="android.widget.FrameLayout" content-desc="" clickable="false" enabled="true"%s bounds="[0,0][%d,%d]">`, rootExtraAttr, width, height))
+	b.WriteString(fmt.Sprintf(`  <node index="0" text="" resource-id="" class="android.widget.FrameLayout" content-desc="" clickable="false" enabled="true"%s bounds="[0,0][1,1]">`, rootExtraAttr))
 	b.WriteString("\n")
 	for i, node := range nodes {
 		b.WriteString(fmt.Sprintf(`    <node index="%d" text="%s" resource-id="visual_%d" class="%s" content-desc="%s" clickable="true" long-clickable="false" enabled="true" bounds="%s"/>`,
@@ -1023,15 +1031,26 @@ func (s *Coordinator) resolvePageControlCacheTTL() time.Duration {
 	return defaultPageControlCacheTTL
 }
 
-func (s *Coordinator) isPageControlCacheExpired(refreshedAt time.Time) bool {
+func (s *Coordinator) isPageControlCacheExpired(refreshedAt time.Time, hitCount int) bool {
 	if refreshedAt.IsZero() {
 		return false
 	}
-	ttl := s.resolvePageControlCacheTTL()
-	if ttl <= 0 {
+	baseTTL := s.resolvePageControlCacheTTL()
+	if baseTTL <= 0 {
 		return false
 	}
+	ttl := effectivePageControlCacheTTL(baseTTL, hitCount)
 	return time.Since(refreshedAt) >= ttl
+}
+
+// effectivePageControlCacheTTL 基于记忆曲线计算动态 TTL。
+// 访问越频繁的页面缓存时间越长：effectiveTTL = baseTTL × (1 + ln(hitCount))。
+func effectivePageControlCacheTTL(baseTTL time.Duration, hitCount int) time.Duration {
+	if hitCount <= 1 {
+		return baseTTL
+	}
+	boost := 1.0 + math.Log(float64(hitCount))
+	return time.Duration(float64(baseTTL) * boost)
 }
 
 func chooseCacheRefreshTime(values ...time.Time) time.Time {

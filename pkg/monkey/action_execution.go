@@ -366,6 +366,46 @@ func (r *Runner) tryInputText(cmd *types.ActionCommand) error {
 	return r.driver.InputText(cmd.Text, cmd.Clear)
 }
 
+// resolveScreenSize 从截图解码屏幕尺寸并缓存。
+func (r *Runner) resolveScreenSize(screenshot []byte) (int, int) {
+	if r.cachedScreenW > 0 && r.cachedScreenH > 0 {
+		return r.cachedScreenW, r.cachedScreenH
+	}
+	if len(screenshot) == 0 {
+		return 0, 0
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(screenshot))
+	if err != nil {
+		return 0, 0
+	}
+	r.cachedScreenW = cfg.Width
+	r.cachedScreenH = cfg.Height
+	return r.cachedScreenW, r.cachedScreenH
+}
+
+// toAbsoluteCoordinates 将归一化 [0,1] 坐标转换为绝对像素坐标。
+// 仅当 cmd.Pos 处于归一化空间时才执行转换；已经是绝对坐标的跳过。
+func (r *Runner) toAbsoluteCoordinates(cmd *types.ActionCommand, screenshot []byte) {
+	if cmd == nil || !isNormalizedRect(cmd.Pos) {
+		return
+	}
+	w, h := r.resolveScreenSize(screenshot)
+	if w <= 0 || h <= 0 {
+		return
+	}
+	fw, fh := float64(w), float64(h)
+	cmd.Pos = types.Rect{
+		Left:   cmd.Pos.Left * fw,
+		Top:    cmd.Pos.Top * fh,
+		Right:  cmd.Pos.Right * fw,
+		Bottom: cmd.Pos.Bottom * fh,
+	}
+	if cmd.DragTo != nil {
+		cmd.DragTo.X *= fw
+		cmd.DragTo.Y *= fh
+	}
+}
+
 func (r *Runner) markFailed(report *Report, record StepRecord, stepStart time.Time, before *coordinator.PageSnapshot, after *coordinator.PageSnapshot) {
 	report.StepsTotal++
 	report.StepsFailed++

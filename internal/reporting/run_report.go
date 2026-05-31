@@ -86,6 +86,8 @@ type RunSummary struct {
 	EnhancementLLMBudgetDenied  int               `json:"enhancement_llm_budget_denied"`
 	ActionCount                 map[string]int    `json:"action_count,omitempty"`
 	PageVisitCount              map[string]int    `json:"page_visit_count,omitempty"`
+	BlockDetectionCount         int               `json:"block_detection_count"`
+	BlockReasonCount            map[string]int    `json:"block_reason_count,omitempty"`
 }
 
 type pair struct {
@@ -253,6 +255,8 @@ func buildEnvelope(metadata RunMetadata, report *monkey.Report) RunReportEnvelop
 			EnhancementLLMBudgetDenied:  report.EnhancementLLMBudgetDenied,
 			ActionCount:                 cloneCountMap(report.ActionCount),
 			PageVisitCount:              cloneCountMap(report.PageVisitCount),
+			BlockDetectionCount:         report.BlockDetectionCount,
+			BlockReasonCount:            cloneCountMap(report.BlockReasonCount),
 		},
 		Preflight:   report.Preflight,
 		Pages:       nil,
@@ -311,8 +315,19 @@ func renderMarkdown(envelope RunReportEnvelope) string {
 	}
 
 	// ── 关键指标 ──
-	if summary.RecoveryCooldownEnterCount > 0 || summary.OutOfAppRecoveries > 0 || summary.CandidateEnhancementCalls > 0 || summary.RecoveryLLMCalls > 0 {
+	if summary.RecoveryCooldownEnterCount > 0 || summary.OutOfAppRecoveries > 0 || summary.CandidateEnhancementCalls > 0 || summary.RecoveryLLMCalls > 0 || summary.BlockDetectionCount > 0 {
 		b.WriteString("## 关键指标\n\n")
+		if summary.BlockDetectionCount > 0 {
+			b.WriteString(fmt.Sprintf("- 页面阻塞: **%d** 次", summary.BlockDetectionCount))
+			if len(summary.BlockReasonCount) > 0 {
+				reasonParts := make([]string, 0, len(summary.BlockReasonCount))
+				for reason, count := range summary.BlockReasonCount {
+					reasonParts = append(reasonParts, fmt.Sprintf("%s %d", reason, count))
+				}
+				b.WriteString(fmt.Sprintf("（%s）", strings.Join(reasonParts, "、")))
+			}
+			b.WriteString("\n")
+		}
 		if summary.OutOfAppRecoveries > 0 {
 			b.WriteString(fmt.Sprintf("- 离开应用恢复: **%d** 次\n", summary.OutOfAppRecoveries))
 		}
@@ -478,28 +493,19 @@ func renderStepTimeline(records []monkey.StepRecord, pageIDMap map[string]string
 		if result == "FAIL" {
 			resultText = fmt.Sprintf("**FAIL** %s", truncateErr(r.Err, 60))
 		}
-		// 截图：优先使用标注截图
-		beforeImg := ""
-		if r.BeforeArtifactRef != nil && r.BeforeArtifactRef.ScreenshotFile != "" {
+		// 截图：仅点击/长按/输入类动作显示标注截图（操作前 + 标记）
+		markedImg := ""
+		if isTapAction(r.Action) && r.BeforeArtifactRef != nil && r.BeforeArtifactRef.ScreenshotFile != "" {
 			imgSrc := r.BeforeArtifactRef.ScreenshotFile
 			if marked := markedScreenshotPath(imgSrc); marked != "" {
 				imgSrc = marked
 			}
-			beforeImg = fmt.Sprintf("<div style=\"padding:4px 10px; text-align:center;\"><img src=\"%s\" style=\"%s\" /></div>\n", imgSrc, imgStyle)
-		}
-		afterImg := ""
-		if r.AfterArtifactRef != nil && r.AfterArtifactRef.ScreenshotFile != "" {
-			afterImg = fmt.Sprintf("<div style=\"padding:4px 10px; text-align:center;\"><img src=\"%s\" style=\"%s\" /></div>\n", r.AfterArtifactRef.ScreenshotFile, imgStyle)
+			markedImg = fmt.Sprintf("<div style=\"padding:4px 10px; text-align:center;\"><img src=\"%s\" style=\"%s\" /></div>\n", imgSrc, imgStyle)
 		}
 		// 输出
 		b.WriteString(fmt.Sprintf("### step%d\n", r.Step))
-		b.WriteString("操作\n")
-		if beforeImg != "" {
-			b.WriteString(beforeImg)
-		}
-		b.WriteString("\n")
-		if afterImg != "" {
-			b.WriteString(afterImg)
+		if markedImg != "" {
+			b.WriteString(markedImg)
 		}
 		b.WriteString(fmt.Sprintf("页面：P%s\n\n", pageID))
 		b.WriteString(fmt.Sprintf("操作：%s\n\n", escapeMarkdownCell(action)))
@@ -639,6 +645,15 @@ func truncateErr(err string, maxLen int) string {
 		return trimmed[:maxLen]
 	}
 	return trimmed[:maxLen-3] + "..."
+}
+
+func isTapAction(action string) bool {
+	switch strings.ToUpper(strings.TrimSpace(action)) {
+	case "CLICK", "LONG_CLICK", "INPUT":
+		return true
+	default:
+		return false
+	}
 }
 
 // buildPageLabel 从控件文本中提取人类可读的页面标签。

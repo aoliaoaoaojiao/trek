@@ -223,8 +223,8 @@ func TestSessionTransformPageInfoWithOCRPageControlStrategy(t *testing.T) {
 	if !strings.Contains(info.XML, `text="登录"`) {
 		t.Fatalf("预期生成 OCR 文本，实际 XML: %s", info.XML)
 	}
-	if !strings.Contains(info.XML, `bounds="[20,80][60,160]"`) {
-		t.Fatalf("预期归一化区域转为像素 bounds，实际 XML: %s", info.XML)
+	if !strings.Contains(info.XML, `bounds="[0.100000,0.200000][0.300000,0.400000]"`) {
+		t.Fatalf("预期归一化 bounds，实际 XML: %s", info.XML)
 	}
 }
 

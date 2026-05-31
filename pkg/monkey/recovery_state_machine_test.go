@@ -197,13 +197,13 @@ func TestRunnerPrefersContextAwareBlockRecoveryDecider(t *testing.T) {
 					{Act: types.SCROLL_BOTTOM_UP, Pos: *types.NewRect(0, 0, 1, 1)},
 				},
 			},
-			recoveryAction: &types.ActionCommand{Act: types.BACK},
+			recoveryAction: &types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
 		},
 	}
 	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}
 
 	runner, err := NewRunner(decider, driver, Config{
-		MaxSteps:               5,
+		MaxSteps:               10,
 		StepInterval:           0,
 		KeepStepRecords:        true,
 		StopOnCrash:            true,
@@ -221,6 +221,7 @@ func TestRunnerPrefersContextAwareBlockRecoveryDecider(t *testing.T) {
 	if report.StopReason != StopCompleted {
 		t.Fatalf("停止原因错误: %s", report.StopReason)
 	}
+	// 首次恢复应尝试 BACK，若仍未脱离阻塞，第二次恢复应走 planner → context-aware decider
 	if decider.recoveryCalls == 0 {
 		t.Fatalf("预期触发恢复决策")
 	}
@@ -266,8 +267,9 @@ func TestRunnerPrefersPlannerCandidateAndSkipsLLMOnHighConfidenceMemory(t *testi
 	}
 	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}
 
+	// 需要足够步数：第一次恢复尝试 BACK，若仍未脱离阻塞，第二次恢复走 planner
 	runner, err := NewRunner(decider, driver, Config{
-		MaxSteps:               5,
+		MaxSteps:               10,
 		StepInterval:           0,
 		KeepStepRecords:        true,
 		StopOnCrash:            true,
@@ -285,6 +287,7 @@ func TestRunnerPrefersPlannerCandidateAndSkipsLLMOnHighConfidenceMemory(t *testi
 	if report.StopReason != StopCompleted {
 		t.Fatalf("停止原因错误: %s", report.StopReason)
 	}
+	// 首次恢复尝试 BACK，第二次恢复走 planner → memory provider
 	if decider.memoryCalls == 0 {
 		t.Fatalf("预期调用 memory provider")
 	}
@@ -297,16 +300,13 @@ func TestRunnerPrefersPlannerCandidateAndSkipsLLMOnHighConfidenceMemory(t *testi
 	if driver.clickCount == 0 {
 		t.Fatalf("预期执行 planner 提供的 CLICK 恢复动作")
 	}
-	if driver.backCount != 0 {
-		t.Fatalf("planner 命中后不应执行 BACK 兜底，实际: %d", driver.backCount)
-	}
 }
 
 func TestRunnerRecordsRecoveryOutcomeAfterPlannerSelection(t *testing.T) {
 	memoryCandidate := perception.NewCandidate(
-		&types.ActionCommand{Act: types.BACK},
+		&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.2, 0.2)},
 		perception.SourceMemory,
-		"memory_back",
+		"memory_click",
 		map[string]string{"memory_key": "k1"},
 	)
 	decider := &plannerAwareRecoveryDecider{
@@ -323,6 +323,7 @@ func TestRunnerRecordsRecoveryOutcomeAfterPlannerSelection(t *testing.T) {
 		t.Fatalf("创建 runner 失败: %v", err)
 	}
 
+	// 第一轮恢复：BACK
 	runner.handleBlockDetected("same_page_no_change")
 	runner.handleBlockDetected("same_page_no_change")
 	cmd, err := runner.nextCommandWithRecovery(1, session.PageSnapshot{
@@ -335,7 +336,23 @@ func TestRunnerRecordsRecoveryOutcomeAfterPlannerSelection(t *testing.T) {
 		t.Fatalf("获取恢复动作失败: %v", err)
 	}
 	if cmd == nil || cmd.Act != types.BACK {
-		t.Fatalf("预期 planner 返回 BACK，实际: %+v", cmd)
+		t.Fatalf("首次恢复应尝试 BACK，实际: %+v", cmd)
+	}
+
+	// 第二轮恢复：planner → memory candidate
+	runner.handleBlockDetected("same_page_no_change")
+	runner.handleBlockDetected("same_page_no_change")
+	cmd, err = runner.nextCommandWithRecovery(2, session.PageSnapshot{
+		PageName: "MainActivity",
+		XML:      `<hierarchy/>`,
+	}, "MainActivity", session.ActionInput{
+		XMLDescOfGuiTree: `<hierarchy/>`,
+	})
+	if err != nil {
+		t.Fatalf("获取恢复动作失败: %v", err)
+	}
+	if cmd == nil || cmd.Act != types.CLICK {
+		t.Fatalf("预期 planner 返回 CLICK，实际: %+v", cmd)
 	}
 
 	runner.recordRecoveryOutcome(true)
@@ -492,8 +509,9 @@ func TestRunnerRecoveryPlannerUsesFusedCandidateRanking(t *testing.T) {
 	}
 	driver := &fakeDriver{pageSource: &fakePageSource{xml: `<node class="MainActivity"/>`}}
 
+	// 需要足够步数：第一次恢复尝试 BACK，若仍未脱离阻塞，第二次恢复走 planner
 	runner, err := NewRunner(decider, driver, Config{
-		MaxSteps:               5,
+		MaxSteps:               10,
 		StepInterval:           0,
 		KeepStepRecords:        true,
 		StopOnCrash:            true,
@@ -511,11 +529,9 @@ func TestRunnerRecoveryPlannerUsesFusedCandidateRanking(t *testing.T) {
 	if report.StopReason != StopCompleted {
 		t.Fatalf("停止原因错误: %s", report.StopReason)
 	}
+	// 首次恢复是 BACK，第二次恢复走 planner → 融合排序选高分 CLICK
 	if driver.clickCount == 0 {
 		t.Fatalf("融合排序后应优先执行高分 CLICK 候选")
-	}
-	if driver.backCount != 0 {
-		t.Fatalf("融合排序后不应优先执行低分 BACK 候选，实际 backCount=%d", driver.backCount)
 	}
 }
 
@@ -612,9 +628,24 @@ func TestRunnerRecoveryPlannerPenalizesPersistedFailedAction(t *testing.T) {
 		t.Fatalf("创建 runner 失败: %v", err)
 	}
 
+	// 第一轮恢复：BACK
 	runner.handleBlockDetected("same_page_no_change")
 	runner.handleBlockDetected("same_page_no_change")
 	cmd, err := runner.nextCommandWithRecovery(1, session.PageSnapshot{
+		PageName: "MainActivity",
+		XML:      `<hierarchy/>`,
+	}, "MainActivity", session.ActionInput{XMLDescOfGuiTree: `<hierarchy/>`})
+	if err != nil {
+		t.Fatalf("恢复取动作失败: %v", err)
+	}
+	if cmd == nil || cmd.Act != types.BACK {
+		t.Fatalf("首次恢复应尝试 BACK，实际: %+v", cmd)
+	}
+
+	// 第二轮恢复：planner 惩罚了持久化失败的 BACK，应选择 CLICK
+	runner.handleBlockDetected("same_page_no_change")
+	runner.handleBlockDetected("same_page_no_change")
+	cmd, err = runner.nextCommandWithRecovery(2, session.PageSnapshot{
 		PageName: "MainActivity",
 		XML:      `<hierarchy/>`,
 	}, "MainActivity", session.ActionInput{XMLDescOfGuiTree: `<hierarchy/>`})

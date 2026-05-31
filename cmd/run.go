@@ -260,6 +260,7 @@ func runMonkey(logLevelStr string, opts struct {
 		CandidateMinFusionScore:           candidateMinFusionScore,
 		ImageFingerprintRegions:           buildImageFingerprintRegionsConfig(staticCfg),
 		ImageFingerprintHammingThreshold:  staticCfg.ImageFingerprintHammingThreshold.OrDefault(config.DefaultImageFingerprintHammingThreshold),
+		InputCharset:                      staticCfg.InputCharset,
 		ArtifactDir:                       artifactDir,
 	}
 

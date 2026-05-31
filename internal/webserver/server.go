@@ -46,6 +46,7 @@ type ConfigPayload struct {
 	HighValuePageVisitLimit           *int     `json:"high_value_page_visit_limit"`
 	CandidateRiskDropThreshold        *float64 `json:"candidate_risk_drop_threshold"`
 	CandidateMinFusionScore           *float64 `json:"candidate_min_fusion_score"`
+	InputCharset                      *string  `json:"input_charset"`
 	UIA                               struct {
 		ServerPort int `json:"server_port"`
 	} `json:"uia"`
@@ -579,6 +580,9 @@ func BuildConfigJS(cfg ConfigPayload) (string, error) {
 	}
 	if cfg.CandidateMinFusionScore != nil {
 		b.WriteString(fmt.Sprintf("  candidate_min_fusion_score: %s,\n", strconv.FormatFloat(*cfg.CandidateMinFusionScore, 'f', -1, 64)))
+	}
+	if cfg.InputCharset != nil && *cfg.InputCharset != "" {
+		b.WriteString(fmt.Sprintf("  input_charset: '%s',\n", *cfg.InputCharset))
 	}
 
 	if cfg.UIA.ServerPort > 0 {

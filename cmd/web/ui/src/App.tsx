@@ -115,6 +115,7 @@ export function App() {
   const [highValuePageVisitLimit, setHighValuePageVisitLimit] = useState("")
   const [candidateRiskDropThreshold, setCandidateRiskDropThreshold] = useState("")
   const [candidateMinFusionScore, setCandidateMinFusionScore] = useState("")
+  const [inputCharset, setInputCharset] = useState("")
   const [uctTwoStateLoopPenalty, setUctTwoStateLoopPenalty] = useState("")
   const [uctEdgeRepeatPenalty, setUctEdgeRepeatPenalty] = useState("")
   const [uctEdgeRepeatThreshold, setUctEdgeRepeatThreshold] = useState("")
@@ -323,6 +324,7 @@ export function App() {
       high_value_page_visit_limit: parseOptionalNumber(highValuePageVisitLimit),
       candidate_risk_drop_threshold: parseOptionalNumber(candidateRiskDropThreshold),
       candidate_min_fusion_score: parseOptionalNumber(candidateMinFusionScore),
+      input_charset: inputCharset,
       uia: { server_port: Number(uiaPort || 0) },
       poco: { engine: pocoEngine, port: Number(pocoPort || 0) },
       log: { file_level: fileLevel },
@@ -812,6 +814,8 @@ export function App() {
       setCandidateRiskDropThreshold={setCandidateRiskDropThreshold}
       candidateMinFusionScore={candidateMinFusionScore}
       setCandidateMinFusionScore={setCandidateMinFusionScore}
+      inputCharset={inputCharset}
+      setInputCharset={setInputCharset}
       uctTwoStateLoopPenalty={uctTwoStateLoopPenalty}
       setUctTwoStateLoopPenalty={setUctTwoStateLoopPenalty}
       uctEdgeRepeatPenalty={uctEdgeRepeatPenalty}

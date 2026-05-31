@@ -21,6 +21,7 @@ export type ConfigPayload = {
   high_value_page_visit_limit: number | null
   candidate_risk_drop_threshold: number | null
   candidate_min_fusion_score: number | null
+  input_charset: string
   uia: { server_port: number }
   poco: { engine: string; port: number }
   log: { file_level: string }
@@ -70,6 +71,7 @@ export type PartialConfigPayload = Partial<{
   high_value_page_visit_limit: number | null
   candidate_risk_drop_threshold: number | null
   candidate_min_fusion_score: number | null
+  input_charset: string
   uia: Partial<{ server_port: number }>
   poco: Partial<{ engine: string; port: number }>
   log: Partial<{ file_level: string }>

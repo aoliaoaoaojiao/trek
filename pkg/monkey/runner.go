@@ -120,6 +120,7 @@ type Config struct {
 	ImageSignatureFunc                func([]byte) string
 	ImageFingerprintRegions           []ImageFingerprintRegion
 	ImageFingerprintHammingThreshold  int
+	InputCharset                      string
 	ArtifactDir                       string // 产物实时写入目录；为空则不实时写盘
 }
 
@@ -651,6 +652,9 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		}
 		escaped := afterPage != nil &&
 			beforePage.Signature != afterPage.Signature
+		if cmd.Act == types.INPUT {
+			escaped = true // 输入必然改变页面内容，视为已逃离
+		}
 		r.notifyTraversalOutcome(step, beforePage, afterPage, cmd, true)
 		if r.shouldEnableBlockRecovery() && r.blockDetector.Observe(pageName, buildActionKey(cmd), cmd.Act, escaped) {
 			blockReason := r.blockDetector.LastReason()

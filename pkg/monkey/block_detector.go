@@ -41,6 +41,7 @@ func newBlockDetector(threshold int) *blockDetector {
 			types.CLEAN_RESTART: true,
 			types.ACTIVATE:      true,
 			types.BACK:          true,
+			types.INPUT:         true,
 		},
 	}
 }

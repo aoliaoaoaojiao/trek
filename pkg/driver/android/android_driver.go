@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"net/http"
 	"path/filepath"
 	"regexp"
@@ -73,6 +74,9 @@ type AndroidDriver struct {
 	pocoPort        int
 	forwardPocoPort int
 	pocoEngine      poco.Engine
+
+	adbKeyboardAvailable bool   // ADBKeyboard 是否可用
+	previousIME          string // 切换前的输入法，用于恢复
 
 	anrRegexCache sync.Map // map[string]*regexp.Regexp，按包名缓存编译后的 ANR 正则
 }
@@ -169,6 +173,9 @@ func NewAndroidDriverWith(deviceSerial string, opts ...AndroidDriverOption) (*An
 		}
 	}
 
+	// 检测并启用 ADBKeyboard 输入法
+	androidDriver.setupADBKeyboard(context.Background())
+
 	logger.Infof("AndroidDriver initialization completed, serial=%s", device.Serial())
 	return androidDriver, nil
 }
@@ -253,11 +260,127 @@ func (a *AndroidDriver) ActivateApp(packageName string) error {
 }
 
 // InputText 通过 UIA 会话向当前焦点输入文本。
+// 若 ADBKeyboard 可用，优先使用它（支持 Unicode）。
 func (a *AndroidDriver) InputText(text string, clear bool) error {
+	if a.adbKeyboardAvailable {
+		if clear {
+			_ = a.sendADBKeyboardClear()
+		}
+		return a.sendADBKeyboardText(text)
+	}
 	if a.uiaClient == nil {
 		return fmt.Errorf("uia client is nil")
 	}
 	return a.uiaClient.SendKeys(text, clear)
+}
+
+const adbKeyboardIME = "com.android.adbkeyboard/.AdbIME"
+const adbKeyboardAPK = "plugins/ADBKeyBoard/keyboardservice-debug.apk"
+
+// setupADBKeyboard 检测、安装并启用 ADBKeyboard 输入法。
+func (a *AndroidDriver) setupADBKeyboard(ctx context.Context) {
+	if a.device == nil {
+		return
+	}
+	// 检查 ADBKeyboard 是否已安装
+	output, err := a.device.RunShellCommand(ctx, "pm", "list", "packages", "com.android.adbkeyboard")
+	if err != nil || !strings.Contains(output, "com.android.adbkeyboard") {
+		// 未安装，尝试自动安装
+		if !a.installADBKeyboard() {
+			return
+		}
+	}
+	// 保存当前输入法
+	imeOutput, err := a.device.RunShellCommand(ctx, "settings", "get", "secure", "default_input_method")
+	if err == nil {
+		a.previousIME = strings.TrimSpace(imeOutput)
+	}
+	// 启用并切换到 ADBKeyboard
+	_, _ = a.device.RunShellCommand(ctx, "ime", "enable", adbKeyboardIME)
+	_, err = a.device.RunShellCommand(ctx, "ime", "set", adbKeyboardIME)
+	if err != nil {
+		logger.Warnf("切换到 ADBKeyboard 失败: %v", err)
+		a.previousIME = ""
+		return
+	}
+	// 某些设备 ime set 不生效，同时写入 settings 作为保障
+	_, _ = a.device.RunShellCommand(ctx, "settings", "put", "secure", "default_input_method", adbKeyboardIME)
+	// 验证是否切换成功
+	verifyCtx, verifyCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer verifyCancel()
+	currentIME, err := a.device.RunShellCommand(verifyCtx, "settings", "get", "secure", "default_input_method")
+	currentIME = strings.TrimSpace(currentIME)
+	if err != nil || !strings.Contains(currentIME, "adbkeyboard") {
+		logger.Warnf("ADBKeyboard 切换验证失败: current=%s err=%v", currentIME, err)
+		a.previousIME = ""
+		return
+	}
+	a.adbKeyboardAvailable = true
+	logger.Infof("ADBKeyboard 已启用并验证，原始输入法: %s，当前: %s", a.previousIME, currentIME)
+}
+
+// installADBKeyboard 从 plugins 目录安装 ADBKeyboard APK。
+func (a *AndroidDriver) installADBKeyboard() bool {
+	absPath, err := filepath.Abs(adbKeyboardAPK)
+	if err != nil {
+		logger.Warnf("解析 ADBKeyboard APK 路径失败: %v", err)
+		return false
+	}
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		logger.Infof("ADBKeyboard APK 不存在: %s，跳过安装", absPath)
+		return false
+	}
+	logger.Infof("正在安装 ADBKeyboard: %s", absPath)
+	if err := utils.InstallAPK(a.device.Serial(), absPath, true); err != nil {
+		logger.Warnf("安装 ADBKeyboard 失败: %v", err)
+		return false
+	}
+	logger.Infof("ADBKeyboard 安装成功")
+	return true
+}
+
+// restoreIME 恢复到切换前的输入法。
+func (a *AndroidDriver) restoreIME(ctx context.Context) {
+	if !a.adbKeyboardAvailable || a.device == nil {
+		return
+	}
+	if a.previousIME == "" {
+		// 无原始输入法记录，直接重置
+		_, _ = a.device.RunShellCommand(ctx, "ime", "reset")
+		logger.Infof("输入法已重置为系统默认")
+	} else {
+		_, err := a.device.RunShellCommand(ctx, "ime", "set", a.previousIME)
+		if err != nil {
+			logger.Warnf("恢复输入法失败: %v，尝试重置", err)
+			_, _ = a.device.RunShellCommand(ctx, "ime", "reset")
+		} else {
+			logger.Infof("输入法已恢复: %s", a.previousIME)
+		}
+	}
+	a.adbKeyboardAvailable = false
+	a.previousIME = ""
+}
+
+// sendADBKeyboardText 通过 ADBKeyboard broadcast 发送文本。
+func (a *AndroidDriver) sendADBKeyboardText(text string) error {
+	if a.device == nil {
+		return fmt.Errorf("adb device is nil")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := a.device.RunShellCommand(ctx, "am", "broadcast", "-a", "ADB_INPUT_TEXT", "--es", "msg", text)
+	return err
+}
+
+// sendADBKeyboardClear 清空 ADBKeyboard 当前输入框内容。
+func (a *AndroidDriver) sendADBKeyboardClear() error {
+	if a.device == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := a.device.RunShellCommand(ctx, "am", "broadcast", "-a", "ADB_CLEAR_TEXT")
+	return err
 }
 
 // ClearLogcat 清空 logcat 缓冲，避免历史日志干扰本轮检测。
@@ -413,6 +536,9 @@ func (a *AndroidDriver) Close() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	logger.Infof("Starting AndroidDriver shutdown, serial=%s", a.Name())
+
+	// 恢复输入法
+	a.restoreIME(context.Background())
 
 	if a.touch != nil {
 		if err := a.touch.Close(); err != nil {

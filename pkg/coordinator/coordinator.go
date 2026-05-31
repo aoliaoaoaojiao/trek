@@ -929,6 +929,7 @@ func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candida
 		Class       string
 		ContentDesc string
 		Bounds      string
+		Editable    bool
 	}
 
 	nodes := make([]syntheticNode, 0, len(items))
@@ -962,6 +963,7 @@ func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candida
 			Class:       resolveSyntheticWidgetClass(label, item.Command.Act),
 			ContentDesc: label,
 			Bounds:      fmt.Sprintf("[%.6f,%.6f][%.6f,%.6f]", pos.Left, pos.Top, pos.Right, pos.Bottom),
+			Editable:    item.Command.Act == types.INPUT,
 		})
 	}
 	if len(nodes) == 0 {
@@ -979,12 +981,17 @@ func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candida
 	b.WriteString(fmt.Sprintf(`  <node index="0" text="" resource-id="" class="android.widget.FrameLayout" content-desc="" clickable="false" enabled="true"%s bounds="[0,0][1,1]">`, rootExtraAttr))
 	b.WriteString("\n")
 	for i, node := range nodes {
-		b.WriteString(fmt.Sprintf(`    <node index="%d" text="%s" resource-id="visual_%d" class="%s" content-desc="%s" clickable="true" long-clickable="false" enabled="true" bounds="%s"/>`,
+		editableAttr := ` editable="false"`
+		if node.Editable {
+			editableAttr = ` editable="true"`
+		}
+		b.WriteString(fmt.Sprintf(`    <node index="%d" text="%s" resource-id="visual_%d" class="%s" content-desc="%s" clickable="true" long-clickable="false" enabled="true"%s bounds="%s"/>`,
 			i+1,
 			escapeXMLAttr(node.Text),
 			i+1,
 			node.Class,
 			escapeXMLAttr(node.ContentDesc),
+			editableAttr,
 			node.Bounds,
 		))
 		b.WriteString("\n")

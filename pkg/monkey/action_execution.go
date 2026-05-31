@@ -53,6 +53,7 @@ func (r *Runner) execute(cmd *types.ActionCommand) error {
 		if err = r.driver.Click(pt); err != nil {
 			return err
 		}
+		cmd.Clear = true // INPUT 动作始终先清空再输入
 		return r.tryInputText(cmd)
 	case types.SCROLL_BOTTOM_UP, types.SCROLL_TOP_DOWN, types.SCROLL_LEFT_RIGHT, types.SCROLL_RIGHT_LEFT:
 		if cmd.DragTo != nil {
@@ -360,10 +361,29 @@ func resolveSwipePoints(rect types.Rect, act types.ActionType) (types.Point, typ
 }
 
 func (r *Runner) tryInputText(cmd *types.ActionCommand) error {
-	if strings.TrimSpace(cmd.Text) == "" {
-		return nil
+	text := strings.TrimSpace(cmd.Text)
+	if text == "" {
+		text = r.randomText(6)
 	}
-	return r.driver.InputText(cmd.Text, cmd.Clear)
+	return r.driver.InputText(text, cmd.Clear)
+}
+
+var defaultInputCharset = "测试输入文本搜索登录注册设置确定取消返回删除编辑保存分享收藏关注点赞评论消息通知帮助反馈关于版本更新加载中请稍候成功失败重试跳过同意拒绝"
+
+func (r *Runner) randomText(n int) string {
+	if r.rng == nil {
+		return "测试"
+	}
+	charset := r.cfg.InputCharset
+	if charset == "" {
+		charset = defaultInputCharset
+	}
+	runes := []rune(charset)
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = runes[r.rng.Intn(len(runes))]
+	}
+	return string(b)
 }
 
 // resolveScreenSize 从截图解码屏幕尺寸并缓存。

@@ -43,6 +43,7 @@ type StaticConfig struct {
 	CandidateRiskDropThreshold        coretypes.Optional[float64]
 	CandidateMinFusionScore           coretypes.Optional[float64]
 	ScrollInferThreshold              int
+	InputCharset                      string
 	UIA                               StaticUIAConfig
 	Poco                              StaticPocoConfig
 	Log                               StaticLogConfig
@@ -254,6 +255,12 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 			plugins = append(plugins, text)
 		}
 		cfg.Plugins = plugins
+	}
+	if charsetValue := obj.Get("input_charset"); !isEmptyJSValue(charsetValue) {
+		cfg.InputCharset = strings.TrimSpace(charsetValue.String())
+	}
+	if charsetValue := obj.Get("inputCharset"); cfg.InputCharset == "" && !isEmptyJSValue(charsetValue) {
+		cfg.InputCharset = strings.TrimSpace(charsetValue.String())
 	}
 
 	// 可选布尔字段

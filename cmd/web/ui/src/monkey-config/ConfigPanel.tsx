@@ -97,6 +97,8 @@ type Props = {
   setCandidateRiskDropThreshold: (value: string) => void
   candidateMinFusionScore: string
   setCandidateMinFusionScore: (value: string) => void
+  inputCharset: string
+  setInputCharset: (value: string) => void
   uctTwoStateLoopPenalty: string
   setUctTwoStateLoopPenalty: (value: string) => void
   uctEdgeRepeatPenalty: string
@@ -504,6 +506,10 @@ export function ConfigPanel(props: Props) {
           <label className="flex flex-col gap-1 text-sm">
             {renderFieldTitle("LLM 超时(ms)", `默认：${props.defaultLLMTimeoutMs}，统一控制所有 LLM 请求超时：页面理解（page_control_strategy=llm）、goja 脚本 trek.llm.chat()。含一次自动重试，实际最大等待约为 2×超时+2s。`)}
             <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.llmTimeoutMs} onChange={(e) => props.setLLMTimeoutMs(e.target.value)} placeholder={`留空=使用默认值 ${props.defaultLLMTimeoutMs}`} />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            {renderFieldTitle("输入字符池", "INPUT 动作触发时从此字符池随机生成文本。留空使用默认中文字符池。")}
+            <input className="rounded-md border bg-background px-3 py-2" type="text" value={props.inputCharset} onChange={(e) => props.setInputCharset(e.target.value)} placeholder="留空=默认中文字符池" />
           </label>
           <div className="md:col-span-2 rounded-md border bg-background p-3">
             <p className="mb-2 text-sm font-medium">有效触控区域</p>

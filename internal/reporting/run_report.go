@@ -970,14 +970,19 @@ func detectImageExt(data []byte) string {
 	return ".png"
 }
 
-// findFirstScreenshot 在页面产物目录中找到第一个截图，用作代表图。
-// 优先 before，没有则 fallback 到 after。
+// findFirstScreenshot 在页面产物目录中找到代表截图。
+// 优先级：original.png > 第一个 before 截图 > 第一个 after 截图。
 // artifactDirName 是产物目录相对于 md 报告文件的路径前缀（如 "run-report_artifacts"）。
 func findFirstScreenshot(rootDir string, pageDirName string, artifactDirName string) string {
 	dirPath := filepath.Join(rootDir, pageDirName)
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return ""
+	}
+	// 优先使用 original.png（页面首次截图，最能代表该页面）
+	origPath := filepath.ToSlash(filepath.Join(artifactDirName, pageDirName, "original.png"))
+	if _, err := os.Stat(filepath.Join(dirPath, "original.png")); err == nil {
+		return origPath
 	}
 	var fallback string
 	for _, entry := range entries {

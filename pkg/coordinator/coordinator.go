@@ -907,7 +907,7 @@ const (
 	pageControlStrategyRaw     = "raw"
 	pageControlStrategyOCR     = "ocr"
 	pageControlStrategyLLM     = "llm"
-	defaultPageControlCacheTTL = 30 * time.Minute
+	defaultPageControlCacheTTL = 7 * 24 * time.Hour // 一周
 )
 
 func normalizePageControlStrategy(strategy string) string {

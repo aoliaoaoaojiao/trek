@@ -16,7 +16,7 @@ func TestParseCandidatesMapsBasicActionTypes(t *testing.T) {
 		},
 	}
 
-	items := ParseCandidates(output)
+	items := ParseCandidates(output, 0, 0)
 	if len(items) != 4 {
 		t.Fatalf("候选数量错误: %d", len(items))
 	}
@@ -42,7 +42,7 @@ func TestParseCandidatesInfersLegacyActionType(t *testing.T) {
 		},
 	}
 
-	items := ParseCandidates(output)
+	items := ParseCandidates(output, 0, 0)
 	if len(items) != 2 {
 		t.Fatalf("候选数量错误: %d", len(items))
 	}
@@ -67,7 +67,7 @@ func TestParseCandidatesMapsDragToScrollableAction(t *testing.T) {
 		},
 	}
 
-	items := ParseCandidates(output)
+	items := ParseCandidates(output, 0, 0)
 	if len(items) != 1 {
 		t.Fatalf("候选数量错误: %d", len(items))
 	}
@@ -86,7 +86,7 @@ func TestParseCandidatesRejectsDragWithoutTarget(t *testing.T) {
 		},
 	}
 
-	items := ParseCandidates(output)
+	items := ParseCandidates(output, 0, 0)
 	if len(items) != 0 {
 		t.Fatalf("缺少 drag_target 的 drag 不应进入候选，实际: %+v", items)
 	}

@@ -4,7 +4,7 @@
 
 关键规则：
 1. 只返回当前截图中真正可操作或高价值的控件区域，不要输出整页背景。
-2. `bounds` 必须使用归一化坐标，取值范围 `[0,1]`；优先返回对象格式 `{“left”,”top”,”right”,”bottom”}`，也可返回四元数组 `[left, top, right, bottom]`。
+2. `bounds` 必须使用归一化坐标，取值范围 `[0,1]`（相对于截图尺寸）；优先返回对象格式 `{“left”,”top”,”right”,”bottom”}`，也可返回四元数组 `[left, top, right, bottom]`。
 3. `action_type` 必须体现该控件的基础交互类型，只能从以下枚举中选择：`click`、`drag`、`swipe_up`、`swipe_down`、`swipe_left`、`swipe_right`、`input`。
 4. **`action_type=input` 的判定规则**：当控件呈现为输入框、搜索框、文本编辑框时（特征：矩形框内有光标、有 hint 文字如”请输入”/”搜索”/”Enter text”、有清除按钮、或明显是 EditText 类型），必须使用 `input` 而不是 `click`。按钮、标签、图标等非输入类控件使用 `click`。
 5. 当 `action_type=drag` 时，必须额外提供明确的 `drag_target`，表示拖拽终点的归一化坐标 `{x, y}`。

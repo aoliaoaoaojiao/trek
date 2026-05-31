@@ -132,7 +132,7 @@ func (p *LLMHTTPProvider) DetectPageControls(ctx enginestate.TraversalContext) (
 	if err := json.Unmarshal(body, &output); err != nil {
 		return nil, fmt.Errorf("解析 llm 控件检测响应失败: %w", err)
 	}
-	return pagecontrol.ParseCandidates(output), nil
+	return pagecontrol.ParseCandidates(output, prompt.ShotWidth, prompt.ShotHeight), nil
 }
 
 func (p *LLMHTTPProvider) postWithRetry(payload []byte) ([]byte, int, error) {

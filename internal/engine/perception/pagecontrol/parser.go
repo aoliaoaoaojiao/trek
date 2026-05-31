@@ -63,9 +63,17 @@ func (b *Bounds) UnmarshalJSON(data []byte) error {
 }
 
 // ParseCandidates 将页面控件响应转换为统一候选列表。
-func ParseCandidates(output Response) []perception.Candidate {
+// shotWidth/shotHeight 是发送给 LLM 的截图尺寸，用于像素坐标归一化。
+func ParseCandidates(output Response, shotWidth, shotHeight int) []perception.Candidate {
 	items := make([]perception.Candidate, 0, len(output.Controls))
 	for _, raw := range output.Controls {
+		// 坐标格式适配：统一归一化到 [0,1]
+		nb := normalizeBounds(raw.Bounds.Left, raw.Bounds.Top, raw.Bounds.Right, raw.Bounds.Bottom, shotWidth, shotHeight)
+		raw.Bounds.Left, raw.Bounds.Top, raw.Bounds.Right, raw.Bounds.Bottom = nb[0], nb[1], nb[2], nb[3]
+		if raw.DragTarget != nil {
+			ndr := normalizeBounds(raw.DragTarget.X, raw.DragTarget.Y, raw.DragTarget.X, raw.DragTarget.Y, shotWidth, shotHeight)
+			raw.DragTarget = &types.Point{X: ndr[0], Y: ndr[1]}
+		}
 		cmd, ok := toCommand(raw)
 		if !ok || cmd == nil || !cmd.IsValid() {
 			continue
@@ -96,6 +104,28 @@ func ParseCandidates(output Response) []perception.Candidate {
 		items = append(items, item)
 	}
 	return items
+}
+
+// normalizeBounds 将不同格式的坐标统一归一化到 [0,1]。
+func normalizeBounds(left, top, right, bottom float64, shotWidth, shotHeight int) [4]float64 {
+	// 已经是 [0,1] → 直接返回
+	if right <= 1 && bottom <= 1 {
+		return [4]float64{left, top, right, bottom}
+	}
+	// 0-1000 格式 → 除以 1000
+	if left <= 1000 && top <= 1000 && right <= 1000 && bottom <= 1000 {
+		return [4]float64{left / 1000, top / 1000, right / 1000, bottom / 1000}
+	}
+	// 像素坐标 → 除以截图尺寸
+	if shotWidth > 0 && shotHeight > 0 {
+		return [4]float64{
+			left / float64(shotWidth),
+			top / float64(shotHeight),
+			right / float64(shotWidth),
+			bottom / float64(shotHeight),
+		}
+	}
+	return [4]float64{left, top, right, bottom}
 }
 
 func toCommand(raw Control) (*types.ActionCommand, bool) {

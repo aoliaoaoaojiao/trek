@@ -125,7 +125,8 @@ func (p *AnthropicMessagesProvider) DetectPageControls(ctx enginestate.Traversal
 	if p == nil {
 		return nil, nil
 	}
-	payload, err := p.buildPageControlRequestPayload(ctx)
+	prompt := pagecontrol.BuildPrompt(ctx)
+	payload, err := p.buildPageControlRequestPayloadFromPrompt(prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +145,7 @@ func (p *AnthropicMessagesProvider) DetectPageControls(ctx enginestate.Traversal
 	if err := json.Unmarshal([]byte(text), &output); err != nil {
 		return nil, fmt.Errorf("解析 anthropic 控件检测输出失败: %w", err)
 	}
-	return pagecontrol.ParseCandidates(output), nil
+	return pagecontrol.ParseCandidates(output, prompt.ShotWidth, prompt.ShotHeight), nil
 }
 
 func (p *AnthropicMessagesProvider) buildRequestPayload(ctx enginestate.TraversalContext) ([]byte, error) {
@@ -167,6 +168,10 @@ func (p *AnthropicMessagesProvider) buildRequestPayload(ctx enginestate.Traversa
 
 func (p *AnthropicMessagesProvider) buildPageControlRequestPayload(ctx enginestate.TraversalContext) ([]byte, error) {
 	prompt := pagecontrol.BuildPrompt(ctx)
+	return p.buildPageControlRequestPayloadFromPrompt(prompt)
+}
+
+func (p *AnthropicMessagesProvider) buildPageControlRequestPayloadFromPrompt(prompt pagecontrol.Prompt) ([]byte, error) {
 	userContent := p.buildUserContent(prompt.UserContent, prompt.ScreenshotMediaType, prompt.ScreenshotBase64())
 	payload := map[string]any{
 		"model":       p.model,

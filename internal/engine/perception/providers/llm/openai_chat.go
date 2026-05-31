@@ -100,7 +100,8 @@ func (p *OpenAIChatProvider) DetectPageControls(ctx enginestate.TraversalContext
 	if p == nil {
 		return nil, nil
 	}
-	payload, err := p.buildPageControlRequestPayload(ctx)
+	prompt := pagecontrol.BuildPrompt(ctx)
+	payload, err := p.buildPageControlRequestPayloadFromPrompt(prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +120,7 @@ func (p *OpenAIChatProvider) DetectPageControls(ctx enginestate.TraversalContext
 	if err := json.Unmarshal([]byte(text), &output); err != nil {
 		return nil, fmt.Errorf("解析 openai chat 控件检测输出失败: %w", err)
 	}
-	return pagecontrol.ParseCandidates(output), nil
+	return pagecontrol.ParseCandidates(output, prompt.ShotWidth, prompt.ShotHeight), nil
 }
 
 // buildRequestPayload 构建 Chat Completions API 请求载荷。
@@ -170,6 +171,10 @@ func (p *OpenAIChatProvider) buildRequestPayload(ctx enginestate.TraversalContex
 
 func (p *OpenAIChatProvider) buildPageControlRequestPayload(ctx enginestate.TraversalContext) ([]byte, error) {
 	prompt := pagecontrol.BuildPrompt(ctx)
+	return p.buildPageControlRequestPayloadFromPrompt(prompt)
+}
+
+func (p *OpenAIChatProvider) buildPageControlRequestPayloadFromPrompt(prompt pagecontrol.Prompt) ([]byte, error) {
 	userContent := []map[string]any{
 		{"type": "text", "text": prompt.UserContent},
 	}

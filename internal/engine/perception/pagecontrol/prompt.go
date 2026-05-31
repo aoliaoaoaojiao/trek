@@ -1,9 +1,13 @@
 package pagecontrol
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/base64"
 	"fmt"
+	"image"
+	"image/jpeg"
+	_ "image/png"
 	"strings"
 
 	enginestate "trek/internal/engine/state"
@@ -12,6 +16,8 @@ import (
 //go:embed prompt_system.md
 var promptSystemContent string
 
+const llmScreenshotMaxWidth = 1280
+
 // Prompt 是页面控件检测专用提示，供视觉模型输出控件区域。
 type Prompt struct {
 	SystemContent       string
@@ -19,6 +25,10 @@ type Prompt struct {
 	Screenshot          []byte
 	ScreenshotMediaType string
 	ResponseSchema      map[string]any
+	OrigWidth           int
+	OrigHeight          int
+	ShotWidth           int
+	ShotHeight          int
 }
 
 // ScreenshotBase64 返回截图的 base64 编码字符串。
@@ -31,27 +41,89 @@ func (p *Prompt) ScreenshotBase64() string {
 
 // BuildPrompt 构建页面控件检测提示。
 func BuildPrompt(ctx enginestate.TraversalContext) Prompt {
-	userMessage := buildUserMessage(ctx)
+	screenshot := cloneBytes(ctx.Screenshot)
+	origW, origH, shotW, shotH := 0, 0, 0, 0
+	resized := false
+	if len(screenshot) > 0 {
+		screenshot, origW, origH, shotW, shotH = resizeForLLM(screenshot)
+		resized = origW != shotW || origH != shotH
+	}
+	userMessage := buildUserMessage(ctx, origW, origH)
 	mediaType := "image/png"
-	if len(ctx.Screenshot) == 0 {
+	if len(screenshot) == 0 {
 		mediaType = ""
+	} else if resized {
+		mediaType = "image/jpeg"
 	}
 	return Prompt{
 		SystemContent:       strings.TrimSpace(promptSystemContent),
 		UserContent:         userMessage,
-		Screenshot:          cloneBytes(ctx.Screenshot),
+		Screenshot:          screenshot,
 		ScreenshotMediaType: mediaType,
 		ResponseSchema:      schema(),
+		OrigWidth:           origW,
+		OrigHeight:          origH,
+		ShotWidth:           shotW,
+		ShotHeight:          shotH,
 	}
 }
 
-func buildUserMessage(ctx enginestate.TraversalContext) string {
+// resizeForLLM 缩放截图以减少 token 消耗，返回缩放后的字节和原始/缩放后尺寸。
+func resizeForLLM(data []byte, maxWidths ...int) ([]byte, int, int, int, int) {
+	maxWidth := llmScreenshotMaxWidth
+	if len(maxWidths) > 0 && maxWidths[0] > 0 {
+		maxWidth = maxWidths[0]
+	}
+	if len(data) == 0 {
+		return data, 0, 0, 0, 0
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return data, 0, 0, 0, 0
+	}
+	bounds := img.Bounds()
+	origW := bounds.Dx()
+	origH := bounds.Dy()
+	if origW <= maxWidth {
+		return data, origW, origH, origW, origH
+	}
+	scale := float64(maxWidth) / float64(origW)
+	newW := maxWidth
+	newH := int(float64(origH)*scale + 0.5)
+	if newH <= 0 {
+		newH = 1
+	}
+	resized := image.NewRGBA(image.Rect(0, 0, newW, newH))
+	for y := 0; y < newH; y++ {
+		srcY := bounds.Min.Y + int(float64(y)/scale+0.5)
+		if srcY >= bounds.Max.Y {
+			srcY = bounds.Max.Y - 1
+		}
+		for x := 0; x < newW; x++ {
+			srcX := bounds.Min.X + int(float64(x)/scale+0.5)
+			if srcX >= bounds.Max.X {
+				srcX = bounds.Max.X - 1
+			}
+			resized.Set(x, y, img.At(srcX, srcY))
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, resized, &jpeg.Options{Quality: 85}); err != nil {
+		return data, origW, origH, origW, origH
+	}
+	return buf.Bytes(), origW, origH, newW, newH
+}
+
+func buildUserMessage(ctx enginestate.TraversalContext, origW, origH int) string {
 	var sb strings.Builder
 	if ctx.PageName != "" {
 		sb.WriteString(fmt.Sprintf("页面名: %s\n", ctx.PageName))
 	}
 	if ctx.Step > 0 {
 		sb.WriteString(fmt.Sprintf("当前步数: %d\n", ctx.Step))
+	}
+	if origW > 0 && origH > 0 {
+		sb.WriteString(fmt.Sprintf("设备屏幕分辨率: %dx%d\n", origW, origH))
 	}
 	if ctx.XML != "" {
 		xmlSnippet := ctx.XML

@@ -168,7 +168,7 @@ func detectPageControlsWithLoggedHTTPResponse(
 	if err := json.Unmarshal(body, &output); err != nil {
 		return nil, fmt.Errorf("解析 llm http 控件检测响应失败: %w", err)
 	}
-	return pagecontrol.ParseCandidates(output), nil
+	return pagecontrol.ParseCandidates(output, 0, 0), nil
 }
 
 func detectPageControlsWithLoggedOpenAIResponse(
@@ -220,7 +220,7 @@ func detectPageControlsWithLoggedOpenAIResponse(
 	if err := json.Unmarshal([]byte(text), &output); err != nil {
 		return nil, fmt.Errorf("解析 openai chat 控件检测输出失败: %w", err)
 	}
-	return pagecontrol.ParseCandidates(output), nil
+	return pagecontrol.ParseCandidates(output, 0, 0), nil
 }
 
 func detectPageControlsWithLoggedAnthropicResponse(
@@ -263,7 +263,7 @@ func detectPageControlsWithLoggedAnthropicResponse(
 	if err := json.Unmarshal([]byte(text), &output); err != nil {
 		return nil, fmt.Errorf("解析 anthropic 控件检测输出失败: %w", err)
 	}
-	return pagecontrol.ParseCandidates(output), nil
+	return pagecontrol.ParseCandidates(output, 0, 0), nil
 }
 
 func postJSONWithBearerAuth(endpoint string, apiKey string, payload any, extraHeaders map[string]string) ([]byte, int, error) {

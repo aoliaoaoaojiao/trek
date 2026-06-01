@@ -20,3 +20,4 @@ CLAUDE.md
 .env.*.local
 log/
 /config.generated.js
+*.sqlite

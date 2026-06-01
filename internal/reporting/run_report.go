@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 	"time"
 
 	"github.com/beevik/etree"
@@ -112,6 +113,7 @@ type PageSummary struct {
 	VisitCount               int              `json:"visit_count"`
 	ActionCount              int              `json:"action_count"`
 	InteractableControlCount int              `json:"interactable_control_count"`
+	BlockDetectionSteps      []int            `json:"block_detection_steps,omitempty"`
 	ArtifactDir              string           `json:"artifact_dir,omitempty"`
 	RepresentativeScreenshot string           `json:"representative_screenshot,omitempty"`
 	ControlsDetailFile       string           `json:"controls_detail_file,omitempty"`
@@ -160,6 +162,7 @@ func WriteRunReportWithArtifacts(path string, format string, artifactDir string,
 	if err != nil {
 		return err
 	}
+	content = sanitizeUTF8(content)
 	if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
 		return fmt.Errorf("创建报告目录失败: %w", err)
 	}
@@ -409,8 +412,12 @@ func renderMarkdown(envelope RunReportEnvelope) string {
 					if page.Label != "" {
 						label = escapeMarkdownCell(truncatePageName(page.Label, 20))
 					}
-					b.WriteString(fmt.Sprintf("<td style=\"padding:4px 8px; text-align:center; vertical-align:top; font-size:13px;\">\n<a href=\"#page-%s\" style=\"color:inherit; text-decoration:none;\"><b>P%s</b> %s</a><br/><span style=\"color:#888; font-size:11px;\">%d 访问 / %d 操作</span>\n</td>\n",
-						id, id, label, page.VisitCount, page.ActionCount))
+					blockInfo := ""
+					if len(page.BlockDetectionSteps) > 0 {
+						blockInfo = fmt.Sprintf(" / <span style=\"color:#f59e0b;\">⚠ %d 阻塞</span>", len(page.BlockDetectionSteps))
+					}
+					b.WriteString(fmt.Sprintf("<td style=\"padding:4px 8px; text-align:center; vertical-align:top; font-size:13px;\">\n<a href=\"#page-%s\" style=\"color:inherit; text-decoration:none;\"><b>P%s</b> %s</a><br/><span style=\"color:#888; font-size:11px;\">%d 访问 / %d 操作%s</span>\n</td>\n",
+						id, id, label, page.VisitCount, page.ActionCount, blockInfo))
 				}
 				for j := len(envelope.Pages[i:end]); j < perPageRow; j++ {
 					b.WriteString("<td style=\"padding:4px 8px; width:180px;\"></td>\n")
@@ -511,6 +518,9 @@ func renderStepTimeline(records []monkey.StepRecord, pageIDMap map[string]string
 		b.WriteString(fmt.Sprintf("操作：%s\n\n", escapeMarkdownCell(action)))
 		b.WriteString(fmt.Sprintf("结果：%s\n\n", resultText))
 		b.WriteString(fmt.Sprintf("页面理解：%s\n\n", strategyDesc))
+		if r.BlockDetected {
+			b.WriteString(fmt.Sprintf("⚠️ 阻塞检测：%s\n\n", r.BlockReason))
+		}
 		b.WriteString(fmt.Sprintf("耗时：%s\n", formatDuration(r.DurationMs)))
 		// 章节之间空一行（除了最后一个）
 		if i < len(records)-1 && (r.Step)%stepsPerSection == 0 {
@@ -570,6 +580,10 @@ func writePageDetailsCompact(b *strings.Builder, pages []PageSummary, pageIDMap 
 		}
 		if len(page.TopActions) > 0 {
 			b.WriteString(fmt.Sprintf("- 动作: %s\n", formatCountMapInline(page.TopActions)))
+		}
+		if len(page.BlockDetectionSteps) > 0 {
+			stepList := formatIntList(page.BlockDetectionSteps)
+			b.WriteString(fmt.Sprintf("- ⚠️ 阻塞检测: %d 次 (步骤 %s)\n", len(page.BlockDetectionSteps), stepList))
 		}
 		if len(page.TopControls) > 0 {
 			b.WriteString("\n| 文本/描述 | 类型 | 动作 | 出现 | 执行 |\n")
@@ -1008,11 +1022,12 @@ func findFirstScreenshot(rootDir string, pageDirName string, artifactDirName str
 }
 
 type pageAggregate struct {
-	PageName    string
-	VisitCount  int
-	ActionCount int
-	Actions     map[string]int
-	Controls    map[string]*controlAggregate
+	PageName            string
+	VisitCount          int
+	ActionCount         int
+	Actions             map[string]int
+	Controls            map[string]*controlAggregate
+	BlockDetectionSteps []int
 }
 
 type controlAggregate struct {
@@ -1050,6 +1065,9 @@ func buildPageSummaries(records []monkey.StepRecord) []PageSummary {
 			if action := strings.TrimSpace(record.Action); action != "" {
 				page.ActionCount++
 				page.Actions[action]++
+			}
+			if record.BlockDetected {
+				page.BlockDetectionSteps = append(page.BlockDetectionSteps, record.Step)
 			}
 			// 优先使用 IElement，为空时回退到 XML 解析
 			var xmlControls []interactableControl
@@ -1114,6 +1132,7 @@ func buildPageSummaries(records []monkey.StepRecord) []PageSummary {
 			VisitCount:               page.VisitCount,
 			ActionCount:              page.ActionCount,
 			InteractableControlCount: len(topControls),
+			BlockDetectionSteps:      page.BlockDetectionSteps,
 			TopActions:               cloneCountMap(page.Actions),
 			Controls:                 append([]ControlSummary(nil), topControls...),
 			TopControls:              append([]ControlSummary(nil), topControls...),
@@ -1556,6 +1575,34 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// sanitizeUTF8 清理无效的 UTF-8 序列，替换为 Unicode 替换字符。
+func sanitizeUTF8(data []byte) []byte {
+	if utf8.Valid(data) {
+		return data
+	}
+	var buf bytes.Buffer
+	buf.Grow(len(data))
+	for len(data) > 0 {
+		r, size := utf8.DecodeRune(data)
+		if r == utf8.RuneError && size <= 1 {
+			buf.WriteRune(utf8.RuneError)
+			data = data[1:]
+		} else {
+			buf.WriteRune(r)
+			data = data[size:]
+		}
+	}
+	return buf.Bytes()
+}
+
+func formatIntList(nums []int) string {
+	parts := make([]string, len(nums))
+	for i, n := range nums {
+		parts[i] = fmt.Sprintf("%d", n)
+	}
+	return strings.Join(parts, ", ")
 }
 
 func formatCountMapInline(counts map[string]int) string {

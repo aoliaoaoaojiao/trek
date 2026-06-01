@@ -40,6 +40,17 @@ type VisitStats struct {
 	ActionCount    map[string]int
 }
 
+// ExecutionRecord 描述单步执行历史，供重复阻塞恢复时传递给 LLM。
+type ExecutionRecord struct {
+	Step        int    `json:"step"`
+	Action      string `json:"action"`
+	PageName    string `json:"page_name"`
+	AfterPage   string `json:"after_page"`
+	Escaped     bool   `json:"escaped"`
+	Blocked     bool   `json:"blocked"`
+	BlockReason string `json:"block_reason,omitempty"`
+}
+
 // CandidateSummary 是供恢复/增强提示词使用的轻量候选摘要。
 type CandidateSummary struct {
 	ActionKey   string
@@ -66,6 +77,7 @@ type TraversalContext struct {
 	LocalCandidates     []CandidateSummary
 	KnownFailedActions  []string
 	KnownSuccessActions []string
+	ExecutionHistory    []ExecutionRecord
 }
 
 // BuildInput 用于构建 TraversalContext。
@@ -84,6 +96,7 @@ type BuildInput struct {
 	LocalCandidates     []CandidateSummary
 	KnownFailedActions  []string
 	KnownSuccessActions []string
+	ExecutionHistory    []ExecutionRecord
 }
 
 // BuildTraversalContext 基于输入构建独立快照，避免运行时状态泄漏到公共层。
@@ -105,6 +118,7 @@ func BuildTraversalContext(input BuildInput) TraversalContext {
 		LocalCandidates:     cloneCandidateSummaries(input.LocalCandidates),
 		KnownFailedActions:  cloneStringSlice(input.KnownFailedActions),
 		KnownSuccessActions: cloneStringSlice(input.KnownSuccessActions),
+		ExecutionHistory:    cloneExecutionHistory(input.ExecutionHistory),
 	}
 }
 
@@ -142,6 +156,15 @@ func cloneStringSlice(src []string) []string {
 		return nil
 	}
 	result := make([]string, len(src))
+	copy(result, src)
+	return result
+}
+
+func cloneExecutionHistory(src []ExecutionRecord) []ExecutionRecord {
+	if len(src) == 0 {
+		return nil
+	}
+	result := make([]ExecutionRecord, len(src))
 	copy(result, src)
 	return result
 }

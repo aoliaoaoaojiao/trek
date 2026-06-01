@@ -19,6 +19,7 @@ type blockDetector struct {
 	recentTraces       []traceRecord
 	lastReason         string
 	ignoredActionTypes map[types.ActionType]bool
+	pageBlockSteps     map[string][]int // pageName -> 检测到阻塞的步骤列表
 }
 
 type traceRecord struct {
@@ -118,6 +119,32 @@ func (d *blockDetector) Reset() {
 	}
 	d.recentTraces = d.recentTraces[:0]
 	d.lastReason = ""
+}
+
+// RecordBlockStep 记录某页面发生阻塞的步骤号，用于重复阻塞检测。
+func (d *blockDetector) RecordBlockStep(pageName string, step int) {
+	if d == nil || pageName == "" {
+		return
+	}
+	if d.pageBlockSteps == nil {
+		d.pageBlockSteps = make(map[string][]int)
+	}
+	d.pageBlockSteps[pageName] = append(d.pageBlockSteps[pageName], step)
+}
+
+// CheckRepeatBlock 检查同一页面是否反复阻塞。
+// 当同一页面被阻塞 2 次以上时返回 true，表示恢复机制失效，应使用 LLM 规划。
+func (d *blockDetector) CheckRepeatBlock(pageName string, currentStep int, _ int) bool {
+	if d == nil || pageName == "" {
+		return false
+	}
+	steps, ok := d.pageBlockSteps[pageName]
+	if !ok || len(steps) < 2 {
+		return false
+	}
+	// 同一页面已被阻塞 2 次以上，说明恢复机制失效
+	_ = currentStep // 保留参数兼容性
+	return true
 }
 
 func (d *blockDetector) LastReason() string {

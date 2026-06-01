@@ -511,10 +511,18 @@ func (s *Coordinator) BuildKnownRecoveryActions(ctx enginestate.TraversalContext
 	return failed, success, nil
 }
 
-// BuildLLMRecoveryCandidates 已废弃。
-// LLM 不再直接参与动作决策，仅用于页面控件检测。
+// BuildLLMRecoveryCandidates 通过 LLM provider 构建恢复候选。
+// 用于重复阻塞场景下直接调用 LLM 规划，跳过常规恢复流程。
 func (s *Coordinator) BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
-	_ = ctx
+	if s == nil || s.llmProvider == nil {
+		return nil, nil
+	}
+	// 底层 provider (LLMHTTPProvider / OpenAIResponsesProvider) 都实现了 BuildCandidates
+	if provider, ok := s.llmProvider.(interface {
+		BuildCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error)
+	}); ok {
+		return provider.BuildCandidates(ctx)
+	}
 	return nil, nil
 }
 

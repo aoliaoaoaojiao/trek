@@ -1149,7 +1149,7 @@ func TestSessionBuildKnownSuccessfulRecoveryActions(t *testing.T) {
 	}
 }
 
-func TestSessionBuildLLMRecoveryCandidatesDisabled(t *testing.T) {
+func TestSessionBuildLLMRecoveryCandidatesEnabled(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"candidates": []map[string]any{
@@ -1181,17 +1181,23 @@ func TestSessionBuildLLMRecoveryCandidatesDisabled(t *testing.T) {
 		BlockReason: "same_page_no_change",
 	})
 	if err != nil {
-		t.Fatalf("调用已禁用的 llm 恢复候选接口失败: %v", err)
+		t.Fatalf("llm 恢复候选接口调用失败: %v", err)
 	}
-	if len(items) != 0 {
-		t.Fatalf("llm 不应再直接参与决策，实际返回: %+v", items)
+	if len(items) == 0 {
+		t.Fatalf("llm 恢复候选应返回至少一个候选")
 	}
 }
 
-func TestSessionBuildLLMRecoveryCandidatesWithOpenAIResponsesProviderDisabled(t *testing.T) {
+func TestSessionBuildLLMRecoveryCandidatesWithOpenAIResponsesProviderEnabled(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"output_text": `{"candidates":[{"intent":"返回","action_type":"BACK","confidence":0.8}]}`,
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `{"candidates":[{"intent":"返回","action_type":"BACK","confidence":0.8}]}`,
+					},
+				},
+			},
 		})
 	}))
 	defer server.Close()
@@ -1213,10 +1219,10 @@ func TestSessionBuildLLMRecoveryCandidatesWithOpenAIResponsesProviderDisabled(t 
 		BlockReason: "same_page_no_change",
 	})
 	if err != nil {
-		t.Fatalf("openai provider 调用已禁用接口失败: %v", err)
+		t.Fatalf("openai provider 调用失败: %v", err)
 	}
-	if len(items) != 0 {
-		t.Fatalf("openai provider 不应再直接返回决策候选: %+v", items)
+	if len(items) == 0 {
+		t.Fatalf("openai provider 应返回至少一个候选")
 	}
 }
 

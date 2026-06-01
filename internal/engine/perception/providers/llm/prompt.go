@@ -57,6 +57,7 @@ type RecoveryContextFields struct {
 	LocalCandidates     []enginestate.CandidateSummary `json:"local_candidates,omitempty"`
 	KnownFailedActions  []string                       `json:"known_failed_actions,omitempty"`
 	KnownSuccessActions []string                       `json:"known_success_actions,omitempty"`
+	ExecutionHistory    []enginestate.ExecutionRecord  `json:"execution_history,omitempty"`
 }
 
 // ScreenshotBase64 返回截图的 base64 编码字符串，供 HTTP provider 使用。
@@ -107,6 +108,7 @@ func buildRecoveryPrompt(ctx enginestate.TraversalContext) RecoveryPrompt {
 			LocalCandidates:     cloneCandidateSummary(ctx.LocalCandidates),
 			KnownFailedActions:  cloneStringSlice(limitStrings(ctx.KnownFailedActions, 12)),
 			KnownSuccessActions: cloneStringSlice(limitStrings(ctx.KnownSuccessActions, 12)),
+			ExecutionHistory:    cloneExecutionHistory(ctx.ExecutionHistory),
 		},
 		ResponseSchema: recoveryCandidateSchema(),
 	}
@@ -164,6 +166,22 @@ func buildUserMessage(ctx enginestate.TraversalContext) string {
 		sb.WriteString("已知成功动作:\n")
 		for _, item := range limitStrings(ctx.KnownSuccessActions, 12) {
 			sb.WriteString(fmt.Sprintf("  %s\n", item))
+		}
+	}
+
+	// 重复阻塞执行历史
+	if len(ctx.ExecutionHistory) > 0 {
+		sb.WriteString("重复阻塞历史（最近操作）:\n")
+		for _, rec := range ctx.ExecutionHistory {
+			status := "→ " + rec.AfterPage
+			if !rec.Escaped {
+				status += " 未变化"
+			}
+			if rec.Blocked {
+				status += " [阻塞: " + rec.BlockReason + "]"
+			}
+			sb.WriteString(fmt.Sprintf("  step %d: %s @ page %s %s\n",
+				rec.Step, rec.Action, rec.PageName, status))
 		}
 	}
 
@@ -289,4 +307,13 @@ func limitCandidates(src []enginestate.CandidateSummary, limit int) []enginestat
 		return src
 	}
 	return src[:limit]
+}
+
+func cloneExecutionHistory(src []enginestate.ExecutionRecord) []enginestate.ExecutionRecord {
+	if len(src) == 0 {
+		return nil
+	}
+	result := make([]enginestate.ExecutionRecord, len(src))
+	copy(result, src)
+	return result
 }

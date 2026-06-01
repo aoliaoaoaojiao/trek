@@ -12,6 +12,21 @@ import (
 
 func (r *Runner) nextCommandWithRecovery(step int, beforePage coordinator.PageSnapshot, pageName string, input coordinator.ActionInput) (*types.ActionCommand, error) {
 	r.lastEnhancementAttempt = nil
+
+	// 直接 LLM 规划（重复阻塞检测触发）
+	if r.pendingDirectLLMPlan {
+		r.pendingDirectLLMPlan = false
+		r.directLLMUsed = true
+		cmd, err := r.nextDirectLLMPlanningCommand(step, beforePage, pageName, input)
+		if err != nil {
+			logger.Warnf("direct LLM planning failed, fallback to normal recovery: %v", err)
+		} else if cmd != nil {
+			logger.Infof("direct LLM planning command selected: %s", cmd.DetailLogString())
+			return cmd, nil
+		}
+		// fallback 到正常恢复流程
+	}
+
 	if !r.pendingBlockRecovery {
 		cmd, weighted, err := r.nextCommandWithCandidates(pageName, input)
 		if err != nil || cmd == nil {
@@ -289,6 +304,85 @@ func (r *Runner) nextBlockRecoveryCommand(pageName string, input coordinator.Act
 	fallback := &types.ActionCommand{Act: types.BACK}
 	r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(fallback, perception.SourceHeuristic)}
 	return fallback, nil
+}
+
+// nextDirectLLMPlanningCommand 在重复阻塞时综合 Memory + Heuristic + LLM 规划。
+// 将最近 2n 步的执行历史注入 TraversalContext，融合多来源候选后选择最佳动作。
+func (r *Runner) nextDirectLLMPlanningCommand(step int, beforePage coordinator.PageSnapshot, pageName string, input coordinator.ActionInput) (*types.ActionCommand, error) {
+	history := r.collectStepContextHistory(r.directLLMHistorySteps)
+	execHistory := r.buildExecutionHistory(history)
+	ctx := r.buildTraversalContextWithHistory(step, beforePage, execHistory)
+
+	provider, ok := r.decider.(RecoveryCandidateProvider)
+	if !ok || provider == nil {
+		return nil, nil
+	}
+
+	// 收集已知失败/成功动作
+	knownFailed, knownSuccess, knownErr := r.collectBothKnownActions(ctx)
+	if knownErr != nil {
+		return nil, knownErr
+	}
+	ctx.KnownFailedActions = actionKeyList(knownFailed)
+	ctx.KnownSuccessActions = actionKeyList(knownSuccess)
+
+	// 从 Memory 获取历史经验
+	var items []perception.Candidate
+	if memoryItems, err := provider.BuildMemoryRecoveryCandidates(ctx); err == nil {
+		items = append(items, memoryItems...)
+	}
+
+	// 从 Heuristic 获取启发式候选
+	if heuristicItems, err := provider.BuildHeuristicRecoveryCandidates(ctx); err == nil {
+		items = append(items, heuristicItems...)
+	}
+
+	// 如果 Memory 已有高置信度候选，跳过 LLM（LLM 成本高，且经验已足够好）
+	if !hasHighConfidenceCandidate(items) {
+		// 从 LLM 获取智能候选（注入执行历史上下文）
+		if llmItems, err := provider.BuildLLMRecoveryCandidates(ctx); err == nil {
+			items = append(items, llmItems...)
+		}
+	}
+
+	if len(items) == 0 {
+		return nil, nil
+	}
+
+	// 融合候选：排除已知失败、降低风险分数
+	fused := perception.FuseCandidates(items, perception.FusionOptions{
+		KnownFailedActions:   knownFailed,
+		RiskDropThreshold:    r.cfg.CandidateRiskDropThreshold,
+		EnableMinScoreFilter: true,
+		MinScoreThreshold:    r.cfg.CandidateMinFusionScore,
+		KeepTopOnFiltered:    true,
+	})
+
+	// 通过算法选择最佳候选
+	if selector, ok := r.decider.(RecoveryCandidateSelector); ok && selector != nil {
+		selected, selectErr := selector.SelectRecoveryAction(ctx, fused)
+		if selectErr == nil && selected != nil {
+			r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(selected, perception.SourceLLM)}
+			return selected, nil
+		}
+	}
+	// 回退到第一个有效候选
+	if item := firstCandidateWithCommand(fused); item != nil {
+		r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: *item}
+		return item.Command, nil
+	}
+	return nil, nil
+}
+
+// hasHighConfidenceCandidate 检查候选列表中是否有高置信度的 Memory 候选。
+func hasHighConfidenceCandidate(items []perception.Candidate) bool {
+	const highConfidenceThreshold = 0.9
+	for _, item := range items {
+		if item.Source == perception.SourceMemory && item.Confidence >= highConfidenceThreshold {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Runner) getRecoveryPlanner() recovery.RecoveryPlanner {

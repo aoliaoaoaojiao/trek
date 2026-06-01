@@ -323,6 +323,10 @@ type Runner struct {
 	cachedScreenW          int
 	cachedScreenH          int
 	recoveryTriedBack      bool
+	stepContextBuffer      []stepContext // 环形缓冲区，保存最近 2*threshold+4 步
+	pendingDirectLLMPlan   bool          // 标记需要直接 LLM 规划
+	directLLMHistorySteps  int           // 需要回溯的步数
+	directLLMUsed          bool          // 本次阻塞周期是否已使用过直接 LLM
 }
 
 type recoveryAttempt struct {
@@ -334,6 +338,17 @@ type enhancementAttempt struct {
 	ctx  enginestate.TraversalContext
 	item perception.Candidate
 	step int
+}
+
+// stepContext 记录单步执行的上下文，用于重复阻塞时构建 LLM 执行历史。
+type stepContext struct {
+	step        int
+	action      string
+	pageName    string
+	afterPage   string
+	escaped     bool
+	blocked     bool
+	blockReason string
 }
 
 // NewRunner 创建 Monkey Runner。
@@ -656,13 +671,34 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			escaped = true // 输入必然改变页面内容，视为已逃离
 		}
 		r.notifyTraversalOutcome(step, beforePage, afterPage, cmd, true)
+		// 记录 step 上下文到环形缓冲区
+		afterPageName := ""
+		if afterPage != nil {
+			afterPageName = afterPage.PageName
+		}
+		r.appendStepContext(stepContext{
+			step:      step,
+			action:    record.Action + " " + record.ActionTargetBounds,
+			pageName:  pageName,
+			afterPage: afterPageName,
+			escaped:   escaped,
+		})
 		if r.shouldEnableBlockRecovery() && r.blockDetector.Observe(pageName, buildActionKey(cmd), cmd.Act, escaped) {
 			blockReason := r.blockDetector.LastReason()
+			r.blockDetector.RecordBlockStep(pageName, step)
+			// 检查是否触发直接 LLM 规划
+			if !r.directLLMUsed && r.blockDetector.CheckRepeatBlock(pageName, step, 2) {
+				r.pendingDirectLLMPlan = true
+				r.directLLMHistorySteps = 2 * r.blockDetector.threshold
+				logger.Infof("repeat block detected on page %s at step %d, will use direct LLM planning", pageName, step)
+			}
 			r.handleBlockDetectedWithPage(blockReason, &beforePage)
 			report.BlockDetectionCount++
 			report.BlockReasonCount[blockReason]++
 			record.BlockDetected = true
 			record.BlockReason = blockReason
+			// 更新 step context 中的 block 信息
+			r.updateLastStepContextBlock(blockReason)
 			logger.Warnf("monkey step=%d detected block loop reason=%s mode=%s pending=%t",
 				step, blockReason, r.recoveryState.Mode(), r.pendingBlockRecovery)
 			if r.pendingBlockRecovery {
@@ -670,6 +706,9 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			}
 		} else if afterPage != nil && r.recoveryState != nil && r.recoveryState.Mode() == TraversalModeRecover {
 			r.handleProgress(escaped)
+		}
+		if escaped {
+			r.directLLMUsed = false
 		}
 		r.recordRecoveryOutcome(escaped)
 		crash, anr := r.currentHealthSignals()
@@ -924,4 +963,82 @@ func (r *Runner) shouldUseImagePageControlFallback() bool {
 	default:
 		return false
 	}
+}
+
+// appendStepContext 将单步上下文推入环形缓冲区。
+func (r *Runner) appendStepContext(sc stepContext) {
+	const maxStepContextBuffer = 20
+	r.stepContextBuffer = append(r.stepContextBuffer, sc)
+	if len(r.stepContextBuffer) > maxStepContextBuffer {
+		r.stepContextBuffer = r.stepContextBuffer[len(r.stepContextBuffer)-maxStepContextBuffer:]
+	}
+}
+
+// collectStepContextHistory 从缓冲区取最近 n 步的上下文。
+func (r *Runner) collectStepContextHistory(n int) []stepContext {
+	if n <= 0 || len(r.stepContextBuffer) == 0 {
+		return nil
+	}
+	start := len(r.stepContextBuffer) - n
+	if start < 0 {
+		start = 0
+	}
+	result := make([]stepContext, len(r.stepContextBuffer[start:]))
+	copy(result, r.stepContextBuffer[start:])
+	return result
+}
+
+// buildExecutionHistory 将 stepContext 列表转为 LLM 可用的 ExecutionRecord 列表。
+func (r *Runner) buildExecutionHistory(history []stepContext) []enginestate.ExecutionRecord {
+	if len(history) == 0 {
+		return nil
+	}
+	records := make([]enginestate.ExecutionRecord, 0, len(history))
+	for _, sc := range history {
+		records = append(records, enginestate.ExecutionRecord{
+			Step:        sc.step,
+			Action:      sc.action,
+			PageName:    sc.pageName,
+			AfterPage:   sc.afterPage,
+			Escaped:     sc.escaped,
+			Blocked:     sc.blocked,
+			BlockReason: sc.blockReason,
+		})
+	}
+	return records
+}
+
+// buildTraversalContextWithHistory 构建带有执行历史的 TraversalContext。
+func (r *Runner) buildTraversalContextWithHistory(step int, page coordinator.PageSnapshot, history []enginestate.ExecutionRecord) enginestate.TraversalContext {
+	mode := TraversalModeExplore
+	blockReason := ""
+	if r != nil && r.recoveryState != nil {
+		mode = r.recoveryState.Mode()
+		blockReason = r.recoveryState.BlockReason()
+	}
+	signature := cachedSignature(page)
+	return enginestate.BuildTraversalContext(enginestate.BuildInput{
+		Step:             step,
+		Mode:             mode,
+		PageName:         page.PageName,
+		PageSignature:    signature,
+		ClusterSignature: signature,
+		XML:              page.XML,
+		Screenshot:       page.Screenshot,
+		BlockReason:      blockReason,
+		RecentTrace:      r.cloneRecentTrace(),
+		PageVisitCount:   r.pageVisitCount,
+		ActionCount:      r.actionCount,
+		ExecutionHistory: history,
+	})
+}
+
+// updateLastStepContextBlock 回填最近一步的 block 信息到 stepContext 缓冲区。
+func (r *Runner) updateLastStepContextBlock(blockReason string) {
+	if len(r.stepContextBuffer) == 0 {
+		return
+	}
+	last := &r.stepContextBuffer[len(r.stepContextBuffer)-1]
+	last.blocked = true
+	last.blockReason = blockReason
 }

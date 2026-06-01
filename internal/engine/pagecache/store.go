@@ -1,6 +1,8 @@
 package pagecache
 
 import (
+	"context"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,9 +28,21 @@ type Entry struct {
 
 // Store 管理页面理解缓存的 SQLite 持久化。
 type Store struct {
-	path string
-	db   *gorm.DB
-	mu   sync.RWMutex
+	path      string
+	db        *gorm.DB
+	mu        sync.RWMutex
+	cancel    context.CancelFunc
+	baseTTL   time.Duration
+	maxTTL    time.Duration
+	cleanupFn func(count int) // 可选的清理回调，用于日志记录
+}
+
+// CleanupOptions 配置后台清理行为。
+type CleanupOptions struct {
+	BaseTTL       time.Duration // 基础 TTL
+	MaxTTL        time.Duration // 最大 TTL 上限
+	CleanupEvery  time.Duration // 清理间隔（默认 10 分钟）
+	CleanupFn     func(count int) // 清理回调
 }
 
 type pageCacheRow struct {
@@ -76,7 +90,13 @@ func NewStore(path string) (*Store, error) {
 
 // Close 关闭底层数据库连接。
 func (s *Store) Close() error {
-	if s == nil || s.db == nil {
+	if s == nil {
+		return nil
+	}
+	if s.cancel != nil {
+		s.cancel()
+	}
+	if s.db == nil {
 		return nil
 	}
 	sqlDB, err := s.db.DB()
@@ -84,6 +104,130 @@ func (s *Store) Close() error {
 		return err
 	}
 	return sqlDB.Close()
+}
+
+// StartCleanup 启动后台清理协程，定期删除过期缓存记录。
+func (s *Store) StartCleanup(ctx context.Context, opts CleanupOptions) {
+	if s == nil || s.db == nil {
+		return
+	}
+	if opts.BaseTTL <= 0 {
+		opts.BaseTTL = 1 * time.Hour
+	}
+	if opts.MaxTTL <= 0 {
+		opts.MaxTTL = 72 * time.Hour
+	}
+	if opts.CleanupEvery <= 0 {
+		opts.CleanupEvery = 10 * time.Minute
+	}
+	s.baseTTL = opts.BaseTTL
+	s.maxTTL = opts.MaxTTL
+	s.cleanupFn = opts.CleanupFn
+
+	cleanupCtx, cancel := context.WithCancel(ctx)
+	s.cancel = cancel
+
+	go func() {
+		// 首次清理在启动后立即执行
+		s.cleanupExpired()
+
+		ticker := time.NewTicker(opts.CleanupEvery)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-cleanupCtx.Done():
+				return
+			case <-ticker.C:
+				s.cleanupExpired()
+			}
+		}
+	}()
+}
+
+// cleanupExpired 删除所有已过期的缓存记录。
+func (s *Store) cleanupExpired() {
+	if s == nil || s.db == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var rows []pageCacheRow
+	if err := s.db.Find(&rows).Error; err != nil {
+		return
+	}
+
+	now := time.Now()
+	var expiredIDs []uint
+	for _, row := range rows {
+		ttl := s.computeTTL(row.HitCount)
+		if ttl > 0 && now.Sub(row.RecordModifiedAt) > ttl {
+			expiredIDs = append(expiredIDs, row.ID)
+		}
+	}
+
+	if len(expiredIDs) == 0 {
+		return
+	}
+
+	if err := s.db.Where("id IN ?", expiredIDs).Delete(&pageCacheRow{}).Error; err != nil {
+		return
+	}
+
+	if s.cleanupFn != nil {
+		s.cleanupFn(len(expiredIDs))
+	}
+}
+
+// computeTTL 根据 hitCount 计算有效的 TTL。
+func (s *Store) computeTTL(hitCount int) time.Duration {
+	baseTTL := s.baseTTL
+	if baseTTL <= 0 {
+		baseTTL = 1 * time.Hour
+	}
+	maxTTL := s.maxTTL
+	if maxTTL <= 0 {
+		maxTTL = 72 * time.Hour
+	}
+
+	if hitCount <= 1 {
+		return baseTTL
+	}
+	boost := 1.0 + math.Log(float64(hitCount))
+	ttl := time.Duration(float64(baseTTL) * boost)
+	if ttl > maxTTL {
+		ttl = maxTTL
+	}
+	return ttl
+}
+
+// Stats 返回缓存统计信息。
+func (s *Store) Stats() (total, expired int, err error) {
+	if s == nil || s.db == nil {
+		return 0, 0, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var count int64
+	if err := s.db.Model(&pageCacheRow{}).Count(&count).Error; err != nil {
+		return 0, 0, err
+	}
+	total = int(count)
+
+	var rows []pageCacheRow
+	if err := s.db.Find(&rows).Error; err != nil {
+		return total, 0, err
+	}
+
+	now := time.Now()
+	for _, row := range rows {
+		ttl := s.computeTTL(row.HitCount)
+		if ttl > 0 && now.Sub(row.RecordModifiedAt) > ttl {
+			expired++
+		}
+	}
+	return total, expired, nil
 }
 
 // Get 根据缓存键读取一条记录。

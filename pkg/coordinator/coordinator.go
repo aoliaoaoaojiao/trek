@@ -2,6 +2,7 @@ package coordinator
 
 import (
 	"bytes"
+	"context"
 	"encoding/xml"
 	"fmt"
 	"image"
@@ -287,7 +288,23 @@ func (s *Coordinator) initPageControlCacheStore() {
 		return
 	}
 	s.pageControlStore = store
-	logger.Infof("coordinator 页面控件持久化缓存已启用: path=%s", path)
+
+	// 启动后台清理：定期删除过期缓存记录，最大有效期 3 天
+	store.StartCleanup(context.Background(), pagecache.CleanupOptions{
+		BaseTTL:      s.resolvePageControlCacheTTL(),
+		MaxTTL:       maxPageControlCacheTTL,
+		CleanupEvery: 10 * time.Minute,
+		CleanupFn: func(count int) {
+			logger.Infof("page cache 后台清理完成: 删除 %d 条过期记录", count)
+		},
+	})
+
+	statsTotal, statsExpired, statsErr := store.Stats()
+	if statsErr == nil {
+		logger.Infof("coordinator 页面控件持久化缓存已启用: path=%s total=%d expired=%d", path, statsTotal, statsExpired)
+	} else {
+		logger.Infof("coordinator 页面控件持久化缓存已启用: path=%s", path)
+	}
 }
 
 // Reset 重置引擎模型和脚本插件状态
@@ -915,7 +932,8 @@ const (
 	pageControlStrategyRaw     = "raw"
 	pageControlStrategyOCR     = "ocr"
 	pageControlStrategyLLM     = "llm"
-	defaultPageControlCacheTTL = 1 * time.Hour
+	defaultPageControlCacheTTL    = 1 * time.Hour
+	maxPageControlCacheTTL        = 72 * time.Hour // 缓存最大有效期上限（3天）
 )
 
 func normalizePageControlStrategy(strategy string) string {
@@ -1060,12 +1078,17 @@ func (s *Coordinator) isPageControlCacheExpired(refreshedAt time.Time, hitCount 
 
 // effectivePageControlCacheTTL 基于记忆曲线计算动态 TTL。
 // 访问越频繁的页面缓存时间越长：effectiveTTL = baseTTL × (1 + ln(hitCount))。
+// 最大不超过 maxPageControlCacheTTL（3天）。
 func effectivePageControlCacheTTL(baseTTL time.Duration, hitCount int) time.Duration {
 	if hitCount <= 1 {
 		return baseTTL
 	}
 	boost := 1.0 + math.Log(float64(hitCount))
-	return time.Duration(float64(baseTTL) * boost)
+	ttl := time.Duration(float64(baseTTL) * boost)
+	if ttl > maxPageControlCacheTTL {
+		ttl = maxPageControlCacheTTL
+	}
+	return ttl
 }
 
 func chooseCacheRefreshTime(values ...time.Time) time.Time {

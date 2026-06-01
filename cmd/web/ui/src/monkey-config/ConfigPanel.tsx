@@ -496,7 +496,7 @@ export function ConfigPanel(props: Props) {
             <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.imageFingerprintHammingThreshold} onChange={(e) => props.setImageFingerprintHammingThreshold(e.target.value)} placeholder={`留空=使用默认值 ${props.defaultImageFingerprintHammingThreshold}`} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            {renderFieldTitle("页面缓存 TTL(秒)", `默认：${props.defaultPageControlCacheTTLSeconds}（${Math.floor(props.defaultPageControlCacheTTLSeconds / 60)}分钟）。OCR/LLM 页面理解结果的基础缓存有效期，高频访问的页面会自动延长。设为 0 表示永不过期。`)}
+            {renderFieldTitle("页面缓存 TTL(秒)", `默认：${props.defaultPageControlCacheTTLSeconds}（${Math.floor(props.defaultPageControlCacheTTLSeconds / 60)}分钟）。OCR/LLM 页面理解结果的基础缓存有效期，高频访问页面自动延长（公式：baseTTL × (1 + ln(hitCount))），最大不超过 3 天。后台每 10 分钟自动清理过期记录。设为 0 表示永不过期。`)}
             <input className="rounded-md border bg-background px-3 py-2" type="number" min={0} step="1" value={props.pageControlCacheTTLSeconds} onChange={(e) => props.setPageControlCacheTTLSeconds(e.target.value)} placeholder={`留空=使用默认值 ${props.defaultPageControlCacheTTLSeconds}`} />
           </label>
           <label className="flex flex-col gap-1 text-sm">

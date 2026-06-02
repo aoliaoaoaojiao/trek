@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 	"trek/internal/engine/core/types"
 	"trek/internal/engine/perception"
@@ -525,17 +526,29 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 				continue
 			}
 		} else if r.isMixedPageSource() {
-			// mixed 模式：同时获取结构化 XML + 截图
-			xml, err = pageSource.DumpPageSource()
-			if err != nil {
-				logger.Warnf("monkey step=%d mixed page source dump failed, fallback to screenshot only: %v", step, err)
+			// mixed 模式：并发获取结构化 XML + 截图，减少 I/O 等待
+			var (
+				xmlErr     error
+				screenshotErr error
+				xmlDone    sync.WaitGroup
+			)
+			xmlDone.Add(1)
+			go func() {
+				defer xmlDone.Done()
+				xml, xmlErr = pageSource.DumpPageSource()
+			}()
+			screenshot, screenshotErr = r.driver.Screenshot(ctx)
+			xmlDone.Wait()
+			err = xmlErr
+
+			if xmlErr != nil {
+				logger.Warnf("monkey step=%d mixed page source dump failed, fallback to screenshot only: %v", step, xmlErr)
 				xml = ""
 			}
-			screenshot, err = r.driver.Screenshot(ctx)
-			if err != nil || len(screenshot) == 0 {
+			if screenshotErr != nil || len(screenshot) == 0 {
 				if xml == "" {
-					if err != nil {
-						record.Err = err.Error()
+					if screenshotErr != nil {
+						record.Err = screenshotErr.Error()
 					} else {
 						record.Err = "mixed 模式: XML 和截图均为空"
 					}
@@ -549,8 +562,8 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 					continue
 				}
 				// XML 有值但截图失败，仅用 XML
-				if err != nil {
-					logger.Warnf("monkey step=%d mixed screenshot failed, using XML only: %v", step, err)
+				if screenshotErr != nil {
+					logger.Warnf("monkey step=%d mixed screenshot failed, using XML only: %v", step, screenshotErr)
 				}
 			}
 		} else {

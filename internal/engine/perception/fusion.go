@@ -56,6 +56,11 @@ func FuseCandidates(items []Candidate, options FusionOptions) []Candidate {
 		}
 	}
 
+	// 短路：候选只有 1 个时跳过排序
+	if len(result) <= 1 {
+		return applyFusionFilters(result, options)
+	}
+
 	sort.SliceStable(result, func(i, j int) bool {
 		return fusionScore(result[i]) > fusionScore(result[j])
 	})

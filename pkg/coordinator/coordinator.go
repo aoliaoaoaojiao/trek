@@ -885,10 +885,18 @@ func (s *Coordinator) loadPageControlCache(strategy string, screenshot []byte, f
 }
 
 func (s *Coordinator) storePageControlCache(strategy string, screenshot []byte, syntheticXML string) {
-	cacheKey := pageControlCacheKey(strategy, screenshot)
-	if cacheKey == "" || strings.TrimSpace(syntheticXML) == "" {
+	if strategy != pageControlStrategyOCR && strategy != pageControlStrategyLLM {
 		return
 	}
+	if strings.TrimSpace(syntheticXML) == "" {
+		return
+	}
+	// 计算一次指纹，同时用于缓存键和持久化存储
+	fingerprint := pageControlCacheFingerprint(screenshot)
+	if fingerprint == "" {
+		return
+	}
+	cacheKey := strategy + "|" + fingerprint
 	now := time.Now()
 	s.pageControlCache.Store(cacheKey, pageControlCacheEntry{
 		SyntheticXML: syntheticXML,
@@ -899,7 +907,7 @@ func (s *Coordinator) storePageControlCache(strategy string, screenshot []byte, 
 		_ = s.pageControlStore.Put(pagecache.Entry{
 			CacheKey:     cacheKey,
 			Strategy:     strategy,
-			Fingerprint:  pageControlCacheFingerprint(screenshot),
+			Fingerprint:  fingerprint,
 			SyntheticXML: syntheticXML,
 			RefreshedAt:  now,
 			LastUsedAt:   now,

@@ -247,7 +247,7 @@ declare namespace Trek {
   // ── 配置枚举 ─────────────────────────────────────────────────
 
   type LogLevel = "debug" | "info" | "warn" | "warning" | "error" | "fatal"
-  type PageSourceType = "uia" | "poco" | "screenshot" | "mixed"
+  type PageSourceType = "uia" | "poco" | "screenshot"
   type TouchMode = "adb" | "motion" | "uia"
   type PageControlStrategy = "raw" | "ocr" | "llm" | "chain"
   type PageNameStrategy =
@@ -339,8 +339,10 @@ declare namespace Trek {
     algorithm?: AlgorithmType
     /** 外部插件脚本路径列表 */
     plugins?: string[]
-      /** 指定 monkey 运行使用的页面源类型。默认 "uia"，可选 "uia" / "poco" / "screenshot" / "mixed"。选择 "screenshot" 时会按截图驱动页面识别，并默认开启每步截图。选择 "mixed" 时同时获取结构化 XML + 截图，适合配合 chain 策略使用。 */
+      /** 指定 monkey 运行使用的页面源类型。默认 "uia"，可选 "uia" / "poco" / "screenshot"。选择 "screenshot" 时会按截图驱动页面识别，并默认开启每步截图。 */
       page_source?: PageSourceType
+      /** 混合模式。设为 true 时，同时获取结构化 XML（来自 uia/poco）+ 截图，适合配合 chain 策略使用。仅在 page_source="uia" 或 "poco" 时生效。 */
+      mixed_mode?: boolean
     /** 指定 monkey 运行使用的触控模式。默认 "motion" */
     touch_mode?: TouchMode
     /** 指定页面名生成策略（不填时默认使用 structure_fingerprint） */

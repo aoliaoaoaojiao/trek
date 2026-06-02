@@ -20,6 +20,7 @@ type StaticConfig struct {
 	BlackRects                        []BlackRect
 	SkipAll                           bool
 	PageSource                        string
+	MixedMode                         bool
 	TouchMode                         string
 	PageNameStrategy                  string
 	ImageFingerprintRegions           []StaticTouchRange
@@ -199,6 +200,12 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 	}
 	if pageSourceValue := obj.Get("pageSource"); cfg.PageSource == "" && !isEmptyJSValue(pageSourceValue) {
 		cfg.PageSource = strings.TrimSpace(pageSourceValue.String())
+	}
+	if mixedModeValue := obj.Get("mixed_mode"); !isEmptyJSValue(mixedModeValue) {
+		cfg.MixedMode = mixedModeValue.ToBoolean()
+	}
+	if mixedModeValue := obj.Get("mixedMode"); !cfg.MixedMode && !isEmptyJSValue(mixedModeValue) {
+		cfg.MixedMode = mixedModeValue.ToBoolean()
 	}
 	if touchModeValue := obj.Get("touch_mode"); !isEmptyJSValue(touchModeValue) {
 		cfg.TouchMode = strings.TrimSpace(touchModeValue.String())

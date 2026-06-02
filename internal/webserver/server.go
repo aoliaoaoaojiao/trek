@@ -27,6 +27,7 @@ import (
 // ConfigPayload 是 web 配置界面的 JSON 请求体结构。
 type ConfigPayload struct {
 	PageSource                        string   `json:"page_source"`
+	MixedMode                         *bool    `json:"mixed_mode"`
 	PageNameStrategy                  string   `json:"page_name_strategy"`
 	TouchMode                         string   `json:"touch_mode"`
 	SkipAll                           bool     `json:"skip_all_actions_from_model"`
@@ -477,7 +478,7 @@ func BuildConfigJS(cfg ConfigPayload) (string, error) {
 	pageControlStrategy := strings.ToLower(strings.TrimSpace(cfg.PageControl))
 	if pageControlStrategy != "" {
 		switch pageControlStrategy {
-		case "raw", "ocr", "llm":
+		case "raw", "ocr", "llm", "chain":
 		default:
 			return "", fmt.Errorf("page_control_strategy 不合法: %s", pageControlStrategy)
 		}
@@ -524,6 +525,9 @@ func BuildConfigJS(cfg ConfigPayload) (string, error) {
 	var b strings.Builder
 	b.WriteString("const config = {\n")
 	b.WriteString(fmt.Sprintf("  page_source: %q,\n", pageSource))
+	if cfg.MixedMode != nil && *cfg.MixedMode {
+		b.WriteString("  mixed_mode: true,\n")
+	}
 	if pageNameStrategy != "" {
 		b.WriteString(fmt.Sprintf("  page_name_strategy: %q,\n", pageNameStrategy))
 	}

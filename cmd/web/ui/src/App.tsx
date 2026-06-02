@@ -86,7 +86,8 @@ function boolValueToMode(value: boolean | null | undefined): "" | "true" | "fals
 }
 
 export function App() {
-  const [pageSource, setPageSource] = useState<"uia" | "poco" | "screenshot" | "mixed">("uia")
+  const [pageSource, setPageSource] = useState<"uia" | "poco" | "screenshot">("uia")
+  const [mixedMode, setMixedMode] = useState(false)
   const [pageNameStrategy, setPageNameStrategy] = useState<PageNameStrategy>("structure_fingerprint")
   const [touchMode, setTouchMode] = useState<"motion" | "uia" | "adb">("motion")
   const [deviceSerial, setDeviceSerial] = useState("")
@@ -259,8 +260,12 @@ export function App() {
       if (pageNameStrategy === "structure_fingerprint") {
         setPageNameStrategy("image_fingerprint")
       }
-    } else if (pageSource === "mixed") {
-      // mixed 模式：固定开启截图，策略建议 chain
+    }
+  }, [captureScreenshotMode, pageControlStrategy, pageNameStrategy, pageSource])
+
+  useEffect(() => {
+    if (mixedMode) {
+      // 混合模式：固定开启截图，策略建议 chain
       if (captureScreenshotMode !== "true") {
         setCaptureScreenshotMode("true")
       }
@@ -268,7 +273,7 @@ export function App() {
         setPageControlStrategy("chain")
       }
     }
-  }, [captureScreenshotMode, pageControlStrategy, pageNameStrategy, pageSource])
+  }, [mixedMode])
 
   const parsedDump = useMemo(() => parseDumpTree(xmlPreview), [xmlPreview])
 
@@ -311,6 +316,7 @@ export function App() {
   const payload: ConfigPayload = useMemo(
     () => ({
       page_source: pageSource,
+      mixed_mode: mixedMode,
       page_name_strategy: pageNameStrategy,
       touch_mode: touchMode,
       skip_all_actions_from_model: skipAll,
@@ -378,6 +384,7 @@ export function App() {
       pageControlStrategy,
       pageNameStrategy,
       pageSource,
+      mixedMode,
       pocoEngine,
       pocoPort,
       recoveryCooldownSteps,
@@ -536,10 +543,12 @@ export function App() {
     if (
       imported.page_source === "uia" ||
       imported.page_source === "poco" ||
-      imported.page_source === "screenshot" ||
-      imported.page_source === "mixed"
+      imported.page_source === "screenshot"
     ) {
       setPageSource(imported.page_source)
+    }
+    if (typeof imported.mixed_mode === "boolean") {
+      setMixedMode(imported.mixed_mode)
     }
     if (isPageNameStrategy(imported.page_name_strategy)) {
       setPageNameStrategy(imported.page_name_strategy)
@@ -775,6 +784,8 @@ export function App() {
       currentPackageName={currentPackageName}
       pageSource={pageSource}
       setPageSource={setPageSource}
+      mixedMode={mixedMode}
+      setMixedMode={setMixedMode}
       pageNameStrategy={pageNameStrategy}
       setPageNameStrategy={setPageNameStrategy}
       touchMode={touchMode}

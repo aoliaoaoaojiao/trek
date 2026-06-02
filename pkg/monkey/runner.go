@@ -90,6 +90,7 @@ type Config struct {
 	StepInterval                      time.Duration
 	MaxConsecutiveFailures            int
 	PageSourceType                    string
+	MixedMode                         bool
 	PageControlStrategy               string
 	CaptureScreenshot                 bool
 	LongClickDuration                 time.Duration
@@ -956,7 +957,7 @@ func (r *Runner) isScreenshotPageSource() bool {
 }
 
 func (r *Runner) isMixedPageSource() bool {
-	return strings.EqualFold(strings.TrimSpace(r.cfg.PageSourceType), "mixed")
+	return r.cfg.MixedMode
 }
 
 // resolvePageNameByExOrFallback 优先使用 PageNameResolverEx，否则 fallback 到 PageNameResolver。

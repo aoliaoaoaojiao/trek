@@ -246,6 +246,7 @@ func runMonkey(logLevelStr string, opts struct {
 		MaxDuration:                       opts.maxDuration,
 		StepInterval:                      opts.stepInterval,
 		PageSourceType:                    pageSourceType,
+		MixedMode:                         staticCfg.MixedMode,
 		PageNameStrategy:                  strings.TrimSpace(staticCfg.PageNameStrategy),
 		PageControlStrategy:               pageControlStrategy,
 		CaptureScreenshot:                 opts.captureScreenshot,

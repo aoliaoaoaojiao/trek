@@ -1,9 +1,9 @@
 export type ConfigPayload = {
-  page_source: "uia" | "poco" | "screenshot"
+  page_source: "uia" | "poco" | "screenshot" | "mixed" | "mixed"
   page_name_strategy: PageNameStrategy
   touch_mode: "motion" | "uia" | "adb"
   skip_all_actions_from_model: boolean
-  page_control_strategy: "" | "raw" | "ocr" | "llm"
+  page_control_strategy: "" | "raw" | "ocr" | "llm" | "chain"
   algorithm: "" | "reuse" | "uctbandit" | "random"
   capture_screenshot: boolean | null
   keep_step_records: boolean | null
@@ -49,11 +49,11 @@ export type ConfigPayload = {
 }
 
 export type PartialConfigPayload = Partial<{
-  page_source: "uia" | "poco" | "screenshot"
+  page_source: "uia" | "poco" | "screenshot" | "mixed"
   page_name_strategy: PageNameStrategy
   touch_mode: "motion" | "uia" | "adb"
   skip_all_actions_from_model: boolean
-  page_control_strategy: "" | "raw" | "ocr" | "llm"
+  page_control_strategy: "" | "raw" | "ocr" | "llm" | "chain"
   algorithm: "" | "reuse" | "uctbandit" | "random"
   capture_screenshot: boolean | null
   keep_step_records: boolean | null

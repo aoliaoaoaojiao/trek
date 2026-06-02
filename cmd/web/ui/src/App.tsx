@@ -86,14 +86,14 @@ function boolValueToMode(value: boolean | null | undefined): "" | "true" | "fals
 }
 
 export function App() {
-  const [pageSource, setPageSource] = useState<"uia" | "poco" | "screenshot">("uia")
+  const [pageSource, setPageSource] = useState<"uia" | "poco" | "screenshot" | "mixed">("uia")
   const [pageNameStrategy, setPageNameStrategy] = useState<PageNameStrategy>("structure_fingerprint")
   const [touchMode, setTouchMode] = useState<"motion" | "uia" | "adb">("motion")
   const [deviceSerial, setDeviceSerial] = useState("")
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([])
   const [loadingDevices, setLoadingDevices] = useState(false)
   const [skipAll, setSkipAll] = useState(false)
-  const [pageControlStrategy, setPageControlStrategy] = useState<"" | "raw" | "ocr" | "llm">("")
+  const [pageControlStrategy, setPageControlStrategy] = useState<"" | "raw" | "ocr" | "llm" | "chain">("")
   const [algorithm, setAlgorithm] = useState<"" | "reuse" | "uctbandit" | "random">("reuse")
   const [captureScreenshotMode, setCaptureScreenshotMode] = useState<"" | "true" | "false">("")
   const [keepStepRecordsMode, setKeepStepRecordsMode] = useState<"" | "true" | "false">("")
@@ -258,6 +258,14 @@ export function App() {
       }
       if (pageNameStrategy === "structure_fingerprint") {
         setPageNameStrategy("image_fingerprint")
+      }
+    } else if (pageSource === "mixed") {
+      // mixed 模式：固定开启截图，策略建议 chain
+      if (captureScreenshotMode !== "true") {
+        setCaptureScreenshotMode("true")
+      }
+      if (pageControlStrategy === "" || pageControlStrategy === "raw" || pageControlStrategy === "ocr" || pageControlStrategy === "llm") {
+        setPageControlStrategy("chain")
       }
     }
   }, [captureScreenshotMode, pageControlStrategy, pageNameStrategy, pageSource])
@@ -528,7 +536,8 @@ export function App() {
     if (
       imported.page_source === "uia" ||
       imported.page_source === "poco" ||
-      imported.page_source === "screenshot"
+      imported.page_source === "screenshot" ||
+      imported.page_source === "mixed"
     ) {
       setPageSource(imported.page_source)
     }

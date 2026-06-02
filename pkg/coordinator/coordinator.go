@@ -756,6 +756,12 @@ func (s *Coordinator) buildPageInfoByStrategy(pageName string, input ActionInput
 	if strategy == pageControlStrategyRaw {
 		return info, nil
 	}
+
+	// chain 策略：raw → 缓存 → OCR+LLM 并行
+	if strategy == pageControlStrategyChain {
+		return s.resolveChainPageControlInfo(info, resolvedPageName, resolvedXML, input.Screenshot, forceRefresh)
+	}
+
 	if cachedXML, ok := s.loadPageControlCache(strategy, input.Screenshot, forceRefresh); ok {
 		logger.Debugf("coordinator 页面控件缓存命中: strategy=%s page=%s", strategy, resolvedPageName)
 		info.XML = cachedXML
@@ -898,6 +904,145 @@ func (s *Coordinator) buildPageControlCandidates(strategy string, ctx enginestat
 	}
 }
 
+// resolveChainPageControlInfo chain 策略：raw → 缓存 → OCR+LLM 并行兜底。
+func (s *Coordinator) resolveChainPageControlInfo(info PageInfo, pageName, xml string, screenshot []byte, forceRefresh bool) (PageInfo, error) {
+	// 1. 有 raw XML → 直接用（raw 永不降级）
+	//    有 XML 说明来自 uia/poco/mixed，结构化节点树足够使用
+	if strings.TrimSpace(xml) != "" {
+		logger.Debugf("coordinator chain 策略使用 raw XML: page=%s", pageName)
+		return info, nil
+	}
+
+	// 2. 没有 raw XML（纯截图模式），需要截图才能继续
+	if len(screenshot) == 0 {
+		return info, nil
+	}
+
+	// 3. 页面指纹缓存命中 → 直接用缓存
+	if cachedXML, ok := s.loadPageControlCache(pageControlStrategyChain, screenshot, forceRefresh); ok {
+		logger.Debugf("coordinator chain 策略缓存命中: page=%s", pageName)
+		info.XML = cachedXML
+		info.CacheHit = true
+		if elem, err := elements.CreateAndroidElementFromXml(cachedXML); err == nil {
+			info.Element = elem
+		}
+		return info, nil
+	}
+
+	// 4. 缓存未命中 → OCR + LLM 并行调用
+	logger.Debugf("coordinator chain 策略缓存未命中，启动 OCR+LLM 并行: page=%s", pageName)
+	candidates, err := s.buildChainPageControlCandidates(enginestate.TraversalContext{
+		Mode:       "Explore",
+		PageName:   pageName,
+		XML:        xml,
+		Screenshot: screenshot,
+	})
+	if err != nil {
+		return PageInfo{}, err
+	}
+
+	syntheticXML, elem := buildSyntheticXMLFromCandidates(pageControlStrategyChain, candidates, screenshot)
+	if strings.TrimSpace(syntheticXML) == "" {
+		return info, nil
+	}
+	s.storePageControlCache(pageControlStrategyChain, screenshot, syntheticXML)
+	info.XML = syntheticXML
+	info.Element = elem
+	return info, nil
+}
+
+// buildChainPageControlCandidates 并行调用 OCR 和 LLM，合并 candidates。
+func (s *Coordinator) buildChainPageControlCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
+	var (
+		ocrCandidates []perception.Candidate
+		llmCandidates []perception.Candidate
+		ocrErr        error
+		llmErr        error
+		wg            sync.WaitGroup
+	)
+
+	hasOCR := s.ocrProvider != nil
+	hasLLM := s.llmProvider != nil
+
+	if !hasOCR && !hasLLM {
+		return nil, fmt.Errorf("chain 策略需要至少配置 OCR 或 LLM provider")
+	}
+
+	if hasOCR {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ocrCandidates, ocrErr = s.ocrProvider.BuildCandidates(ctx)
+		}()
+	}
+	if hasLLM {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			llmCandidates, llmErr = s.llmProvider.DetectPageControls(ctx)
+		}()
+	}
+
+	wg.Wait()
+
+	// 如果两者都失败，返回第一个错误
+	if ocrErr != nil && llmErr != nil {
+		return nil, fmt.Errorf("OCR 失败: %v; LLM 失败: %v", ocrErr, llmErr)
+	}
+	// 如果一方失败，用另一方的结果
+	if ocrErr != nil {
+		logger.Warnf("coordinator chain 策略 OCR 失败，仅用 LLM 结果: %v", ocrErr)
+		return llmCandidates, nil
+	}
+	if llmErr != nil {
+		logger.Warnf("coordinator chain 策略 LLM 失败，仅用 OCR 结果: %v", llmErr)
+		return ocrCandidates, nil
+	}
+
+	return mergeCandidates(ocrCandidates, llmCandidates), nil
+}
+
+// mergeCandidates 合并 OCR 和 LLM 的 candidates，按位置近似去重，LLM 优先。
+func mergeCandidates(ocrCandidates, llmCandidates []perception.Candidate) []perception.Candidate {
+	if len(ocrCandidates) == 0 {
+		return llmCandidates
+	}
+	if len(llmCandidates) == 0 {
+		return ocrCandidates
+	}
+
+	// 先放入所有 LLM candidates
+	merged := make([]perception.Candidate, 0, len(ocrCandidates)+len(llmCandidates))
+	merged = append(merged, llmCandidates...)
+
+	// 对每个 OCR candidate，检查是否与已有 candidate 位置重复
+	for _, ocr := range ocrCandidates {
+		if ocr.Command == nil || ocr.Command.Pos.IsEmpty() {
+			continue
+		}
+		ocrCenter := ocr.Command.Pos.Center()
+		isDuplicate := false
+		for _, existing := range merged {
+			if existing.Command == nil || existing.Command.Pos.IsEmpty() {
+				continue
+			}
+			existingCenter := existing.Command.Pos.Center()
+			// 中心距离 < 50px 视为同一控件
+			dx := ocrCenter.X - existingCenter.X
+			dy := ocrCenter.Y - existingCenter.Y
+			if dx*dx+dy*dy < 50*50 {
+				isDuplicate = true
+				break
+			}
+		}
+		if !isDuplicate {
+			merged = append(merged, ocr)
+		}
+	}
+
+	return merged
+}
+
 // OnStepResult 通过 Goja 插件通知步骤结果
 func (s *Coordinator) OnStepResult(input StepResultInput) error {
 	runtimeInput := engineruntime.StepResultInput{
@@ -932,8 +1077,9 @@ const (
 	pageControlStrategyRaw     = "raw"
 	pageControlStrategyOCR     = "ocr"
 	pageControlStrategyLLM     = "llm"
-	defaultPageControlCacheTTL    = 1 * time.Hour
-	maxPageControlCacheTTL        = 72 * time.Hour // 缓存最大有效期上限（3天）
+	pageControlStrategyChain   = "chain"
+	defaultPageControlCacheTTL = 1 * time.Hour
+	maxPageControlCacheTTL     = 72 * time.Hour // 缓存最大有效期上限（3天）
 )
 
 func normalizePageControlStrategy(strategy string) string {
@@ -944,6 +1090,8 @@ func normalizePageControlStrategy(strategy string) string {
 		return pageControlStrategyOCR
 	case pageControlStrategyLLM:
 		return pageControlStrategyLLM
+	case pageControlStrategyChain:
+		return pageControlStrategyChain
 	default:
 		return pageControlStrategyRaw
 	}

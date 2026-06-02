@@ -47,14 +47,14 @@ type Props = {
   onRefreshDevices: () => void
   usedSerial: string
   currentPackageName: string
-  pageSource: "uia" | "poco" | "screenshot"
-  setPageSource: (value: "uia" | "poco" | "screenshot") => void
+  pageSource: "uia" | "poco" | "screenshot" | "mixed"
+  setPageSource: (value: "uia" | "poco" | "screenshot" | "mixed") => void
   pageNameStrategy: PageNameStrategy
   setPageNameStrategy: (value: PageNameStrategy) => void
   touchMode: "motion" | "uia" | "adb"
   setTouchMode: (value: "motion" | "uia" | "adb") => void
-  pageControlStrategy: "" | "raw" | "ocr" | "llm"
-  setPageControlStrategy: (value: "" | "raw" | "ocr" | "llm") => void
+  pageControlStrategy: "" | "raw" | "ocr" | "llm" | "chain"
+  setPageControlStrategy: (value: "" | "raw" | "ocr" | "llm" | "chain") => void
   algorithm: "" | "reuse" | "uctbandit" | "random"
   setAlgorithm: (value: "" | "reuse" | "uctbandit" | "random") => void
   captureScreenshotMode: "" | "true" | "false"
@@ -359,11 +359,12 @@ export function ConfigPanel(props: Props) {
             <input className="rounded-md border bg-background px-3 py-2 font-mono" value={props.currentPackageName} readOnly placeholder="点击当前界面后自动填充" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            {renderFieldTitle("页面源", "选择 screenshot 时，运行过程会默认每一步都截图，并优先适合配合 image_fingerprint 使用。")}
-            {renderSelect(props.pageSource, (value) => props.setPageSource(value as "uia" | "poco" | "screenshot"), "选择页面源", [
+            {renderFieldTitle("页面源", "选择 screenshot 时，运行过程会默认每一步都截图，并优先适合配合 image_fingerprint 使用。mixed 模式同时获取结构化 XML + 截图，适合配合 chain 策略使用。")}
+            {renderSelect(props.pageSource, (value) => props.setPageSource(value as "uia" | "poco" | "screenshot" | "mixed"), "选择页面源", [
               { value: "uia", label: "uia" },
               { value: "poco", label: "poco" },
               { value: "screenshot", label: "screenshot" },
+              { value: "mixed", label: "mixed（结构+截图双源）" },
             ])}
           </label>
           <label className="flex flex-col gap-1 text-sm">
@@ -391,12 +392,12 @@ export function ConfigPanel(props: Props) {
           <label className="flex flex-col gap-1 text-sm">
             {renderFieldTitle(
               "截图采集",
-              props.pageSource === "screenshot"
-                ? "页面源为 screenshot 时固定开启，默认每一步都会截图。"
+              props.pageSource === "screenshot" || props.pageSource === "mixed"
+                ? "页面源为 screenshot/mixed 时固定开启，默认每一步都会截图。"
                 : "默认自动；当页面理解策略不是 raw 时也会自动开启截图采集。"
             )}
             {renderSelect(
-              props.pageSource === "screenshot" ? "true" : props.captureScreenshotMode,
+              props.pageSource === "screenshot" || props.pageSource === "mixed" ? "true" : props.captureScreenshotMode,
               (value) => props.setCaptureScreenshotMode(value as "" | "true" | "false"),
               "选择截图采集",
               [
@@ -404,7 +405,7 @@ export function ConfigPanel(props: Props) {
                 { value: "true", label: "开启" },
                 { value: "false", label: "关闭" },
               ],
-              props.pageSource === "screenshot"
+              props.pageSource === "screenshot" || props.pageSource === "mixed"
             )}
           </label>
           <label className="flex flex-col gap-1 text-sm">
@@ -448,9 +449,11 @@ export function ConfigPanel(props: Props) {
                 "页面理解策略",
                 props.pageSource === "screenshot"
                   ? "截图页面源不支持 raw，默认使用 ocr，也可以改成 llm；ocr/llm 会按图片指纹缓存控件树，相同图片优先复用缓存，连续命中过多或进入阻塞恢复时会自动重新识别。"
-                  : "控制页面控件信息来自原始节点、OCR 还是 LLM 理解；ocr/llm 会按图片指纹缓存控件树，相同图片优先复用缓存，连续命中过多或进入阻塞恢复时会自动重新识别。"
+                  : props.pageSource === "mixed"
+                    ? "mixed 页面源建议使用 chain 策略：优先用结构化 XML，缓存未命中时 OCR+LLM 并行合并结果。"
+                    : "控制页面控件信息来自原始节点、OCR 还是 LLM 理解；ocr/llm 会按图片指纹缓存控件树，相同图片优先复用缓存，连续命中过多或进入阻塞恢复时会自动重新识别。"
               )}
-              {renderSelect(props.pageControlStrategy, (value) => props.setPageControlStrategy(value as "" | "raw" | "ocr" | "llm"), "选择页面理解策略", [
+              {renderSelect(props.pageControlStrategy, (value) => props.setPageControlStrategy(value as "" | "raw" | "ocr" | "llm" | "chain"), "选择页面理解策略", [
                 ...(props.pageSource === "screenshot"
                   ? []
                   : [
@@ -459,6 +462,7 @@ export function ConfigPanel(props: Props) {
                     ]),
                 { value: "ocr", label: "ocr" },
                 { value: "llm", label: "llm" },
+                { value: "chain", label: "chain（兜底：raw→缓存→OCR+LLM）" },
               ])}
             </label>
           <label className="flex flex-col gap-1 text-sm">

@@ -512,6 +512,35 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 				r.sleepStep(ctx, r.cfg.StepInterval)
 				continue
 			}
+		} else if r.isMixedPageSource() {
+			// mixed 模式：同时获取结构化 XML + 截图
+			xml, err = pageSource.DumpPageSource()
+			if err != nil {
+				logger.Warnf("monkey step=%d mixed page source dump failed, fallback to screenshot only: %v", step, err)
+				xml = ""
+			}
+			screenshot, err = r.driver.Screenshot(ctx)
+			if err != nil || len(screenshot) == 0 {
+				if xml == "" {
+					if err != nil {
+						record.Err = err.Error()
+					} else {
+						record.Err = "mixed 模式: XML 和截图均为空"
+					}
+					r.markFailed(report, record, stepStart, nil, nil)
+					if report.ConsecutiveFailures >= r.cfg.MaxConsecutiveFailures {
+						report.StopReason = StopMaxConsecutiveFailures
+						return report, nil
+					}
+					r.tryRecover(report.ConsecutiveFailures)
+					r.sleepStep(ctx, r.cfg.StepInterval)
+					continue
+				}
+				// XML 有值但截图失败，仅用 XML
+				if err != nil {
+					logger.Warnf("monkey step=%d mixed screenshot failed, using XML only: %v", step, err)
+				}
+			}
 		} else {
 			xml, err = pageSource.DumpPageSource()
 			if err != nil {
@@ -926,6 +955,10 @@ func (r *Runner) isScreenshotPageSource() bool {
 	return strings.EqualFold(strings.TrimSpace(r.cfg.PageSourceType), "screenshot")
 }
 
+func (r *Runner) isMixedPageSource() bool {
+	return strings.EqualFold(strings.TrimSpace(r.cfg.PageSourceType), "mixed")
+}
+
 // resolvePageNameByExOrFallback 优先使用 PageNameResolverEx，否则 fallback 到 PageNameResolver。
 func (r *Runner) resolvePageNameByExOrFallback(xml string, screenshot []byte) string {
 	if r.cfg.PageNameResolverEx != nil {
@@ -958,7 +991,7 @@ func (r *Runner) currentHealthSignals() (crash bool, anr bool) {
 
 func (r *Runner) shouldUseImagePageControlFallback() bool {
 	switch strings.ToLower(strings.TrimSpace(r.cfg.PageControlStrategy)) {
-	case "ocr", "llm":
+	case "ocr", "llm", "chain":
 		return true
 	default:
 		return false

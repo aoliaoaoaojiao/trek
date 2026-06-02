@@ -369,7 +369,7 @@ export function ConfigPanel(props: Props) {
             ])}
           </label>
           {props.pageSource === "uia" || props.pageSource === "poco" ? (
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2 text-sm md:col-span-2">
               {renderFieldTitle("混合模式", "勾选后同时获取截图，配合 chain 策略可实现结构化 XML + OCR/LLM 增强。")}
               <input type="checkbox" checked={props.mixedMode} onChange={(e) => props.setMixedMode(e.target.checked)} />
               同时截图（mixed）

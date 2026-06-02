@@ -247,9 +247,9 @@ declare namespace Trek {
   // ── 配置枚举 ─────────────────────────────────────────────────
 
   type LogLevel = "debug" | "info" | "warn" | "warning" | "error" | "fatal"
-  type PageSourceType = "uia" | "poco" | "screenshot"
+  type PageSourceType = "uia" | "poco" | "screenshot" | "mixed"
   type TouchMode = "adb" | "motion" | "uia"
-  type PageControlStrategy = "raw" | "ocr" | "llm"
+  type PageControlStrategy = "raw" | "ocr" | "llm" | "chain"
   type PageNameStrategy =
     | "structure_fingerprint"
     | "activity_only"
@@ -339,7 +339,7 @@ declare namespace Trek {
     algorithm?: AlgorithmType
     /** 外部插件脚本路径列表 */
     plugins?: string[]
-      /** 指定 monkey 运行使用的页面源类型。默认 "uia"，可选 "uia" / "poco" / "screenshot"。选择 "screenshot" 时会按截图驱动页面识别，并默认开启每步截图。 */
+      /** 指定 monkey 运行使用的页面源类型。默认 "uia"，可选 "uia" / "poco" / "screenshot" / "mixed"。选择 "screenshot" 时会按截图驱动页面识别，并默认开启每步截图。选择 "mixed" 时同时获取结构化 XML + 截图，适合配合 chain 策略使用。 */
       page_source?: PageSourceType
     /** 指定 monkey 运行使用的触控模式。默认 "motion" */
     touch_mode?: TouchMode
@@ -349,8 +349,9 @@ declare namespace Trek {
      * 页面控件信息获取策略。
      * `raw` 直接使用 dump 原始 XML；
      * `ocr` 基于截图 OCR 提取控件区域并生成伪控件树；
-     * `llm` 基于截图 LLM 推断控件区域并生成伪控件树。
-     * 当策略为 `ocr` 或 `llm` 时，运行期会自动启用截图采集，
+     * `llm` 基于截图 LLM 推断控件区域并生成伪控件树；
+     * `chain` 兜底模式：有 raw XML 直接用，否则查缓存，缓存未命中时 OCR+LLM 并行调用合并结果。
+     * 当策略为 `ocr`、`llm` 或 `chain` 时，运行期会自动启用截图采集，
      * 并按截图图片指纹缓存伪控件树；相同图片优先复用缓存，仅首次出现时才调用 OCR/LLM。
      * 同一图片连续命中缓存达到阈值后会自动重新识别一次；阻塞恢复路径也会强制刷新，避免长期复用过期控件树。
      */

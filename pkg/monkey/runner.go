@@ -213,6 +213,8 @@ type Report struct {
 	RecoveryLLMCalls            int
 	RecoveryLLMBudgetDenied     int
 	EnhancementLLMBudgetDenied  int
+	PlanCacheHits               int // LLM 响应缓存命中次数
+	PlanCacheMisses             int // LLM 响应缓存未命中次数
 	Records                     []StepRecord
 }
 
@@ -289,6 +291,15 @@ type currentActivityProvider interface {
 
 type pageControlCacheInvalidator interface {
 	InvalidatePageControlCache(screenshot []byte)
+}
+
+type pageControlCacheConsumptionMarker interface {
+	MarkCacheConsumed(screenshot []byte)
+	ResetConsumedMarks()
+}
+
+type planCacheInvalidator interface {
+	InvalidatePlanCache(pageSignature string)
 }
 
 // Runner 执行 Smart Monkey 真机闭环。
@@ -739,6 +750,9 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		}
 		if escaped {
 			r.directLLMUsed = false
+			// 页面变化，重置消费标记和 LLM 响应缓存
+			r.resetConsumedMarks()
+			r.invalidatePlanCache(cachedSignature(beforePage))
 		}
 		r.recordRecoveryOutcome(escaped)
 		crash, anr := r.currentHealthSignals()
@@ -789,6 +803,30 @@ func (r *Runner) invalidatePageControlCache(screenshot []byte) {
 		return
 	}
 	invalidator.InvalidatePageControlCache(screenshot)
+}
+
+func (r *Runner) markCacheConsumed(screenshot []byte) {
+	marker, ok := r.decider.(pageControlCacheConsumptionMarker)
+	if !ok || marker == nil || len(screenshot) == 0 {
+		return
+	}
+	marker.MarkCacheConsumed(screenshot)
+}
+
+func (r *Runner) resetConsumedMarks() {
+	marker, ok := r.decider.(pageControlCacheConsumptionMarker)
+	if !ok || marker == nil {
+		return
+	}
+	marker.ResetConsumedMarks()
+}
+
+func (r *Runner) invalidatePlanCache(pageSignature string) {
+	invalidator, ok := r.decider.(planCacheInvalidator)
+	if !ok || invalidator == nil || pageSignature == "" {
+		return
+	}
+	invalidator.InvalidatePlanCache(pageSignature)
 }
 
 func (r *Runner) notifyStepResult(step int, cmd *types.ActionCommand, success bool, errText string, durationMs int64, crash bool, anr bool, before coordinator.PageSnapshot, after *coordinator.PageSnapshot) {

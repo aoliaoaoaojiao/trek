@@ -150,6 +150,7 @@ func runMonkey(logLevelStr string, opts struct {
 	candidateMinFusionScore := staticCfg.CandidateMinFusionScore.OrDefault(-0.3)
 	pageControlStrategy := strings.TrimSpace(staticCfg.PageControlStrategy)
 	pageControlCacheTTL := time.Duration(staticCfg.PageControlCacheTTLSeconds.OrDefault(0)) * time.Second
+	planCacheTTL := time.Duration(staticCfg.PlanCacheTTLSeconds.OrDefault(300)) * time.Second // 默认 5 分钟
 
 	if normalizePageControlStrategy(pageControlStrategy) != pageControlStrategyRaw {
 		opts.captureScreenshot = true
@@ -219,6 +220,7 @@ func runMonkey(logLevelStr string, opts struct {
 		return err
 	}
 
+	var planCacheHits, planCacheMisses int
 	coord, err := coordinator.New(coordinator.Config{
 		PackageName:          packageName,
 		Algorithm:            algorithmType,
@@ -227,6 +229,9 @@ func runMonkey(logLevelStr string, opts struct {
 		PageControlStrategy:  pageControlStrategy,
 		PageControlCacheFile: resolvePageControlCacheFile(staticCfg.PageControlCacheFile),
 		PageControlCacheTTL:  pageControlCacheTTL,
+		PlanCacheTTL:         planCacheTTL,
+		OnPlanCacheHit:       func() { planCacheHits++ },
+		OnPlanCacheMiss:      func() { planCacheMisses++ },
 	})
 	if err != nil {
 		return fmt.Errorf("创建会话失败: %w", err)
@@ -299,6 +304,11 @@ func runMonkey(logLevelStr string, opts struct {
 		fmt.Printf("页面统计: %+v\n", report.PageVisitCount)
 		fmt.Printf("恢复冷却统计: cooldown_enter=%d cooldown_step_hits=%d\n",
 			report.RecoveryCooldownEnterCount, report.RecoveryCooldownStepCount)
+		if planCacheHits+planCacheMisses > 0 {
+			fmt.Printf("LLM 缓存统计: hits=%d misses=%d hit_rate=%.1f%%\n",
+				planCacheHits, planCacheMisses,
+				float64(planCacheHits)/float64(planCacheHits+planCacheMisses)*100)
+		}
 		reportWg.Add(1)
 		go func() {
 			defer reportWg.Done()
@@ -325,6 +335,10 @@ func runMonkey(logLevelStr string, opts struct {
 	report, err = runner.Run(ctx)
 	if err != nil {
 		return fmt.Errorf("执行 monkey 失败: %w", err)
+	}
+	if report != nil {
+		report.PlanCacheHits = planCacheHits
+		report.PlanCacheMisses = planCacheMisses
 	}
 	return nil
 }

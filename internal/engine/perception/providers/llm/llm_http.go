@@ -74,7 +74,8 @@ func (p *LLMHTTPProvider) BuildCandidates(ctx enginestate.TraversalContext) ([]p
 	if p == nil {
 		return nil, nil
 	}
-	prompt := buildRecoveryPrompt(ctx)
+	adapter := NewModelAdapter(p.model)
+	prompt := buildRecoveryPrompt(ctx, adapter)
 
 	payload := llmRequest{
 		Model:            p.model,

@@ -29,6 +29,7 @@ type StaticConfig struct {
 	PageControlStrategy               string
 	PageControlCacheFile              string
 	PageControlCacheTTLSeconds        coretypes.Optional[int]
+	PlanCacheTTLSeconds               coretypes.Optional[int] // LLM 响应缓存 TTL（秒），默认 300
 	Algorithm                         string
 	Plugins                           []string
 	CaptureScreenshot                 coretypes.Optional[bool]
@@ -248,6 +249,7 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 		cfg.PageControlCacheFile = strings.TrimSpace(cachePathValue.String())
 	}
 	cfg.PageControlCacheTTLSeconds = optionalInt(obj, "page_control_cache_ttl_seconds", "pageControlCacheTTLSeconds")
+	cfg.PlanCacheTTLSeconds = optionalInt(obj, "plan_cache_ttl_seconds", "planCacheTTLSeconds")
 	if algorithmValue := obj.Get("algorithm"); !isEmptyJSValue(algorithmValue) {
 		cfg.Algorithm = strings.TrimSpace(algorithmValue.String())
 	}

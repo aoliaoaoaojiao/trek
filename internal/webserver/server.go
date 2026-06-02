@@ -39,6 +39,7 @@ type ConfigPayload struct {
 	ImageSimilaritySSIMThreshold      *float64 `json:"image_similarity_ssim_threshold"`
 	ExploreOCRTimeoutMs               *int     `json:"explore_ocr_timeout_ms"`
 	LLMTimeoutMs                      *int     `json:"llm_timeout_ms"`
+	PlanCacheTTLSeconds               *int     `json:"plan_cache_ttl_seconds"`
 	RecoveryCooldownSteps             *int     `json:"recovery_cooldown_steps"`
 	RecoveryTwoStateLoopThreshold     *int     `json:"recovery_two_state_loop_threshold"`
 	RecoveryHighVisitThreshold        *int     `json:"recovery_high_visit_threshold"`
@@ -560,6 +561,9 @@ func BuildConfigJS(cfg ConfigPayload) (string, error) {
 	}
 	if cfg.LLMTimeoutMs != nil {
 		b.WriteString(fmt.Sprintf("  llm_timeout_ms: %d,\n", *cfg.LLMTimeoutMs))
+	}
+	if cfg.PlanCacheTTLSeconds != nil {
+		b.WriteString(fmt.Sprintf("  plan_cache_ttl_seconds: %d,\n", *cfg.PlanCacheTTLSeconds))
 	}
 	if cfg.RecoveryCooldownSteps != nil {
 		b.WriteString(fmt.Sprintf("  recovery_cooldown_steps: %d,\n", *cfg.RecoveryCooldownSteps))

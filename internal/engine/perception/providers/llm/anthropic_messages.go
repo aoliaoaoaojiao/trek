@@ -149,7 +149,8 @@ func (p *AnthropicMessagesProvider) DetectPageControls(ctx enginestate.Traversal
 }
 
 func (p *AnthropicMessagesProvider) buildRequestPayload(ctx enginestate.TraversalContext) ([]byte, error) {
-	prompt := buildRecoveryPrompt(ctx)
+	adapter := NewModelAdapter(p.model)
+	prompt := buildRecoveryPrompt(ctx, adapter)
 	userContent := p.buildUserContent(prompt.UserContent, prompt.ScreenshotMediaType, prompt.ScreenshotBase64())
 	payload := map[string]any{
 		"model":       p.model,

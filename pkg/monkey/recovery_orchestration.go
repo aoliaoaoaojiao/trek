@@ -123,6 +123,8 @@ func (r *Runner) handleBlockDetectedWithPage(reason string, page *coordinator.Pa
 	}
 	if page != nil && shouldInvalidatePageControlCacheOnBlock(reason) {
 		r.invalidatePageControlCache(page.Screenshot)
+		// 消费标记：恢复周期内跳过已消费的缓存条目，强制重新识别
+		r.markCacheConsumed(page.Screenshot)
 	}
 	if r.recoveryState == nil {
 		r.recoveryState = newRecoveryStateMachineWithCooldown(r.cfg.RecoveryCooldownSteps)
@@ -416,6 +418,11 @@ func (r *Runner) recordRecoveryOutcome(escaped bool) {
 		r.lastRecoveryAttempt = nil
 	}()
 	r.markRecoveryActionOutcome(attempt.item, escaped)
+
+	// 恢复失败时失效 LLM 响应缓存，下次同页面+同阻塞原因重新调用 LLM
+	if !escaped && attempt.ctx.PageSignature != "" {
+		r.invalidatePlanCache(attempt.ctx.PageSignature)
+	}
 
 	writer, ok := r.decider.(RecoveryMemoryWriter)
 	if !ok || writer == nil {

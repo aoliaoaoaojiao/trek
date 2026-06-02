@@ -126,7 +126,8 @@ func (p *OpenAIChatProvider) DetectPageControls(ctx enginestate.TraversalContext
 // buildRequestPayload 构建 Chat Completions API 请求载荷。
 // 使用标准 messages 格式，截图通过 image_url content block 传入。
 func (p *OpenAIChatProvider) buildRequestPayload(ctx enginestate.TraversalContext) ([]byte, error) {
-	prompt := buildRecoveryPrompt(ctx)
+	adapter := NewModelAdapter(p.model)
+	prompt := buildRecoveryPrompt(ctx, adapter)
 
 	// 构建 user content：文本 + 可选截图
 	userContent := []map[string]any{

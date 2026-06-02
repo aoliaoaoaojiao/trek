@@ -50,6 +50,9 @@ type Config struct {
 	PageControlStrategy      string
 	PageControlCacheFile     string
 	PageControlCacheTTL      time.Duration
+	PlanCacheTTL             time.Duration // LLM 响应缓存 TTL，默认 5 分钟
+	OnPlanCacheHit           func()        // LLM 响应缓存命中回调
+	OnPlanCacheMiss          func()        // LLM 响应缓存未命中回调
 }
 
 // ActionInput 动作输入，包含 XML 描述的 GUI 树和可选截图。
@@ -91,21 +94,29 @@ type StepResultInput struct {
 
 // Coordinator 对外稳定协调入口。
 type Coordinator struct {
-	config           Config
-	runtime          *engineruntime.Runtime
-	memoryStore      *memory.Store
-	memoryProvider   *memory.Provider
-	pageControlStore *pagecache.Store
-	ocrProvider      candidateProvider
-	llmProvider      pageControlCandidateProvider
-	traversalAlgo    traversal.TraversalAlgorithm
-	pageControlCache sync.Map
+	config               Config
+	runtime              *engineruntime.Runtime
+	memoryStore          *memory.Store
+	memoryProvider       *memory.Provider
+	pageControlStore     *pagecache.Store
+	ocrProvider          candidateProvider
+	llmProvider          pageControlCandidateProvider
+	traversalAlgo        traversal.TraversalAlgorithm
+	pageControlCache     sync.Map
+	consumedFingerprints sync.Map // 消费标记：恢复周期内跳过已消费的缓存条目
+	planCache            sync.Map // LLM 响应缓存: key="pageSignature|blockReason" → planCacheEntry
 }
 
 type pageControlCacheEntry struct {
 	SyntheticXML string
 	RefreshedAt  time.Time
 	HitCount     int
+}
+
+type planCacheEntry struct {
+	Candidates []perception.Candidate
+	CreatedAt  time.Time
+	HitCount   int
 }
 
 type candidateProvider interface {
@@ -530,15 +541,37 @@ func (s *Coordinator) BuildKnownRecoveryActions(ctx enginestate.TraversalContext
 
 // BuildLLMRecoveryCandidates 通过 LLM provider 构建恢复候选。
 // 用于重复阻塞场景下直接调用 LLM 规划，跳过常规恢复流程。
+// 内置 LLM 响应缓存：相同 pageSignature+blockReason 的结果缓存 5 分钟。
 func (s *Coordinator) BuildLLMRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if s == nil || s.llmProvider == nil {
 		return nil, nil
 	}
-	// 底层 provider (LLMHTTPProvider / OpenAIResponsesProvider) 都实现了 BuildCandidates
+
+	// 1. 尝试加载缓存
+	if cached, ok := s.LoadPlanCache(ctx.PageSignature, ctx.BlockReason); ok {
+		logger.Debugf("coordinator LLM 响应缓存命中: page=%s block=%s count=%d", ctx.PageName, ctx.BlockReason, len(cached))
+		if s.config.OnPlanCacheHit != nil {
+			s.config.OnPlanCacheHit()
+		}
+		return cached, nil
+	}
+
+	// 2. 缓存未命中，调用 LLM
 	if provider, ok := s.llmProvider.(interface {
 		BuildCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error)
 	}); ok {
-		return provider.BuildCandidates(ctx)
+		candidates, err := provider.BuildCandidates(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// 3. 存储到缓存
+		if len(candidates) > 0 {
+			s.StorePlanCache(ctx.PageSignature, ctx.BlockReason, candidates)
+		}
+		if s.config.OnPlanCacheMiss != nil {
+			s.config.OnPlanCacheMiss()
+		}
+		return candidates, nil
 	}
 	return nil, nil
 }
@@ -806,6 +839,11 @@ func (s *Coordinator) loadPageControlCache(strategy string, screenshot []byte, f
 		logger.Debugf("coordinator 页面控件缓存主动刷新: reason=block_recovery strategy=%s", strategy)
 		return "", false
 	}
+	// 消费标记检查：恢复周期内跳过已消费的缓存条目，强制重新识别
+	if s.IsCacheConsumed(screenshot) {
+		logger.Debugf("coordinator 页面控件缓存已消费，跳过: strategy=%s", strategy)
+		return "", false
+	}
 	cached, ok := s.pageControlCache.Load(cacheKey)
 	if !ok {
 		if s.pageControlStore != nil {
@@ -885,6 +923,103 @@ func (s *Coordinator) InvalidatePageControlCache(screenshot []byte) {
 	if s.pageControlStore != nil {
 		_ = s.pageControlStore.Delete(cacheKey)
 	}
+}
+
+// MarkCacheConsumed 将指定截图对应的缓存指纹标记为已消费。
+// 恢复周期内后续查找会跳过该条目，强制重新识别。
+func (s *Coordinator) MarkCacheConsumed(screenshot []byte) {
+	if s == nil || len(screenshot) == 0 {
+		return
+	}
+	fingerprint := pageControlCacheFingerprint(screenshot)
+	if fingerprint == "" {
+		return
+	}
+	s.consumedFingerprints.Store(fingerprint, struct{}{})
+}
+
+// IsCacheConsumed 检查指定截图对应的缓存指纹是否已被消费。
+func (s *Coordinator) IsCacheConsumed(screenshot []byte) bool {
+	if s == nil || len(screenshot) == 0 {
+		return false
+	}
+	fingerprint := pageControlCacheFingerprint(screenshot)
+	if fingerprint == "" {
+		return false
+	}
+	_, loaded := s.consumedFingerprints.Load(fingerprint)
+	return loaded
+}
+
+// ResetConsumedMarks 清除所有消费标记，通常在页面变化时调用。
+func (s *Coordinator) ResetConsumedMarks() {
+	if s == nil {
+		return
+	}
+	s.consumedFingerprints.Range(func(key, value any) bool {
+		s.consumedFingerprints.Delete(key)
+		return true
+	})
+}
+
+// LoadPlanCache 加载 LLM 响应缓存。
+func (s *Coordinator) LoadPlanCache(pageSignature, blockReason string) ([]perception.Candidate, bool) {
+	if s == nil || pageSignature == "" {
+		return nil, false
+	}
+	key := pageSignature + "|" + blockReason
+	cached, ok := s.planCache.Load(key)
+	if !ok {
+		return nil, false
+	}
+	entry, ok := cached.(planCacheEntry)
+	if !ok {
+		return nil, false
+	}
+	// TTL 检查：使用配置值，默认 5 分钟
+	ttl := s.resolvePlanCacheTTL()
+	if time.Since(entry.CreatedAt) > ttl {
+		s.planCache.Delete(key)
+		return nil, false
+	}
+	entry.HitCount++
+	s.planCache.Store(key, entry)
+	return entry.Candidates, true
+}
+
+// resolvePlanCacheTTL 返回 LLM 响应缓存的 TTL。
+func (s *Coordinator) resolvePlanCacheTTL() time.Duration {
+	if s != nil && s.config.PlanCacheTTL > 0 {
+		return s.config.PlanCacheTTL
+	}
+	return 5 * time.Minute
+}
+
+// StorePlanCache 存储 LLM 响应到缓存。
+func (s *Coordinator) StorePlanCache(pageSignature, blockReason string, candidates []perception.Candidate) {
+	if s == nil || pageSignature == "" || len(candidates) == 0 {
+		return
+	}
+	key := pageSignature + "|" + blockReason
+	s.planCache.Store(key, planCacheEntry{
+		Candidates: candidates,
+		CreatedAt:  time.Now(),
+		HitCount:   1,
+	})
+}
+
+// InvalidatePlanCache 清除指定页面的 LLM 响应缓存。
+func (s *Coordinator) InvalidatePlanCache(pageSignature string) {
+	if s == nil || pageSignature == "" {
+		return
+	}
+	prefix := pageSignature + "|"
+	s.planCache.Range(func(key, value any) bool {
+		if k, ok := key.(string); ok && strings.HasPrefix(k, prefix) {
+			s.planCache.Delete(key)
+		}
+		return true
+	})
 }
 
 func (s *Coordinator) buildPageControlCandidates(strategy string, ctx enginestate.TraversalContext) ([]perception.Candidate, error) {

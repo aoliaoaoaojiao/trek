@@ -74,7 +74,7 @@ func (p *RecoveryPrompt) ScreenshotBase64() string {
 //   - 多模态优先：截图是恢复决策的核心输入，XML 作为辅助
 //   - 坐标归一化：LLM 返回 (x, y) 归一化坐标 [0, 1]，引擎转换为像素坐标
 //   - 结构化历史：RecentTrace 格式化为可读描述
-func buildRecoveryPrompt(ctx enginestate.TraversalContext) RecoveryPrompt {
+func buildRecoveryPrompt(ctx enginestate.TraversalContext, adapter *ModelAdapter) RecoveryPrompt {
 	systemInstruction := `你是一个专业的 Android UI 自动遍历恢复规划器。你将收到当前屏幕的截图和上下文信息，需要规划下一步恢复动作。
 
 关键规则：
@@ -84,6 +84,12 @@ func buildRecoveryPrompt(ctx enginestate.TraversalContext) RecoveryPrompt {
 4. 返回 JSON 格式的候选动作列表`
 
 	userMessage := buildUserMessage(ctx)
+
+	// 根据模型家族适配 prompt
+	if adapter != nil {
+		systemInstruction = adapter.AdaptSystemPrompt(systemInstruction)
+		userMessage = adapter.AdaptUserMessage(userMessage)
+	}
 
 	mediaType := "image/png"
 	if len(ctx.Screenshot) == 0 {
@@ -115,9 +121,20 @@ func buildRecoveryPrompt(ctx enginestate.TraversalContext) RecoveryPrompt {
 }
 
 // buildUserMessage 构建用户级结构化上下文描述。
+// 由 5 个独立模块按需组合，方便调试和扩展。
 func buildUserMessage(ctx enginestate.TraversalContext) string {
 	var sb strings.Builder
+	sb.WriteString(buildBasicContextModule(ctx))
+	sb.WriteString(buildStatisticsModule(ctx))
+	sb.WriteString(buildTraceModule(ctx))
+	sb.WriteString(buildCandidateModule(ctx))
+	sb.WriteString(buildPageStructureModule(ctx))
+	return sb.String()
+}
 
+// buildBasicContextModule 模块 1: 基础上下文（步数、模式、页面名、阻塞原因）。
+func buildBasicContextModule(ctx enginestate.TraversalContext) string {
+	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("当前步数: %d\n", ctx.Step))
 	sb.WriteString(fmt.Sprintf("遍历模式: %s\n", ctx.Mode))
 	if ctx.PageName != "" {
@@ -126,8 +143,12 @@ func buildUserMessage(ctx enginestate.TraversalContext) string {
 	if ctx.BlockReason != "" {
 		sb.WriteString(fmt.Sprintf("阻塞原因: %s\n", ctx.BlockReason))
 	}
+	return sb.String()
+}
 
-	// 页面访问统计
+// buildStatisticsModule 模块 2: 统计上下文（页面访问次数、动作执行次数）。
+func buildStatisticsModule(ctx enginestate.TraversalContext) string {
+	var sb strings.Builder
 	if len(ctx.VisitStats.PageVisitCount) > 0 {
 		sb.WriteString("页面访问次数:\n")
 		for page, count := range ctx.VisitStats.PageVisitCount {
@@ -140,8 +161,12 @@ func buildUserMessage(ctx enginestate.TraversalContext) string {
 			sb.WriteString(fmt.Sprintf("  %s: %d次\n", action, count))
 		}
 	}
+	return sb.String()
+}
 
-	// 最近操作轨迹（格式化而非 Go 默认 %v）
+// buildTraceModule 模块 3: 轨迹上下文（最近操作轨迹、执行历史）。
+func buildTraceModule(ctx enginestate.TraversalContext) string {
+	var sb strings.Builder
 	if len(ctx.RecentTrace) > 0 {
 		sb.WriteString("最近操作轨迹:\n")
 		for i := len(ctx.RecentTrace) - 1; i >= 0; i-- {
@@ -149,6 +174,26 @@ func buildUserMessage(ctx enginestate.TraversalContext) string {
 			sb.WriteString(fmt.Sprintf("  %s → %s\n", trace.PageSignature, trace.ActionKey))
 		}
 	}
+	if len(ctx.ExecutionHistory) > 0 {
+		sb.WriteString("重复阻塞历史（最近操作）:\n")
+		for _, rec := range ctx.ExecutionHistory {
+			status := "→ " + rec.AfterPage
+			if !rec.Escaped {
+				status += " 未变化"
+			}
+			if rec.Blocked {
+				status += " [阻塞: " + rec.BlockReason + "]"
+			}
+			sb.WriteString(fmt.Sprintf("  step %d: %s @ page %s %s\n",
+				rec.Step, rec.Action, rec.PageName, status))
+		}
+	}
+	return sb.String()
+}
+
+// buildCandidateModule 模块 4: 候选上下文（本地候选摘要、已知失败/成功动作）。
+func buildCandidateModule(ctx enginestate.TraversalContext) string {
+	var sb strings.Builder
 	if len(ctx.LocalCandidates) > 0 {
 		sb.WriteString("本地候选摘要:\n")
 		for _, item := range limitCandidates(ctx.LocalCandidates, 8) {
@@ -168,35 +213,23 @@ func buildUserMessage(ctx enginestate.TraversalContext) string {
 			sb.WriteString(fmt.Sprintf("  %s\n", item))
 		}
 	}
+	return sb.String()
+}
 
-	// 重复阻塞执行历史
-	if len(ctx.ExecutionHistory) > 0 {
-		sb.WriteString("重复阻塞历史（最近操作）:\n")
-		for _, rec := range ctx.ExecutionHistory {
-			status := "→ " + rec.AfterPage
-			if !rec.Escaped {
-				status += " 未变化"
-			}
-			if rec.Blocked {
-				status += " [阻塞: " + rec.BlockReason + "]"
-			}
-			sb.WriteString(fmt.Sprintf("  step %d: %s @ page %s %s\n",
-				rec.Step, rec.Action, rec.PageName, status))
-		}
+// buildPageStructureModule 模块 5: 页面结构上下文（XML 页面源）。
+func buildPageStructureModule(ctx enginestate.TraversalContext) string {
+	if ctx.XML == "" {
+		return ""
 	}
-
-	// 如果有 XML 页面源，附加为参考
-	if ctx.XML != "" {
-		xmlSnippet := ctx.XML
-		const maxXMLLen = 4000
-		if len(xmlSnippet) > maxXMLLen {
-			xmlSnippet = xmlSnippet[:maxXMLLen] + "\n... (截断)"
-		}
-		sb.WriteString("\n页面结构（XML）:\n")
-		sb.WriteString(xmlSnippet)
-		sb.WriteString("\n")
+	var sb strings.Builder
+	xmlSnippet := ctx.XML
+	const maxXMLLen = 4000
+	if len(xmlSnippet) > maxXMLLen {
+		xmlSnippet = xmlSnippet[:maxXMLLen] + "\n... (截断)"
 	}
-
+	sb.WriteString("\n页面结构（XML）:\n")
+	sb.WriteString(xmlSnippet)
+	sb.WriteString("\n")
 	return sb.String()
 }
 

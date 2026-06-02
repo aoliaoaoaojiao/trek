@@ -374,6 +374,11 @@ declare namespace Trek {
      */
     llm_timeout_ms?: number
     /**
+     * LLM 响应缓存 TTL（秒）。
+     * 缓存"页面签名+阻塞原因 → LLM 候选"的映射，避免同一页面重复调用 LLM。默认 300（5 分钟）
+     */
+    plan_cache_ttl_seconds?: number
+    /**
      * 恢复冷却步数。
      * 恢复动作成功脱困后，状态机进入冷却模式持续此步数，期间不会再触发恢复，
      * 防止刚脱困就立即再次进入恢复。默认 2

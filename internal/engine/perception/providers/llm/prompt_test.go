@@ -14,7 +14,7 @@ func TestBuildRecoveryPrompt_SystemContent(t *testing.T) {
 		Mode:     "Recover",
 		PageName: "MainActivity",
 	}
-	prompt := buildRecoveryPrompt(ctx)
+	prompt := buildRecoveryPrompt(ctx, nil)
 
 	if !strings.Contains(prompt.SystemContent, "Android UI") {
 		t.Fatalf("SystemContent 应包含 'Android UI': %s", prompt.SystemContent)
@@ -47,7 +47,7 @@ func TestBuildRecoveryPrompt_UserContent_Structured(t *testing.T) {
 		KnownFailedActions:  []string{`{"act":"CLICK","x":0.5}`},
 		KnownSuccessActions: []string{`{"act":"BACK"}`},
 	}
-	prompt := buildRecoveryPrompt(ctx)
+	prompt := buildRecoveryPrompt(ctx, nil)
 
 	if !strings.Contains(prompt.UserContent, "当前步数: 42") {
 		t.Fatalf("UserContent 应包含格式化的步数: %s", prompt.UserContent)
@@ -88,7 +88,7 @@ func TestBuildRecoveryPrompt_UserContent_XMLSnippet(t *testing.T) {
 		Mode: "Recover",
 		XML:  xml,
 	}
-	prompt := buildRecoveryPrompt(ctx)
+	prompt := buildRecoveryPrompt(ctx, nil)
 
 	if !strings.Contains(prompt.UserContent, "页面结构（XML）") {
 		t.Fatalf("UserContent 应包含 XML 部分: %s", prompt.UserContent)
@@ -105,7 +105,7 @@ func TestBuildRecoveryPrompt_XMLTruncation(t *testing.T) {
 		Mode: "Recover",
 		XML:  longXML,
 	}
-	prompt := buildRecoveryPrompt(ctx)
+	prompt := buildRecoveryPrompt(ctx, nil)
 
 	if !strings.Contains(prompt.UserContent, "截断") {
 		t.Fatalf("长 XML 应被截断: %s", prompt.UserContent[len(prompt.UserContent)-50:])
@@ -119,7 +119,7 @@ func TestBuildRecoveryPrompt_Screenshot(t *testing.T) {
 		Mode:       "Recover",
 		Screenshot: screenshotData,
 	}
-	prompt := buildRecoveryPrompt(ctx)
+	prompt := buildRecoveryPrompt(ctx, nil)
 
 	if len(prompt.Screenshot) != len(screenshotData) {
 		t.Fatalf("Screenshot 长度应一致: 期望 %d, 实际 %d", len(screenshotData), len(prompt.Screenshot))
@@ -140,7 +140,7 @@ func TestBuildRecoveryPrompt_NoScreenshot(t *testing.T) {
 		Step: 1,
 		Mode: "Recover",
 	}
-	prompt := buildRecoveryPrompt(ctx)
+	prompt := buildRecoveryPrompt(ctx, nil)
 
 	if prompt.Screenshot != nil {
 		t.Fatalf("无截图时 Screenshot 应为 nil")
@@ -160,7 +160,7 @@ func TestBuildRecoveryPrompt_ScreenshotIsolation(t *testing.T) {
 		Mode:       "Recover",
 		Screenshot: original,
 	}
-	prompt := buildRecoveryPrompt(ctx)
+	prompt := buildRecoveryPrompt(ctx, nil)
 
 	// 修改原始数据不应影响 prompt
 	original[0] = 0x00
@@ -191,7 +191,7 @@ func TestBuildRecoveryPrompt_ContextFieldsPreserved(t *testing.T) {
 		KnownFailedActions:  []string{"A", "B"},
 		KnownSuccessActions: []string{"C"},
 	}
-	prompt := buildRecoveryPrompt(ctx)
+	prompt := buildRecoveryPrompt(ctx, nil)
 
 	if prompt.ContextFields.Step != 42 {
 		t.Fatalf("Step 应为 42, 实际: %d", prompt.ContextFields.Step)
@@ -211,7 +211,7 @@ func TestBuildRecoveryPrompt_ContextFieldsPreserved(t *testing.T) {
 }
 
 func TestBuildRecoveryPrompt_ResponseSchema_PointCoordinates(t *testing.T) {
-	prompt := buildRecoveryPrompt(enginestate.TraversalContext{})
+	prompt := buildRecoveryPrompt(enginestate.TraversalContext{}, nil)
 	schema := prompt.ResponseSchema
 
 	props, ok := schema["properties"].(map[string]any)
@@ -274,7 +274,7 @@ func TestBuildRecoveryPrompt_RecentTraceFormatting(t *testing.T) {
 			{PageSignature: "page_C", ActionKey: "back"},
 		},
 	}
-	prompt := buildRecoveryPrompt(ctx)
+	prompt := buildRecoveryPrompt(ctx, nil)
 
 	// 轨迹应倒序显示（最近在前）
 	lines := strings.Split(prompt.UserContent, "\n")
@@ -298,7 +298,7 @@ func TestBuildRecoveryPrompt_RecentTraceFormatting(t *testing.T) {
 
 func TestBuildRecoveryPrompt_EmptyContext(t *testing.T) {
 	ctx := enginestate.TraversalContext{}
-	prompt := buildRecoveryPrompt(ctx)
+	prompt := buildRecoveryPrompt(ctx, nil)
 
 	if prompt.ContextFields.Step != 0 {
 		t.Fatalf("空 ctx 的 Step 应为 0, 实际: %d", prompt.ContextFields.Step)

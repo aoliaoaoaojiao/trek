@@ -416,7 +416,7 @@ export function ConfigPanel(props: Props) {
               { value: "false", label: "关闭" },
             ])}
           </label>
-          {props.pageSource === "poco" ? (
+          {props.pageSource === "poco" || props.pageSource === "mixed" ? (
             <>
               <label className="flex flex-col gap-1 text-sm">
                 Poco 引擎

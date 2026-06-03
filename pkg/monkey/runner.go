@@ -38,6 +38,7 @@ const (
 	defaultHighValuePageVisitLimit                 = 2
 	defaultCandidateRiskDropThreshold              = 2.1
 	defaultCandidateMinFusionScore                 = -0.3
+	defaultMaxRecoveryAttempts                     = 5
 	maxRecentTraceEntries                          = 8
 )
 
@@ -383,9 +384,11 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 		)
 	}
 	recoveryState := newRecoveryStateMachineWithCooldown(cfg.RecoveryCooldownSteps)
-	if cfg.MaxRecoveryAttempts > 0 {
-		recoveryState.SetMaxRecoveryAttempts(cfg.MaxRecoveryAttempts)
+	maxRecoveryAttempts := cfg.MaxRecoveryAttempts
+	if maxRecoveryAttempts <= 0 {
+		maxRecoveryAttempts = defaultMaxRecoveryAttempts
 	}
+	recoveryState.SetMaxRecoveryAttempts(maxRecoveryAttempts)
 	return &Runner{
 		decider:                decider,
 		driver:                 driver,

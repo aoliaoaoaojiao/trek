@@ -260,6 +260,14 @@ func (r *Runner) nextBlockRecoveryCommand(pageName string, input coordinator.Act
 		return fallback, nil
 	}
 
+	// 恢复多次失败后强制尝试 BACK（即使已经试过）
+	if r.recoveryState != nil && r.recoveryState.RecoveryAttempts() >= 3 {
+		fallback := &types.ActionCommand{Act: types.BACK}
+		r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(fallback, perception.SourceHeuristic)}
+		logger.Infof("block recovery: forcing BACK after %d failed attempts", r.recoveryState.RecoveryAttempts())
+		return fallback, nil
+	}
+
 	knownFailed, knownSuccess, knownErr := r.collectBothKnownActions(ctx)
 	if knownErr != nil {
 		return nil, knownErr
@@ -316,6 +324,14 @@ func (r *Runner) nextDirectLLMPlanningCommand(step int, beforePage coordinator.P
 	history := r.collectStepContextHistory(r.directLLMHistorySteps)
 	execHistory := r.buildExecutionHistory(history)
 	ctx := r.buildTraversalContextWithHistory(step, beforePage, execHistory)
+
+	// 恢复多次失败后强制尝试 BACK
+	if r.recoveryState != nil && r.recoveryState.RecoveryAttempts() >= 3 {
+		fallback := &types.ActionCommand{Act: types.BACK}
+		r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(fallback, perception.SourceHeuristic)}
+		logger.Infof("direct LLM planning: forcing BACK after %d failed attempts", r.recoveryState.RecoveryAttempts())
+		return fallback, nil
+	}
 
 	provider, ok := r.decider.(RecoveryCandidateProvider)
 	if !ok || provider == nil {

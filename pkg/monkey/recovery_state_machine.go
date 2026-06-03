@@ -18,6 +18,8 @@ type recoveryStateMachine struct {
 	blockReason       string
 	cooldownSteps     int
 	cooldownRemaining int
+	recoveryAttempts  int // 当前恢复周期内的尝试次数
+	maxRecoveryAttempts int // 恢复周期内最大尝试次数（0=不限制）
 }
 
 func newRecoveryStateMachine() *recoveryStateMachine {
@@ -32,6 +34,30 @@ func newRecoveryStateMachineWithCooldown(cooldownSteps int) *recoveryStateMachin
 		mode:          TraversalModeExplore,
 		cooldownSteps: cooldownSteps,
 	}
+}
+
+// SetMaxRecoveryAttempts 设置恢复周期内最大尝试次数。
+func (m *recoveryStateMachine) SetMaxRecoveryAttempts(maxAttempts int) {
+	if m == nil {
+		return
+	}
+	m.maxRecoveryAttempts = maxAttempts
+}
+
+// RecoveryAttempts 返回当前恢复周期内的尝试次数。
+func (m *recoveryStateMachine) RecoveryAttempts() int {
+	if m == nil {
+		return 0
+	}
+	return m.recoveryAttempts
+}
+
+// IsRecoveryBudgetExhausted 检查恢复预算是否已耗尽。
+func (m *recoveryStateMachine) IsRecoveryBudgetExhausted() bool {
+	if m == nil || m.maxRecoveryAttempts <= 0 {
+		return false
+	}
+	return m.recoveryAttempts >= m.maxRecoveryAttempts
 }
 
 func (m *recoveryStateMachine) Mode() TraversalMode {
@@ -58,9 +84,17 @@ func (m *recoveryStateMachine) OnBlockDetected(reason string) {
 		m.mode = TraversalModeSuspectBlocked
 	case TraversalModeSuspectBlocked:
 		m.mode = TraversalModeRecover
+		m.recoveryAttempts = 0
 	case TraversalModeRecover:
 		// 恢复失败但预算未耗尽：保持 Recover 状态继续尝试恢复。
 		// 这符合设计规格的 Recover→Recover 自循环。
+		m.recoveryAttempts++
+		if m.IsRecoveryBudgetExhausted() {
+			// 预算耗尽：强制进入冷却模式
+			m.mode = TraversalModeCooldown
+			m.cooldownRemaining = m.cooldownSteps
+			m.recoveryAttempts = 0
+		}
 	case TraversalModeCooldown:
 		m.mode = TraversalModeSuspectBlocked
 		m.cooldownRemaining = 0
@@ -72,6 +106,7 @@ func (m *recoveryStateMachine) OnProgress(escaped bool) {
 		return
 	}
 	m.blockReason = ""
+	m.recoveryAttempts = 0
 	if m.cooldownSteps > 0 {
 		m.mode = TraversalModeCooldown
 		m.cooldownRemaining = m.cooldownSteps

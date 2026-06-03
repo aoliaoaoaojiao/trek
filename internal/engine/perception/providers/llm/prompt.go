@@ -81,7 +81,39 @@ func buildRecoveryPrompt(ctx enginestate.TraversalContext, adapter *ModelAdapter
 1. 仔细观察截图中的 UI 元素，返回可执行的操作
 2. 对需要点击/长按的元素，返回其中心点的归一化坐标 (x, y)，取值范围 [0, 1]
 3. 页面可能处于异常状态（弹窗、卡死、无响应），优先选择返回/关闭等恢复操作
-4. 返回 JSON 格式的候选动作列表`
+4. 返回 JSON 格式的候选动作列表
+
+## 示例
+
+### 示例 1：弹窗阻塞
+上下文：页面被弹窗遮挡，阻塞原因=same_page_no_change
+正确响应：
+{
+  "candidates": [
+    {"action_type": "CLICK", "point": {"x": 0.5, "y": 0.7}, "confidence": 0.9, "escape_score": 0.8, "reason": "点击弹窗关闭按钮"},
+    {"action_type": "BACK", "confidence": 0.7, "escape_score": 0.6, "reason": "按返回键关闭弹窗"}
+  ]
+}
+
+### 示例 2：重复页面阻塞
+上下文：同一页面访问 5 次，阻塞原因=same_page_no_change，已有 CLICK 尝试失败
+正确响应：
+{
+  "candidates": [
+    {"action_type": "SCROLL_BOTTOM_UP", "confidence": 0.8, "escape_score": 0.7, "reason": "向上滚动查看新内容"},
+    {"action_type": "BACK", "confidence": 0.6, "escape_score": 0.5, "reason": "返回上一页探索其他路径"}
+  ]
+}
+
+### 示例 3：加载失败
+上下文：页面显示错误或空白，阻塞原因=same_action_no_change
+正确响应：
+{
+  "candidates": [
+    {"action_type": "CLICK", "point": {"x": 0.5, "y": 0.6}, "confidence": 0.85, "escape_score": 0.9, "reason": "点击重试按钮"},
+    {"action_type": "BACK", "confidence": 0.7, "escape_score": 0.7, "reason": "返回上一页"}
+  ]
+}`
 
 	userMessage := buildUserMessage(ctx)
 

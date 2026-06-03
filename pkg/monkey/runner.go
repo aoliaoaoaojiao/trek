@@ -119,6 +119,7 @@ type Config struct {
 	HighValuePageVisitLimit           int
 	CandidateRiskDropThreshold        float64
 	CandidateMinFusionScore           float64
+	MaxRecoveryAttempts               int // 恢复周期内最大尝试次数（0=不限制，默认 10）
 	ImageSignatureFunc                func([]byte) string
 	ImageFingerprintRegions           []ImageFingerprintRegion
 	ImageFingerprintHammingThreshold  int
@@ -381,6 +382,10 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 			cfg.LLMBudgetWindowStep,
 		)
 	}
+	recoveryState := newRecoveryStateMachineWithCooldown(cfg.RecoveryCooldownSteps)
+	if cfg.MaxRecoveryAttempts > 0 {
+		recoveryState.SetMaxRecoveryAttempts(cfg.MaxRecoveryAttempts)
+	}
 	return &Runner{
 		decider:                decider,
 		driver:                 driver,
@@ -388,7 +393,7 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 		rng:                    rand.New(rand.NewSource(time.Now().UnixNano())),
 		blockDetector:          newBlockDetector(cfg.BlockNoChangeThreshold),
 		fuzzyMatcher:           NewFuzzyPageNameMatcher(cfg.ImageFingerprintHammingThreshold),
-		recoveryState:          newRecoveryStateMachineWithCooldown(cfg.RecoveryCooldownSteps),
+		recoveryState:          recoveryState,
 		candidateEnhanceBudget: enhanceBudget,
 		lastEnhancementStep:    -1,
 		recentTrace:            make([]enginestate.ActionTrace, 0, maxRecentTraceEntries),

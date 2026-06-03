@@ -36,6 +36,9 @@ type StaticConfig struct {
 	KeepStepRecords                   coretypes.Optional[bool]
 	ExploreOCRTimeoutMs               coretypes.Optional[int]
 	LLMTimeoutMs                      coretypes.Optional[int]
+	InsightLLMEndpoint                string // Insight 模型端点（用于页面控件检测等轻量任务）
+	InsightLLMAPIKey                  string
+	InsightLLMModel                   string
 	RecoveryCooldownSteps             coretypes.Optional[int]
 	RecoveryTwoStateLoopThreshold     coretypes.Optional[int]
 	RecoveryHighVisitThreshold        coretypes.Optional[int]
@@ -279,6 +282,27 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 	// 可选整数字段
 	cfg.ExploreOCRTimeoutMs = optionalInt(obj, "explore_ocr_timeout_ms", "exploreOcrTimeoutMs")
 	cfg.LLMTimeoutMs = optionalInt(obj, "llm_timeout_ms", "recovery_llm_timeout_ms", "llmTimeoutMs", "recoveryLlmTimeoutMs")
+
+	// Insight 模型配置（用于页面控件检测等轻量任务）
+	if insightEndpoint := obj.Get("insight_llm_endpoint"); !isEmptyJSValue(insightEndpoint) {
+		cfg.InsightLLMEndpoint = strings.TrimSpace(insightEndpoint.String())
+	}
+	if insightEndpoint := obj.Get("insightLLMEndpoint"); cfg.InsightLLMEndpoint == "" && !isEmptyJSValue(insightEndpoint) {
+		cfg.InsightLLMEndpoint = strings.TrimSpace(insightEndpoint.String())
+	}
+	if insightAPIKey := obj.Get("insight_llm_api_key"); !isEmptyJSValue(insightAPIKey) {
+		cfg.InsightLLMAPIKey = strings.TrimSpace(insightAPIKey.String())
+	}
+	if insightAPIKey := obj.Get("insightLLMAPIKey"); cfg.InsightLLMAPIKey == "" && !isEmptyJSValue(insightAPIKey) {
+		cfg.InsightLLMAPIKey = strings.TrimSpace(insightAPIKey.String())
+	}
+	if insightModel := obj.Get("insight_llm_model"); !isEmptyJSValue(insightModel) {
+		cfg.InsightLLMModel = strings.TrimSpace(insightModel.String())
+	}
+	if insightModel := obj.Get("insightLLMModel"); cfg.InsightLLMModel == "" && !isEmptyJSValue(insightModel) {
+		cfg.InsightLLMModel = strings.TrimSpace(insightModel.String())
+	}
+
 	cfg.RecoveryCooldownSteps = optionalInt(obj, "recovery_cooldown_steps", "recoveryCooldownSteps")
 	cfg.RecoveryTwoStateLoopThreshold = optionalInt(obj, "recovery_two_state_loop_threshold", "recoveryTwoStateLoopThreshold")
 	cfg.RecoveryHighVisitThreshold = optionalInt(obj, "recovery_high_visit_threshold", "recoveryHighVisitThreshold")

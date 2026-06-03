@@ -47,6 +47,14 @@ type Config struct {
 	RecoveryLLMOpenAIAPIKey  string
 	RecoveryLLMOpenAIBaseURL string
 	RecoveryLLMTimeout       time.Duration
+
+	// Insight 模型配置（用于页面控件检测等轻量任务）
+	InsightLLMEndpoint      string
+	InsightLLMAPIKey        string
+	InsightLLMModel         string
+	InsightLLMOpenAIModel   string
+	InsightLLMOpenAIAPIKey  string
+	InsightLLMOpenAIBaseURL string
 	PageControlStrategy      string
 	PageControlCacheFile     string
 	PageControlCacheTTL      time.Duration
@@ -105,6 +113,7 @@ type Coordinator struct {
 	pageControlCache     sync.Map
 	consumedFingerprints sync.Map // 消费标记：恢复周期内跳过已消费的缓存条目
 	planCache            sync.Map // LLM 响应缓存: key="pageSignature|blockReason" → planCacheEntry
+	locateCache          sync.Map // 元素定位缓存: key="intent|pageSignature" → locateCacheEntry
 }
 
 type pageControlCacheEntry struct {
@@ -117,6 +126,12 @@ type planCacheEntry struct {
 	Candidates []perception.Candidate
 	CreatedAt  time.Time
 	HitCount   int
+}
+
+type locateCacheEntry struct {
+	Candidate perception.Candidate
+	CreatedAt time.Time
+	HitCount  int
 }
 
 type candidateProvider interface {
@@ -226,15 +241,25 @@ func (s *Coordinator) initExploreOCRProvider() {
 }
 
 func (s *Coordinator) initPageControlLLMProvider() {
-	endpoint := strings.TrimSpace(s.config.RecoveryLLMEndpoint)
+	// 优先使用 Insight 模型配置（轻量级任务），否则回退到 Recovery 模型配置
+	endpoint := strings.TrimSpace(s.config.InsightLLMEndpoint)
+	if endpoint == "" {
+		endpoint = strings.TrimSpace(s.config.RecoveryLLMEndpoint)
+	}
 	if endpoint == "" {
 		endpoint = strings.TrimSpace(os.Getenv("LLM_API_URL"))
 	}
-	apiKey := strings.TrimSpace(s.config.RecoveryLLMAPIKey)
+	apiKey := strings.TrimSpace(s.config.InsightLLMAPIKey)
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(s.config.RecoveryLLMAPIKey)
+	}
 	if apiKey == "" {
 		apiKey = strings.TrimSpace(os.Getenv("LLM_API_KEY"))
 	}
-	model := strings.TrimSpace(s.config.RecoveryLLMModel)
+	model := strings.TrimSpace(s.config.InsightLLMModel)
+	if model == "" {
+		model = strings.TrimSpace(s.config.RecoveryLLMModel)
+	}
 	if model == "" {
 		model = strings.TrimSpace(os.Getenv("LLM_MODEL"))
 	}
@@ -252,22 +277,31 @@ func (s *Coordinator) initPageControlLLMProvider() {
 			return
 		}
 		s.llmProvider = provider
-		logger.Infof("coordinator page control llm provider 已启用: endpoint=%s", endpoint)
+		logger.Infof("coordinator page control llm provider 已启用: endpoint=%s model=%s", endpoint, model)
 		return
 	}
 
-	openAIModel := strings.TrimSpace(s.config.RecoveryLLMOpenAIModel)
+	openAIModel := strings.TrimSpace(s.config.InsightLLMOpenAIModel)
+	if openAIModel == "" {
+		openAIModel = strings.TrimSpace(s.config.RecoveryLLMOpenAIModel)
+	}
 	if openAIModel == "" {
 		openAIModel = strings.TrimSpace(os.Getenv("OPENAI_MODEL"))
 	}
 	if openAIModel == "" {
 		return
 	}
-	openAIKey := strings.TrimSpace(s.config.RecoveryLLMOpenAIAPIKey)
+	openAIKey := strings.TrimSpace(s.config.InsightLLMOpenAIAPIKey)
+	if openAIKey == "" {
+		openAIKey = strings.TrimSpace(s.config.RecoveryLLMOpenAIAPIKey)
+	}
 	if openAIKey == "" {
 		openAIKey = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 	}
-	openAIBaseURL := strings.TrimSpace(s.config.RecoveryLLMOpenAIBaseURL)
+	openAIBaseURL := strings.TrimSpace(s.config.InsightLLMOpenAIBaseURL)
+	if openAIBaseURL == "" {
+		openAIBaseURL = strings.TrimSpace(s.config.RecoveryLLMOpenAIBaseURL)
+	}
 	if openAIBaseURL == "" {
 		openAIBaseURL = strings.TrimSpace(os.Getenv("OPENAI_API_URL"))
 	}
@@ -1035,6 +1069,59 @@ func (s *Coordinator) InvalidatePlanCache(pageSignature string) {
 	s.planCache.Range(func(key, value any) bool {
 		if k, ok := key.(string); ok && strings.HasPrefix(k, prefix) {
 			s.planCache.Delete(key)
+		}
+		return true
+	})
+}
+
+// LoadLocateCache 从元素定位缓存加载候选。
+// key = "intent|pageSignature"
+func (s *Coordinator) LoadLocateCache(intent, pageSignature string) (*perception.Candidate, bool) {
+	if s == nil || intent == "" || pageSignature == "" {
+		return nil, false
+	}
+	key := intent + "|" + pageSignature
+	cached, ok := s.locateCache.Load(key)
+	if !ok {
+		return nil, false
+	}
+	entry, ok := cached.(locateCacheEntry)
+	if !ok {
+		return nil, false
+	}
+	// TTL 检查：使用 Plan Cache 的 TTL 配置
+	ttl := s.resolvePlanCacheTTL()
+	if time.Since(entry.CreatedAt) > ttl {
+		s.locateCache.Delete(key)
+		return nil, false
+	}
+	entry.HitCount++
+	s.locateCache.Store(key, entry)
+	return &entry.Candidate, true
+}
+
+// StoreLocateCache 存储元素定位结果到缓存。
+func (s *Coordinator) StoreLocateCache(intent, pageSignature string, candidate perception.Candidate) {
+	if s == nil || intent == "" || pageSignature == "" {
+		return
+	}
+	key := intent + "|" + pageSignature
+	s.locateCache.Store(key, locateCacheEntry{
+		Candidate: candidate,
+		CreatedAt: time.Now(),
+		HitCount:  1,
+	})
+}
+
+// InvalidateLocateCache 清除指定页面的元素定位缓存。
+func (s *Coordinator) InvalidateLocateCache(pageSignature string) {
+	if s == nil || pageSignature == "" {
+		return
+	}
+	prefix := "|" + pageSignature
+	s.locateCache.Range(func(key, value any) bool {
+		if k, ok := key.(string); ok && strings.HasSuffix(k, prefix) {
+			s.locateCache.Delete(key)
 		}
 		return true
 	})

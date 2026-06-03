@@ -232,6 +232,9 @@ func runMonkey(logLevelStr string, opts struct {
 		PlanCacheTTL:         planCacheTTL,
 		OnPlanCacheHit:       func() { planCacheHits++ },
 		OnPlanCacheMiss:      func() { planCacheMisses++ },
+		InsightLLMEndpoint:   staticCfg.InsightLLMEndpoint,
+		InsightLLMAPIKey:     staticCfg.InsightLLMAPIKey,
+		InsightLLMModel:      staticCfg.InsightLLMModel,
 	})
 	if err != nil {
 		return fmt.Errorf("创建会话失败: %w", err)

@@ -1344,6 +1344,8 @@ func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candida
 		ContentDesc string
 		Bounds      string
 		Editable    bool
+		Scrollable  bool
+		ScrollType  string
 	}
 
 	nodes := make([]syntheticNode, 0, len(items))
@@ -1351,11 +1353,14 @@ func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candida
 		if item.Command == nil {
 			continue
 		}
-		if item.Command.Act != types.CLICK && item.Command.Act != types.LONG_CLICK && item.Command.Act != types.INPUT {
-			continue
-		}
 		pos := item.Command.Pos
 		if pos.IsEmpty() {
+			continue
+		}
+		act := item.Command.Act
+		// 仅保留可交互动作：CLICK、LONG_CLICK、INPUT、SCROLL_*
+		if act != types.CLICK && act != types.LONG_CLICK && act != types.INPUT &&
+			!isScrollAction(act) {
 			continue
 		}
 		label := strings.TrimSpace(item.Metadata["ocr_text"])
@@ -1372,12 +1377,15 @@ func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candida
 		if len([]rune(label)) > 15 {
 			label = string([]rune(label)[:12]) + "..."
 		}
+		scrollType := scrollTypeForAction(act)
 		nodes = append(nodes, syntheticNode{
 			Text:        label,
-			Class:       resolveSyntheticWidgetClass(label, item.Command.Act),
+			Class:       resolveSyntheticWidgetClass(label, act),
 			ContentDesc: label,
 			Bounds:      fmt.Sprintf("[%.6f,%.6f][%.6f,%.6f]", pos.Left, pos.Top, pos.Right, pos.Bottom),
-			Editable:    item.Command.Act == types.INPUT,
+			Editable:    act == types.INPUT,
+			Scrollable:  scrollType != "",
+			ScrollType:  scrollType,
 		})
 	}
 	if len(nodes) == 0 {
@@ -1395,19 +1403,31 @@ func buildSyntheticXMLFromCandidates(strategy string, items []perception.Candida
 	b.WriteString(fmt.Sprintf(`  <node index="0" text="" resource-id="" class="android.widget.FrameLayout" content-desc="" clickable="false" enabled="true"%s bounds="[0,0][1,1]">`, rootExtraAttr))
 	b.WriteString("\n")
 	for i, node := range nodes {
-		editableAttr := ` editable="false"`
-		if node.Editable {
-			editableAttr = ` editable="true"`
+		if node.Scrollable {
+			b.WriteString(fmt.Sprintf(`    <node index="%d" text="%s" resource-id="visual_%d" class="%s" content-desc="%s" clickable="false" scrollable="true" scrollType="%s" enabled="true" bounds="%s"/>`,
+				i+1,
+				escapeXMLAttr(node.Text),
+				i+1,
+				node.Class,
+				escapeXMLAttr(node.ContentDesc),
+				node.ScrollType,
+				node.Bounds,
+			))
+		} else {
+			editableAttr := ` editable="false"`
+			if node.Editable {
+				editableAttr = ` editable="true"`
+			}
+			b.WriteString(fmt.Sprintf(`    <node index="%d" text="%s" resource-id="visual_%d" class="%s" content-desc="%s" clickable="true" long-clickable="false" enabled="true"%s bounds="%s"/>`,
+				i+1,
+				escapeXMLAttr(node.Text),
+				i+1,
+				node.Class,
+				escapeXMLAttr(node.ContentDesc),
+				editableAttr,
+				node.Bounds,
+			))
 		}
-		b.WriteString(fmt.Sprintf(`    <node index="%d" text="%s" resource-id="visual_%d" class="%s" content-desc="%s" clickable="true" long-clickable="false" enabled="true"%s bounds="%s"/>`,
-			i+1,
-			escapeXMLAttr(node.Text),
-			i+1,
-			node.Class,
-			escapeXMLAttr(node.ContentDesc),
-			editableAttr,
-			node.Bounds,
-		))
 		b.WriteString("\n")
 	}
 	b.WriteString("  </node>\n</hierarchy>")
@@ -1530,12 +1550,41 @@ func resolveSyntheticWidgetClass(label string, act types.ActionType) string {
 	if act == types.INPUT {
 		return "android.widget.EditText"
 	}
+	if isScrollAction(act) {
+		return "android.widget.ScrollView"
+	}
 	lower := strings.ToLower(strings.TrimSpace(label))
 	switch {
 	case strings.Contains(lower, "输入"), strings.Contains(lower, "搜索"), strings.Contains(lower, "search"), strings.Contains(lower, "input"):
 		return "android.widget.EditText"
 	default:
 		return "android.widget.Button"
+	}
+}
+
+// isScrollAction 判断动作类型是否为滚动类。
+func isScrollAction(act types.ActionType) bool {
+	switch act {
+	case types.SCROLL_BOTTOM_UP, types.SCROLL_TOP_DOWN,
+		types.SCROLL_LEFT_RIGHT, types.SCROLL_RIGHT_LEFT,
+		types.SCROLL_BOTTOM_UP_N:
+		return true
+	default:
+		return false
+	}
+}
+
+// scrollTypeForAction 将滚动动作类型映射为 scrollType 属性值。
+// 非滚动动作返回空字符串。
+func scrollTypeForAction(act types.ActionType) string {
+	switch act {
+	case types.SCROLL_BOTTOM_UP, types.SCROLL_TOP_DOWN,
+		types.SCROLL_BOTTOM_UP_N:
+		return "Vertical"
+	case types.SCROLL_LEFT_RIGHT, types.SCROLL_RIGHT_LEFT:
+		return "Horizontal"
+	default:
+		return ""
 	}
 }
 

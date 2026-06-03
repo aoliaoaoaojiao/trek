@@ -91,3 +91,32 @@ func TestParseCandidatesRejectsDragWithoutTarget(t *testing.T) {
 		t.Fatalf("缺少 drag_target 的 drag 不应进入候选，实际: %+v", items)
 	}
 }
+
+func TestParseCandidatesMapsDragVerticalDirection(t *testing.T) {
+	output := Response{
+		Controls: []Control{
+			{
+				ActionType: "drag",
+				Text:       "第1项",
+				ControlType: "drag_handle",
+				Confidence:  0.9,
+				Bounds:      Bounds{Left: 0.02, Top: 0.15, Right: 0.08, Bottom: 0.22},
+				DragTarget:  types.NewPoint(0.05, 0.55),
+			},
+		},
+	}
+
+	items := ParseCandidates(output, 0, 0)
+	if len(items) != 1 {
+		t.Fatalf("候选数量错误: %d", len(items))
+	}
+	if items[0].Command == nil || items[0].Command.Act != types.SCROLL_TOP_DOWN {
+		t.Fatalf("向下拖拽应映射为 SCROLL_TOP_DOWN，实际: %+v", items[0].Command)
+	}
+	if items[0].Command.DragTo == nil {
+		t.Fatalf("drag_target 应保留到动作命令")
+	}
+	if items[0].Metadata["llm_control_type"] != "drag_handle" {
+		t.Fatalf("control_type 应保留为 drag_handle，实际: %s", items[0].Metadata["llm_control_type"])
+	}
+}

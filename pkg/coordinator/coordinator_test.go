@@ -426,6 +426,40 @@ func TestSessionTransformPageInfoWithLLMPageControlStrategy(t *testing.T) {
 	}
 }
 
+func TestBuildSyntheticXMLIncludesScrollCandidates(t *testing.T) {
+	clickItem := perception.NewCandidate(
+		&types.ActionCommand{Act: types.CLICK, Pos: *types.NewRect(0.1, 0.1, 0.3, 0.2)},
+		perception.SourceLLM, "click_test", map[string]string{"llm_control_text": "按钮"},
+	)
+	scrollUpItem := perception.NewCandidate(
+		&types.ActionCommand{Act: types.SCROLL_BOTTOM_UP, Pos: *types.NewRect(0.0, 0.1, 1.0, 0.9)},
+		perception.SourceLLM, "scroll_area", map[string]string{"llm_control_text": "列表区域"},
+	)
+	scrollLeftItem := perception.NewCandidate(
+		&types.ActionCommand{Act: types.SCROLL_RIGHT_LEFT, Pos: *types.NewRect(0.0, 0.0, 1.0, 0.3)},
+		perception.SourceLLM, "carousel", map[string]string{"llm_control_text": "轮播区"},
+	)
+
+	xml, _ := buildSyntheticXMLFromCandidates(pageControlStrategyLLM,
+		[]perception.Candidate{clickItem, scrollUpItem, scrollLeftItem}, nil)
+
+	if !strings.Contains(xml, `text="按钮"`) {
+		t.Fatalf("预期包含 CLICK 节点，实际 XML: %s", xml)
+	}
+	if !strings.Contains(xml, `scrollable="true"`) {
+		t.Fatalf("预期包含 scrollable 节点，实际 XML: %s", xml)
+	}
+	if !strings.Contains(xml, `scrollType="Vertical"`) {
+		t.Fatalf("预期包含 Vertical scrollType，实际 XML: %s", xml)
+	}
+	if !strings.Contains(xml, `scrollType="Horizontal"`) {
+		t.Fatalf("预期包含 Horizontal scrollType，实际 XML: %s", xml)
+	}
+	if !strings.Contains(xml, `class="android.widget.ScrollView"`) {
+		t.Fatalf("预期 ScrollView class，实际 XML: %s", xml)
+	}
+}
+
 func TestSessionNextBlockRecoveryActionForcesPageControlRefresh(t *testing.T) {
 	session, err := NewSession(Config{
 		PackageName:         "com.demo",

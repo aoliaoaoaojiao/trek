@@ -154,7 +154,7 @@ func schema() map[string]any {
 						},
 						"control_type": map[string]any{
 							"type": "string",
-							"enum": []string{"button", "input", "tab", "list_item", "icon", "text", "dialog_action", "close", "back", "unknown"},
+							"enum": []string{"button", "input", "tab", "list_item", "icon", "text", "dialog_action", "close", "back", "drag_handle", "draggable", "unknown"},
 						},
 						"text":       map[string]any{"type": "string"},
 						"hint":       map[string]any{"type": "string"},

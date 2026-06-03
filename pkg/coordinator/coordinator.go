@@ -831,16 +831,21 @@ func (s *Coordinator) buildPageInfoByStrategy(pageName string, input ActionInput
 }
 
 func (s *Coordinator) loadPageControlCache(strategy string, screenshot []byte, forceRefresh bool) (string, bool) {
-	cacheKey := pageControlCacheKey(strategy, screenshot)
-	if cacheKey == "" {
+	// 计算一次指纹，同时用于缓存键和消费标记检查
+	fingerprint := pageControlCacheFingerprint(screenshot)
+	if strategy != pageControlStrategyOCR && strategy != pageControlStrategyLLM {
 		return "", false
 	}
+	if fingerprint == "" {
+		return "", false
+	}
+	cacheKey := strategy + "|" + fingerprint
 	if forceRefresh {
 		logger.Debugf("coordinator 页面控件缓存主动刷新: reason=block_recovery strategy=%s", strategy)
 		return "", false
 	}
 	// 消费标记检查：恢复周期内跳过已消费的缓存条目，强制重新识别
-	if s.IsCacheConsumed(screenshot) {
+	if s.isCacheConsumedFingerprint(fingerprint) {
 		logger.Debugf("coordinator 页面控件缓存已消费，跳过: strategy=%s", strategy)
 		return "", false
 	}
@@ -952,7 +957,12 @@ func (s *Coordinator) IsCacheConsumed(screenshot []byte) bool {
 		return false
 	}
 	fingerprint := pageControlCacheFingerprint(screenshot)
-	if fingerprint == "" {
+	return s.isCacheConsumedFingerprint(fingerprint)
+}
+
+// isCacheConsumedFingerprint 检查指定指纹是否已被消费（内部版本，避免重复计算）。
+func (s *Coordinator) isCacheConsumedFingerprint(fingerprint string) bool {
+	if s == nil || fingerprint == "" {
 		return false
 	}
 	_, loaded := s.consumedFingerprints.Load(fingerprint)

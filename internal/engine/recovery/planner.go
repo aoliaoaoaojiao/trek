@@ -1,6 +1,8 @@
 package recovery
 
 import (
+	"sync"
+
 	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 )
@@ -18,20 +20,36 @@ func NewPlanner(config PlannerConfig) *Planner {
 	return &Planner{config: config}
 }
 
-// BuildRecoveryCandidates 按 Memory -> Heuristic -> LLM 顺序汇总恢复候选。
+// BuildRecoveryCandidates 按 Memory + Heuristic（并发）-> LLM 顺序汇总恢复候选。
 func (p *Planner) BuildRecoveryCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	items := make([]perception.Candidate, 0, 8)
 
-	memoryItems, err := p.buildFromProvider(p.config.Memory, ctx)
-	if err != nil {
-		return nil, err
+	// 并发获取 Memory 和 Heuristic 候选
+	var (
+		memoryItems     []perception.Candidate
+		heuristicItems  []perception.Candidate
+		memoryErr       error
+		heuristicErr    error
+		wg              sync.WaitGroup
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		memoryItems, memoryErr = p.buildFromProvider(p.config.Memory, ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		heuristicItems, heuristicErr = p.buildFromProvider(p.config.Heuristic, ctx)
+	}()
+	wg.Wait()
+
+	if memoryErr != nil {
+		return nil, memoryErr
+	}
+	if heuristicErr != nil {
+		return nil, heuristicErr
 	}
 	items = append(items, memoryItems...)
-
-	heuristicItems, err := p.buildFromProvider(p.config.Heuristic, ctx)
-	if err != nil {
-		return nil, err
-	}
 	items = append(items, heuristicItems...)
 
 	if p.hasHighConfidenceMemory(memoryItems) {

@@ -225,6 +225,8 @@ func (r *Runner) recordActionTrace(page coordinator.PageSnapshot, cmd *types.Act
 	}
 }
 
+// cloneRecentTrace 返回最近操作轨迹的快照副本。
+// 由于 recentTrace 最多保留 maxRecentTraceEntries（8）条，开销很小。
 func (r *Runner) cloneRecentTrace() []enginestate.ActionTrace {
 	if r == nil || len(r.recentTrace) == 0 {
 		return nil
@@ -309,7 +311,7 @@ func (r *Runner) nextBlockRecoveryCommand(pageName string, input coordinator.Act
 }
 
 // nextDirectLLMPlanningCommand 在重复阻塞时综合 Memory + Heuristic + LLM 规划。
-// 将最近 2n 步的执行历史注入 TraversalContext，融合多来源候选后选择最佳动作。
+// 将最近 2n 步的执行历史注入 TraversalContext，复用 Planner 并发获取 Memory + Heuristic 候选。
 func (r *Runner) nextDirectLLMPlanningCommand(step int, beforePage coordinator.PageSnapshot, pageName string, input coordinator.ActionInput) (*types.ActionCommand, error) {
 	history := r.collectStepContextHistory(r.directLLMHistorySteps)
 	execHistory := r.buildExecutionHistory(history)
@@ -328,21 +330,19 @@ func (r *Runner) nextDirectLLMPlanningCommand(step int, beforePage coordinator.P
 	ctx.KnownFailedActions = actionKeyList(knownFailed)
 	ctx.KnownSuccessActions = actionKeyList(knownSuccess)
 
-	// 从 Memory 获取历史经验
-	var items []perception.Candidate
-	if memoryItems, err := provider.BuildMemoryRecoveryCandidates(ctx); err == nil {
-		items = append(items, memoryItems...)
+	// 复用 Planner 并发获取 Memory + Heuristic 候选（不含 LLM）
+	planner := r.getRecoveryPlanner()
+	if planner == nil {
+		return nil, nil
+	}
+	items, err := planner.BuildRecoveryCandidates(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	// 从 Heuristic 获取启发式候选
-	if heuristicItems, err := provider.BuildHeuristicRecoveryCandidates(ctx); err == nil {
-		items = append(items, heuristicItems...)
-	}
-
-	// 如果 Memory 已有高置信度候选，跳过 LLM（LLM 成本高，且经验已足够好）
+	// 手动调用 LLM（Planner 不配置 LLM，由调用方决定是否调用）
 	if !hasHighConfidenceCandidate(items) {
-		// 从 LLM 获取智能候选（注入执行历史上下文）
-		if llmItems, err := provider.BuildLLMRecoveryCandidates(ctx); err == nil {
+		if llmItems, llmErr := provider.BuildLLMRecoveryCandidates(ctx); llmErr == nil {
 			items = append(items, llmItems...)
 		}
 	}
@@ -474,6 +474,8 @@ func (r *Runner) collectKnownSuccessfulRecoveryActions(ctx enginestate.Traversal
 }
 
 // collectBothKnownActions 单次遍历记忆库同时获取失败/成功集合，避免两次 Find。
+// 优先使用 BatchRecoveryActionHistoryProvider 接口单次遍历获取；
+// 回退路径合并本地 map 后分别查询，减少 map 分配次数。
 func (r *Runner) collectBothKnownActions(ctx enginestate.TraversalContext) (failed, success map[string]bool, err error) {
 	if batch, ok := r.decider.(BatchRecoveryActionHistoryProvider); ok && batch != nil {
 		persistedFailed, persistedSuccess, err := batch.BuildKnownRecoveryActions(ctx)
@@ -484,15 +486,20 @@ func (r *Runner) collectBothKnownActions(ctx enginestate.TraversalContext) (fail
 		success = mergeBoolMaps(r.recoverySuccessAction, persistedSuccess)
 		return failed, success, nil
 	}
-	f, err1 := r.collectKnownFailedRecoveryActions(ctx)
-	if err1 != nil {
-		return nil, nil, err1
+	// 回退路径：合并本地 map 后分别查询持久层
+	knownFailed, err := r.collectKnownActions(r.recoveryFailedAction, ctx, func(p RecoveryActionHistoryProvider, c enginestate.TraversalContext) (map[string]bool, error) {
+		return p.BuildKnownFailedRecoveryActions(c)
+	})
+	if err != nil {
+		return nil, nil, err
 	}
-	s, err2 := r.collectKnownSuccessfulRecoveryActions(ctx)
-	if err2 != nil {
-		return nil, nil, err2
+	knownSuccess, err := r.collectKnownActions(r.recoverySuccessAction, ctx, func(p RecoveryActionHistoryProvider, c enginestate.TraversalContext) (map[string]bool, error) {
+		return p.BuildKnownSuccessfulRecoveryActions(c)
+	})
+	if err != nil {
+		return nil, nil, err
 	}
-	return f, s, nil
+	return knownFailed, knownSuccess, nil
 }
 
 func mergeBoolMaps(local, persisted map[string]bool) map[string]bool {

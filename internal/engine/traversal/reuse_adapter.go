@@ -49,10 +49,16 @@ func (a *ReuseAdapter) Name() string {
 	return "reuse_adapter"
 }
 
-// ProposeCandidates 从注入的状态提供者提取可选动作，
-// 映射为统一 Candidate 列表。
+// actionProvider 是 ReuseAdapter 从 agent 提取选中动作的内部接口。
+type actionProvider interface {
+	GetCurrentAction() *types.StatefulAction
+}
+
+// ProposeCandidates 返回 Reuse 算法实际选中的单个动作作为候选，
+// 而非状态中所有可选动作。这确保融合管线不会用状态中的其他动作
+// 覆盖掉 Reuse 算法已作出的选择。
 //
-// 当 stateProvider 为 nil 或当前状态无可用动作时返回空列表。
+// 当 agent 未注入或尚未选动作时，回退到从状态中提取所有可选动作。
 func (a *ReuseAdapter) ProposeCandidates(ctx enginestate.TraversalContext) ([]perception.Candidate, error) {
 	if a.stateProvider == nil {
 		return nil, nil
@@ -63,6 +69,29 @@ func (a *ReuseAdapter) ProposeCandidates(ctx enginestate.TraversalContext) ([]pe
 		return nil, nil
 	}
 
+	// 优先使用 agent 已选中的动作，避免融合管线覆盖 Reuse 的决策
+	if ap, ok := a.agent.(actionProvider); ok {
+		selected := ap.GetCurrentAction()
+		if selected != nil {
+			cmd := selected.ToOperate()
+			if cmd != nil && cmd.IsValid() {
+				c := perception.NewCandidate(
+					cmd,
+					perception.SourceAlgorithm,
+					selected.GetActionType().String(),
+					map[string]string{
+						"algorithm":     "reuse",
+						"action_type":   cmd.Act.String(),
+						"visited_count": formatInt32(selected.GetVisitedCount()),
+					},
+				)
+				c = applyOutcomeFeedback(c, a.feedback)
+				return []perception.Candidate{c}, nil
+			}
+		}
+	}
+
+	// 回退：从状态中提取所有可选动作
 	actions := state.GetActions()
 	if len(actions) == 0 {
 		return nil, nil

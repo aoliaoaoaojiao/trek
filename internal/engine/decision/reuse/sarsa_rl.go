@@ -84,9 +84,13 @@ func (a *ModelReusableAgent) computeRewardOfLatestAction() float64 {
 		logger.Debugf("computeReward: probabilityOfVisitingNewActivities %f", rewardValue)
 
 		if math.Abs(rewardValue-0.0) < 0.0001 {
-			rewardValue = 1.0
-			logger.Debugf("computeReward: New action detected, setting reward to 1.0")
-
+			// probability = 0: genuinely new action (not in reuseModel) vs all pages visited
+			if a.reuseModel[lastSelectedAction.Hash()] == nil {
+				rewardValue = 1.0
+				logger.Debugf("computeReward: New action detected (not in reuse model), setting reward to 1.0")
+			} else {
+				logger.Debugf("computeReward: all associated pages visited, no new action bonus")
+			}
 		}
 
 		rewardValue = rewardValue / math.Sqrt(float64(lastSelectedAction.GetVisitedCount())+1.0)
@@ -208,10 +212,8 @@ func (a *ModelReusableAgent) updateReuseModel() {
 		logger.Debugf("can not find action in reuse map")
 		entryMap = make(PageVisitCount)
 		a.reuseModel[hash] = entryMap
-	} else {
-		//entryMap[pageName]
-		entryMap[pageName]++
 	}
+	entryMap[pageName]++
 
 	a.reuseQValue[hash] = a.getQValueByHash(hash)
 	logger.Debugf("Updated Q-value for action %s: %.6f",

@@ -27,6 +27,7 @@ import (
 	engineruntime "trek/internal/engine/runtime"
 	enginestate "trek/internal/engine/state"
 	"trek/internal/engine/perception/providers/llm"
+	"trek/internal/engine/perception/deeplocate"
 	"trek/internal/engine/traversal"
 	visionfingerprint "trek/internal/vision/fingerprint"
 	"trek/logger"
@@ -1153,7 +1154,14 @@ func (s *Coordinator) buildPageControlCandidates(strategy string, ctx enginestat
 		if err != nil {
 			return nil, err
 		}
-		// 使用 ModelAdapter 做坐标适配（如果配置了模型族）
+		// DeepLocate: 当启用且有候选和有截图时，做两阶段精定位
+		if s.config.DeepLocateEnabled && len(candidates) > 0 && len(ctx.Screenshot) > 0 && len(candidates) > 0 {
+			refined := s.deepLocatePageControls(ctx, candidates)
+			if refined != nil {
+				candidates = refined
+			}
+		}
+		// 使用 ModelAdapter 做坐标适配
 		if s.config.ModelFamily != "" {
 			adapter := llm.NewModelAdapter(s.config.ModelFamily)
 			for i := range candidates {
@@ -1170,6 +1178,112 @@ func (s *Coordinator) buildPageControlCandidates(strategy string, ctx enginestat
 	default:
 		return nil, nil
 	}
+}
+// deepLocatePageControls 对 LLM 检测结果做 DeepLocate 两阶段精定位。
+// 取最高置信度候选作为区域，裁剪放大后重新检测，重投影坐标。
+func (s *Coordinator) deepLocatePageControls(ctx enginestate.TraversalContext, candidates []perception.Candidate) []perception.Candidate {
+	if len(candidates) == 0 || len(ctx.Screenshot) == 0 {
+		return nil
+	}
+
+	// 解码截图获取尺寸
+	img, _, err := image.Decode(bytes.NewReader(ctx.Screenshot))
+	if err != nil {
+		return nil
+	}
+	shotW := img.Bounds().Dx()
+	shotH := img.Bounds().Dy()
+	if shotW <= 0 || shotH <= 0 {
+		return nil
+	}
+
+	// 找最高置信度候选作为 section
+	bestIdx := 0
+	bestConf := candidates[0].Confidence
+	for i := 1; i < len(candidates); i++ {
+		if candidates[i].Confidence > bestConf {
+			bestConf = candidates[i].Confidence
+			bestIdx = i
+		}
+	}
+	best := candidates[bestIdx]
+	if best.Command == nil {
+		return nil
+	}
+
+	// 构建 DeepLocate section 配置
+	dlCfg := deeplocate.DeepLocateConfig{
+		Enabled:         true,
+		SectionExpandPx: s.config.DeepLocateSectionExpandPx,
+		SectionMinSize:  s.config.DeepLocateSectionMinSize,
+		ZoomFactor:      s.config.DeepLocateZoomFactor,
+	}
+	if dlCfg.SectionExpandPx <= 0 {
+		dlCfg.SectionExpandPx = 100
+	}
+	if dlCfg.SectionMinSize <= 0 {
+		dlCfg.SectionMinSize = 400
+	}
+	if dlCfg.ZoomFactor <= 0 {
+		dlCfg.ZoomFactor = 2
+	}
+
+	// 候选坐标已在 [0,1] 空间
+	vlmResp := deeplocate.VLMResponse{
+		Left:   best.Command.Pos.Left,
+		Top:    best.Command.Pos.Top,
+		Right:  best.Command.Pos.Right,
+		Bottom: best.Command.Pos.Bottom,
+	}
+
+	// Stage 1: 裁剪 + 放大
+	section, err := deeplocate.DoSection(ctx.Screenshot, shotW, shotH, vlmResp, dlCfg)
+	if err != nil || section == nil {
+		return nil
+	}
+
+	// 构建新的 context，替换为放大后的截图
+	zoomCtx := ctx
+	zoomCtx.Screenshot = section.ZoomImage
+
+	// Stage 2: 在放大区域上重新检测
+	refined, err := s.llmProvider.DetectPageControls(zoomCtx)
+	if err != nil || len(refined) == 0 {
+		return nil
+	}
+
+	// 重投影放大区域坐标回全屏空间
+	for i := range refined {
+		if refined[i].Command == nil {
+			continue
+		}
+		elemResp := deeplocate.VLMResponse{
+			Left:   refined[i].Command.Pos.Left,
+			Top:    refined[i].Command.Pos.Top,
+			Right:  refined[i].Command.Pos.Right,
+			Bottom: refined[i].Command.Pos.Bottom,
+		}
+		result, doErr := deeplocate.DoElement(elemResp, section, shotW, shotH, dlCfg)
+		if doErr == nil && result != nil && result.ElementRect != nil {
+			refined[i].Command.Pos = types.Rect{
+				Left:   result.ElementRect.Left,
+				Top:    result.ElementRect.Top,
+				Right:  result.ElementRect.Right,
+				Bottom: result.ElementRect.Bottom,
+			}
+		}
+	}
+
+	// 如果精定位结果有效，替换原始候选
+	// 将非 best 的原始候选与精定位结果合并
+	var merged []perception.Candidate
+	merged = append(merged, candidates[:bestIdx]...)
+	merged = append(merged, candidates[bestIdx+1:]...)
+	for i := range refined {
+		refined[i].Confidence = refined[i].Confidence * 1.1 // 精定位结果提升置信度
+	}
+	merged = append(merged, refined...)
+	return merged
 }
 
 // resolveChainPageControlInfo chain 策略：raw → 缓存 → OCR+LLM 并行兜底。

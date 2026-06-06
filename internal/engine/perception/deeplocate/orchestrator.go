@@ -10,6 +10,7 @@ import (
 	"trek/internal/engine/core/primitives"
 	"trek/internal/vision/coord"
 	"trek/internal/vision/imageproc"
+	"trek/logger"
 )
 
 // DeepLocateConfig 配置两阶段定位行为。
@@ -83,6 +84,8 @@ func DoSection(screenshot []byte, shotW, shotH int, vlmResp VLMResponse, cfg Dee
 	if minSize <= 0 {
 		minSize = 400
 	}
+
+	logger.Debugf("[deeplocate] section input bbox=[%.4f,%.4f,%.4f,%.4f] shot=%dx%d", vlmResp.Left, vlmResp.Top, vlmResp.Right, vlmResp.Bottom, shotW, shotH)
 
 	pxLeft := int(sectionRect.Left*float64(shotW) + 0.5)
 	pxTop := int(sectionRect.Top*float64(shotH) + 0.5)
@@ -167,6 +170,8 @@ func DoSection(screenshot []byte, shotW, shotH int, vlmResp VLMResponse, cfg Dee
 		return nil, fmt.Errorf("deeplocate: encode zoom: %w", err)
 	}
 
+	logger.Debugf("[deeplocate] section done: crop=[%d,%d,%dx%d] zoom=%dx%d (factor=%d)", pxLeft, pxTop, cropW, cropH, zoomW, zoomH, zoomFactor)
+
 	return &SectionResult{
 		SectionRect: sectionRect,
 		Crop: CropInfo{
@@ -240,6 +245,10 @@ func DoElement(vlmResp VLMResponse, section *SectionResult, origW, origH int, cf
 	elementRect := coord.ClampRect(&primitives.Rect{
 		Left: nLeft, Top: nTop, Right: nRight, Bottom: nBottom,
 	})
+
+	logger.Debugf("[deeplocate] element result: zoom=[%.4f,%.4f,%.4f,%.4f] full=[%.4f,%.4f,%.4f,%.4f]",
+		zoomRect.Left, zoomRect.Top, zoomRect.Right, zoomRect.Bottom,
+		elementRect.Left, elementRect.Top, elementRect.Right, elementRect.Bottom)
 
 	return &ElementResult{
 		ElementRect: elementRect,

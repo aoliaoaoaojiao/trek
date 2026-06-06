@@ -348,8 +348,10 @@ func (p *ScrcpyScreenshotProvider) tryFastADB(ctx context.Context) []byte {
 	defer cancel()
 	data, err := p.device.Screenshot(fastCtx)
 	if err == nil && len(data) > 0 {
+		logger.Debugf("ADB 快速截图成功 (%d 字节)", len(data))
 		return data
 	}
+	logger.Debugf("ADB 快速截图失败: %v", err)
 	return nil
 }
 

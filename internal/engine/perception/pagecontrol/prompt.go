@@ -12,6 +12,7 @@ import (
 	"image"
 
 	trekann "trek/internal/vision/annotation"
+	"trek/logger"
 )
 
 //go:embed prompt_system.md
@@ -210,6 +211,9 @@ func BuildAnnotatedPrompt(ctx enginestate.TraversalContext, rects []image.Rectan
 		if img, _, err := image.Decode(bytes.NewReader(screenshot)); err == nil {
 			if w, h := img.Bounds().Dx(), img.Bounds().Dy(); w > 0 && h > 0 {
 				rects = ExtractRectsFromXML(ctx.XML, w, h)
+				if len(rects) > 0 {
+					logger.Debugf("[annotation] 从 XML 提取 %d 个标注框 (shot=%dx%d)", len(rects), w, h)
+				}
 			}
 		}
 	}

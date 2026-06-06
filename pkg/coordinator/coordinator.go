@@ -1155,10 +1155,14 @@ func (s *Coordinator) buildPageControlCandidates(strategy string, ctx enginestat
 			return nil, err
 		}
 		// DeepLocate: 当启用且有候选和有截图时，做两阶段精定位
-		if s.config.DeepLocateEnabled && len(candidates) > 0 && len(ctx.Screenshot) > 0 && len(candidates) > 0 {
+		if s.config.DeepLocateEnabled && len(candidates) > 0 && len(ctx.Screenshot) > 0 {
+			logger.Debugf("[deeplocate] stage1 候选=%d, 最高置信度=%.3f", len(candidates), candidates[0].Confidence)
 			refined := s.deepLocatePageControls(ctx, candidates)
 			if refined != nil {
+				logger.Debugf("[deeplocate] 精定位合并后候选=%d (原始=%d)", len(refined), len(candidates))
 				candidates = refined
+			} else {
+				logger.Debug("[deeplocate] 精定位未返回结果，使用原始候选")
 			}
 		}
 		// 使用 ModelAdapter 做坐标适配

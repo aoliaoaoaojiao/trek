@@ -78,6 +78,9 @@ type TraversalContext struct {
 	KnownFailedActions  []string
 	KnownSuccessActions []string
 	ExecutionHistory    []ExecutionRecord
+	// VLM 截图编号标注配置（由 coordinator 设置）
+	AnnotationEnabled   bool
+	AnnotationFontScale int
 }
 
 // BuildInput 用于构建 TraversalContext。

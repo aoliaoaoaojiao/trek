@@ -273,19 +273,23 @@ func (p *ScrcpyScreenshotProvider) Screenshot(ctx context.Context) ([]byte, erro
 		}
 	}
 
-	// Tier 1b: scrcpy 流 → 等待新帧 → ffmpeg 解码
+	// Tier 1b: 有缓存帧时快速等 scrcpy，超时后按年龄决定是否降级 ADB
 	if p.started && !p.fallback {
-		if data := p.tryScrcpyFrame(); data != nil {
+		if data := p.tryScrcpyFrameFast(); data != nil {
 			return data, nil
 		}
-		// 无新帧（屏幕静止）：返回上次缓存的帧，不降级到 ADB
+		// scrcpy 未产出新帧：缓存帧足够新则直接返回，否则降级 ADB
 		p.cache.RLock()
 		if p.cache.frame != nil {
-			frame := make([]byte, len(p.cache.frame))
-			copy(frame, p.cache.frame)
-			p.cache.RUnlock()
-			logger.Debugf("scrcpy 屏幕无变化，返回缓存帧 (%d 字节, 已缓存 %v)", len(frame), time.Since(p.cache.ts))
-			return frame, nil
+			age := time.Since(p.cache.ts)
+			if age < 1*time.Second {
+				frame := make([]byte, len(p.cache.frame))
+				copy(frame, p.cache.frame)
+				p.cache.RUnlock()
+				logger.Debugf("scrcpy 屏幕无变化，返回缓存帧 (%d 字节, 已缓存 %v)", len(frame), age)
+				return frame, nil
+			}
+			logger.Debugf("scrcpy 缓存帧过旧 (%v)，降级 ADB", age)
 		}
 		p.cache.RUnlock()
 		logger.Debug("scrcpy 无缓存帧可用，降级到 Tier 2 ADB")
@@ -314,7 +318,33 @@ func (p *ScrcpyScreenshotProvider) tryCachedFrame() []byte {
 	return nil
 }
 
-// tryScrcpyFrame 等待 scrcpy 流中的新关键帧并解码（Tier 1 次快路径）。
+// tryScrcpyFrameFast 快速等待 scrcpy 新帧（150ms 超时），用于有缓存帧时的快速检测。
+func (p *ScrcpyScreenshotProvider) tryScrcpyFrameFast() []byte {
+	p.mu.Lock()
+	sc := p.scrcpy
+	p.mu.Unlock()
+	if sc == nil {
+		return nil
+	}
+
+	deadline := time.Now().Add(150 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		p.cache.RLock()
+		fresh := p.cache.frame != nil && time.Since(p.cache.ts) < 100*time.Millisecond
+		if fresh {
+			frame := make([]byte, len(p.cache.frame))
+			copy(frame, p.cache.frame)
+			p.cache.RUnlock()
+			logger.Debugf("scrcpy 快速检测到新帧 (%d 字节)", len(frame))
+			return frame
+		}
+		p.cache.RUnlock()
+		time.Sleep(20 * time.Millisecond)
+	}
+	return nil
+}
+
+// tryScrcpyFrame 等待 scrcpy 流中的新关键帧并解码（Tier 1 次快路径，500ms 超时）。
 func (p *ScrcpyScreenshotProvider) tryScrcpyFrame() []byte {
 	p.mu.Lock()
 	sc := p.scrcpy

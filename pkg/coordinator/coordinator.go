@@ -279,6 +279,9 @@ func (s *Coordinator) initPageControlLLMProvider() {
 			APIKey:   apiKey,
 			Model:    model,
 			Timeout:  s.config.RecoveryLLMTimeout,
+			ModelFamily:       s.config.ModelFamily,
+			AnnotationEnabled: s.config.VLMAnnotationEnabled,
+			AnnotationFontScale: s.config.VLMAnnotationFontScale,
 		})
 		if err != nil {
 			logger.Warnf("coordinator 初始化 page control llm provider 失败: endpoint=%s err=%v", endpoint, err)

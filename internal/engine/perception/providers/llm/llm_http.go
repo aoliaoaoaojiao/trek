@@ -118,7 +118,15 @@ func (p *LLMHTTPProvider) DetectPageControls(ctx enginestate.TraversalContext) (
 	if p == nil {
 		return nil, nil
 	}
-	prompt := pagecontrol.BuildPrompt(ctx)
+	var prompt pagecontrol.Prompt
+	if p.annotationEnabled {
+		prompt = pagecontrol.BuildAnnotatedPrompt(ctx, nil, pagecontrol.AnnotationConfig{
+			Enabled:   true,
+			FontScale: p.annotationFontScale,
+		})
+	} else {
+		prompt = pagecontrol.BuildPrompt(ctx)
+	}
 	payload := llmRequest{
 		Model:            p.model,
 		Instruction:      prompt.SystemContent,

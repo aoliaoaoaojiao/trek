@@ -235,6 +235,13 @@ func runMonkey(logLevelStr string, opts struct {
 		InsightLLMEndpoint:   staticCfg.InsightLLMEndpoint,
 		InsightLLMAPIKey:     staticCfg.InsightLLMAPIKey,
 		InsightLLMModel:      staticCfg.InsightLLMModel,
+		ModelFamily:              staticCfg.ModelFamily,
+		DeepLocateEnabled:        staticCfg.DeepLocate.Enabled.OrDefault(true),
+		DeepLocateSectionExpandPx: staticCfg.DeepLocate.SectionExpandPx.OrDefault(100),
+		DeepLocateSectionMinSize:  staticCfg.DeepLocate.SectionMinSize.OrDefault(400),
+		DeepLocateZoomFactor:      staticCfg.DeepLocate.ZoomFactor.OrDefault(2),
+		VLMAnnotationEnabled:     staticCfg.VLMAnnotation.Enabled.OrDefault(false),
+		VLMAnnotationFontScale:   staticCfg.VLMAnnotation.FontScale.OrDefault(2),
 	})
 	if err != nil {
 		return fmt.Errorf("创建会话失败: %w", err)

@@ -725,7 +725,8 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 
 		report.StepsSucceeded++
 
-		// 记录动作完成时间，确保后续截图在动作之后
+		// 立即标记动作完成（在 capturePageSnapshot 之前），
+		// 让后台截图线程有足够时间产出动作后的新帧
 		if ad, ok := r.driver.(*android.AndroidDriver); ok {
 			ad.MarkActionDone()
 		}

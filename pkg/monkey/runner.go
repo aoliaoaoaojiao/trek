@@ -725,6 +725,11 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 
 		report.StepsSucceeded++
 
+		// 记录动作完成时间，确保后续截图在动作之后
+		if ad, ok := r.driver.(*android.AndroidDriver); ok {
+			ad.MarkActionDone()
+		}
+
 		// RESTART/START 类动作执行成功后，重置连续失败计数并等待应用恢复。
 		// 这些动作会重启应用，Poco 等页面源服务需要时间重新连接，
 		// 连续失败计数不应将重启后的短暂连接中断计为失败。

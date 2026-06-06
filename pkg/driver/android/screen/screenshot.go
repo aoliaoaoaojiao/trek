@@ -38,9 +38,10 @@ type ScreenCapture struct {
 	screenshotMode     ScreenshotMode
 
 	// 后台截图模式
-	bgLatest  atomic.Value // 存放 *bgFrame
-	bgCancel  context.CancelFunc
-	bgWg      sync.WaitGroup
+	bgLatest      atomic.Value // 存放 *bgFrame
+	bgCancel      context.CancelFunc
+	bgWg          sync.WaitGroup
+	lastActionDone atomic.Int64 // 上一步动作完成的 UnixNano，用于确保截图在动作之后
 }
 
 type bgFrame struct {
@@ -73,14 +74,37 @@ func NewScreenCaptureWithScrcpy(device *adb.Device, config *ScrcpyScreenshotConf
 
 // Screenshot 返回 PNG 格式的截图。
 // 后台模式下直接返回最新帧（零等待），否则走原有的 scrcpy/ADB 路径。
+// 如果帧时间戳早于上一步动作完成时间，会短暂等待新帧以确保截图反映动作后的状态。
 func (s *ScreenCapture) Screenshot(ctx context.Context) ([]byte, error) {
-	// 后台模式：直接返回最新帧
+	// 后台模式：返回最新帧，但确保是动作之后的
 	if v := s.bgLatest.Load(); v != nil {
 		f := v.(*bgFrame)
-		logger.Debugf("后台截图返回最新帧 (%d 字节, 年龄=%v)", len(f.data), time.Since(f.ts))
+		actionDone := s.lastActionDone.Load()
+		if actionDone > 0 && f.ts.UnixNano() < actionDone {
+			// 帧比动作早，短暂等待新帧（最多 300ms）
+			deadline := time.Now().Add(300 * time.Millisecond)
+			for time.Now().Before(deadline) {
+				time.Sleep(50 * time.Millisecond)
+				if v2 := s.bgLatest.Load(); v2 != nil {
+					f2 := v2.(*bgFrame)
+					if f2.ts.UnixNano() >= actionDone {
+						logger.Debugf("后台截图等待到动作后新帧 (%d 字节, 年龄=%v)", len(f2.data), time.Since(f2.ts))
+						return f2.data, nil
+					}
+				}
+			}
+			logger.Debugf("后台截图等待超时，返回当前帧 (%d 字节, 年龄=%v)", len(f.data), time.Since(f.ts))
+		} else {
+			logger.Debugf("后台截图返回最新帧 (%d 字节, 年龄=%v)", len(f.data), time.Since(f.ts))
+		}
 		return f.data, nil
 	}
 	return s.screenshotDirect(ctx)
+}
+
+// MarkActionDone 记录动作完成时间，供 Screenshot() 判断帧是否在动作之后。
+func (s *ScreenCapture) MarkActionDone() {
+	s.lastActionDone.Store(time.Now().UnixNano())
 }
 
 // screenshotDirect 执行实际截图（不检查后台缓存），供后台线程和首帧使用。

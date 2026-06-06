@@ -607,6 +607,13 @@ func (a *AndroidDriver) StopBackgroundScreenshot() {
 	}
 }
 
+// MarkActionDone 记录动作完成时间，确保后续截图反映动作后的屏幕状态。
+func (a *AndroidDriver) MarkActionDone() {
+	if sc, ok := a.screenCapture.(*screen.ScreenCapture); ok {
+		sc.MarkActionDone()
+	}
+}
+
 func (a *AndroidDriver) SaveScreenshot(path string) error {
 	logger.Debugf("Saving screenshot, serial=%s path=%s", a.Name(), path)
 	return a.screenCapture.SaveScreenshot(path)

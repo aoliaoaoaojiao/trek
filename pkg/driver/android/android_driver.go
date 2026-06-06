@@ -139,7 +139,7 @@ func NewAndroidDriverWith(deviceSerial string, opts ...AndroidDriverOption) (*An
 	androidDriver := &AndroidDriver{
 		device:        device,
 		touch:         touch.NewADBTouch(device),
-		screenCapture: screen.NewScreenCapture(device),
+		screenCapture: screen.NewScreenCaptureWithScrcpy(device, nil),
 		pageSources:   make(map[PageType]common.IPageSource),
 		uiaServerPort: uiaServerPort,
 	}

@@ -527,6 +527,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			screenshot []byte
 			err        error
 		)
+		t0 := time.Now()
 		if r.isScreenshotPageSource() {
 			screenshot, err = r.driver.Screenshot(ctx)
 			if err != nil || len(screenshot) == 0 {
@@ -642,7 +643,10 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			screenshot, _ = r.driver.Screenshot(ctx)
 		}
 		screenshot = r.cropScreenshotForEffectiveTouchArea(screenshot)
+		logger.Debugf("step=%d timing: screenshot=%v", step, time.Since(t0))
+		t1 := time.Now()
 		pageName, xml, strategy, cacheHit, scriptTransformed, element := r.resolvePageInfo(ctx, xml, screenshot)
+		logger.Debugf("step=%d timing: resolvePage=%v (strategy=%s cache=%v)", step, time.Since(t1), strategy, cacheHit)
 		record.PageControlStrategy = strategy
 		record.CacheHit = cacheHit
 		record.ScriptTransformed = scriptTransformed
@@ -663,7 +667,9 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			Screenshot:       screenshot,
 		}
 
+		t2 := time.Now()
 		cmd, err := r.nextCommandWithRecovery(step, beforePage, pageName, input)
+		logger.Debugf("step=%d timing: decision=%v", step, time.Since(t2))
 		if err != nil {
 			record.Err = err.Error()
 			r.markFailed(report, record, stepStart, &beforePage, nil)
@@ -701,6 +707,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 
 		logger.Infof("monkey step=%d execute cmd={%s}%s%s", step, cmd.DetailLogString(), formatTapPointLog(cmd), formatSwipePointLog(cmd))
 
+		t3 := time.Now()
 		if err = r.execute(cmd); err != nil {
 			record.Err = err.Error()
 			afterPage := r.capturePageSnapshot(ctx, pageSource, pageName)
@@ -724,6 +731,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		}
 
 		report.StepsSucceeded++
+		logger.Debugf("step=%d timing: execute=%v", step, time.Since(t3))
 
 		// 立即标记动作完成（在 capturePageSnapshot 之前），
 		// 让后台截图线程有足够时间产出动作后的新帧
@@ -742,7 +750,9 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			report.ConsecutiveFailures = 0
 		}
 
+		t4 := time.Now()
 		afterPage := r.capturePageSnapshot(ctx, pageSource, pageName)
+		logger.Debugf("step=%d timing: afterPage=%v", step, time.Since(t4))
 		if afterPage != nil {
 			afterPage.Screenshot = beforePage.Screenshot
 		}
@@ -798,7 +808,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		crash, anr := r.currentHealthSignals()
 		r.notifyStepResult(step, cmd, true, "", time.Since(stepStart).Milliseconds(), crash, anr, beforePage, afterPage)
 		r.appendRecord(report, record, stepStart, &beforePage, afterPage)
-		logger.Debugf("monkey step=%d execute action=%s success", step, cmd.Act.String())
+		logger.Debugf("monkey step=%d execute action=%s success (total=%v)", step, cmd.Act.String(), time.Since(stepStart))
 		r.sleepStep(ctx, r.resolveStepDelay(cmd))
 	}
 

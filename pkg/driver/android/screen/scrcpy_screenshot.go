@@ -48,7 +48,7 @@ func DefaultScrcpyScreenshotConfig() ScrcpyScreenshotConfig {
 		Mode:        ScreenshotModeAuto,
 		MaxSize:     0,
 		MaxFPS:      10,
-		CacheTTL:    200 * time.Millisecond,
+		CacheTTL:    500 * time.Millisecond,
 		IdleTimeout: 30 * time.Second,
 		FFmpegPath:  ffmpegPath,
 	}

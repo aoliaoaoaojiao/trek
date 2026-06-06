@@ -593,6 +593,20 @@ func (a *AndroidDriver) Screenshot(ctx context.Context) ([]byte, error) {
 	return a.screenCapture.Screenshot(ctx)
 }
 
+// StartBackgroundScreenshot 启动后台截图线程，Screenshot() 之后直接返回最新帧。
+func (a *AndroidDriver) StartBackgroundScreenshot(ctx context.Context, interval time.Duration) {
+	if sc, ok := a.screenCapture.(*screen.ScreenCapture); ok {
+		sc.StartBackground(ctx, interval)
+	}
+}
+
+// StopBackgroundScreenshot 停止后台截图线程。
+func (a *AndroidDriver) StopBackgroundScreenshot() {
+	if sc, ok := a.screenCapture.(*screen.ScreenCapture); ok {
+		sc.StopBackground()
+	}
+}
+
 func (a *AndroidDriver) SaveScreenshot(path string) error {
 	logger.Debugf("Saving screenshot, serial=%s path=%s", a.Name(), path)
 	return a.screenCapture.SaveScreenshot(path)

@@ -14,6 +14,7 @@ import (
 	"trek/internal/engine/traversal"
 	"trek/logger"
 	"trek/pkg/coordinator"
+	"trek/pkg/driver/android"
 	"trek/pkg/driver/common"
 )
 
@@ -472,6 +473,12 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 
 	_ = r.driver.ClearLogcat()
 	r.startForegroundPackageMonitor()
+
+	// 启动后台截图线程（仅 Android 驱动支持）
+	if ad, ok := r.driver.(*android.AndroidDriver); ok {
+		ad.StartBackgroundScreenshot(ctx, 200*time.Millisecond)
+		defer ad.StopBackgroundScreenshot()
+	}
 	defer r.stopForegroundPackageMonitor()
 	r.startHealthSignalMonitor()
 	defer r.stopHealthSignalMonitor()

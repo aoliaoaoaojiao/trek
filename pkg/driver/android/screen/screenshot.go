@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
+	"time"
 	"trek/logger"
 	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/common"
@@ -17,6 +19,7 @@ var _ common.IScreenCapture = (*ScreenCapture)(nil)
 
 // ScreenCapture 提供 Android 设备的截图和录屏功能。
 // 支持通过 scrcpy 流进行高速截图（避免 ADB 往返延迟）。
+// 支持后台截图模式：启动后台线程持续截图，Screenshot() 直接返回最新帧。
 type ScreenCapture struct {
 	device *adb.Device
 
@@ -33,6 +36,16 @@ type ScreenCapture struct {
 	// scrcpy 高速截图提供者（用于快速截图）
 	screenshotProvider *ScrcpyScreenshotProvider
 	screenshotMode     ScreenshotMode
+
+	// 后台截图模式
+	bgLatest  atomic.Value // 存放 *bgFrame
+	bgCancel  context.CancelFunc
+	bgWg      sync.WaitGroup
+}
+
+type bgFrame struct {
+	data []byte
+	ts   time.Time
 }
 
 // NewScreenCapture 创建标准截图捕获器（仅 ADB screencap）。
@@ -59,9 +72,19 @@ func NewScreenCaptureWithScrcpy(device *adb.Device, config *ScrcpyScreenshotConf
 }
 
 // Screenshot 返回 PNG 格式的截图。
-// 当 scrcpy 模式启用时，优先从 scrcpy 流获取（50-150ms），
-// 回退到 ADB screencap（500-1000ms）。
+// 后台模式下直接返回最新帧（零等待），否则走原有的 scrcpy/ADB 路径。
 func (s *ScreenCapture) Screenshot(ctx context.Context) ([]byte, error) {
+	// 后台模式：直接返回最新帧
+	if v := s.bgLatest.Load(); v != nil {
+		f := v.(*bgFrame)
+		logger.Debugf("后台截图返回最新帧 (%d 字节, 年龄=%v)", len(f.data), time.Since(f.ts))
+		return f.data, nil
+	}
+	return s.screenshotDirect(ctx)
+}
+
+// screenshotDirect 执行实际截图（不检查后台缓存），供后台线程和首帧使用。
+func (s *ScreenCapture) screenshotDirect(ctx context.Context) ([]byte, error) {
 	// 如果启用了 scrcpy 高速截图，优先使用
 	if s.screenshotMode != ScreenshotModeADB && s.screenshotProvider != nil {
 		data, err := s.screenshotProvider.Screenshot(ctx)
@@ -230,13 +253,58 @@ func (s *ScreenCapture) StopRecording() error {
 }
 
 func (s *ScreenCapture) Close() error {
-	// 关闭 scrcpy 截图提供者
+	s.StopBackground()
 	if s.screenshotProvider != nil {
 		_ = s.screenshotProvider.Close()
 	}
-
 	if s.isRecording {
 		return s.StopRecording()
 	}
 	return nil
+}
+
+// StartBackground 启动后台截图线程，interval 控制截图频率（建议 200-300ms）。
+// 启动后 Screenshot() 直接返回最新帧，不再阻塞等待。
+func (s *ScreenCapture) StartBackground(ctx context.Context, interval time.Duration) {
+	if s.bgCancel != nil {
+		return // 已启动
+	}
+	ctx, s.bgCancel = context.WithCancel(ctx)
+	s.bgWg.Add(1)
+	go s.bgLoop(ctx, interval)
+	logger.Infof("后台截图已启动 (间隔=%v)", interval)
+}
+
+// StopBackground 停止后台截图线程。
+func (s *ScreenCapture) StopBackground() {
+	if s.bgCancel != nil {
+		s.bgCancel()
+		s.bgCancel = nil
+	}
+	s.bgWg.Wait()
+}
+
+func (s *ScreenCapture) bgLoop(ctx context.Context, interval time.Duration) {
+	defer s.bgWg.Done()
+	s.bgCaptureOnce()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.bgCaptureOnce()
+		}
+	}
+}
+
+func (s *ScreenCapture) bgCaptureOnce() {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	data, err := s.screenshotDirect(ctx)
+	if err != nil || len(data) == 0 {
+		return
+	}
+	s.bgLatest.Store(&bgFrame{data: data, ts: time.Now()})
 }

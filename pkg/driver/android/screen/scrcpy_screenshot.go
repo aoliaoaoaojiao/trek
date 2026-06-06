@@ -318,6 +318,18 @@ func (p *ScrcpyScreenshotProvider) tryCachedFrame() []byte {
 	return nil
 }
 
+// tryCachedFrameAnyAge 返回任意年龄的缓存帧（不检查 TTL），供后台线程快速取帧。
+func (p *ScrcpyScreenshotProvider) tryCachedFrameAnyAge() []byte {
+	p.cache.RLock()
+	defer p.cache.RUnlock()
+	if p.cache.frame == nil {
+		return nil
+	}
+	frame := make([]byte, len(p.cache.frame))
+	copy(frame, p.cache.frame)
+	return frame
+}
+
 // tryScrcpyFrameFast 快速等待 scrcpy 新帧（150ms 超时），用于有缓存帧时的快速检测。
 func (p *ScrcpyScreenshotProvider) tryScrcpyFrameFast() []byte {
 	p.mu.Lock()

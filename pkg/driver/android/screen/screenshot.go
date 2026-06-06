@@ -326,6 +326,16 @@ func (s *ScreenCapture) bgLoop(ctx context.Context, interval time.Duration) {
 func (s *ScreenCapture) bgCaptureOnce() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+
+	// 优先取 scrcpy 缓存帧（几乎零延迟），不阻塞
+	if s.screenshotProvider != nil && s.screenshotProvider.IsActive() {
+		if data := s.screenshotProvider.tryCachedFrameAnyAge(); data != nil {
+			s.bgLatest.Store(&bgFrame{data: data, ts: time.Now()})
+			return
+		}
+	}
+
+	// scrcpy 无帧时降级 ADB（较慢，但兜底）
 	data, err := s.screenshotDirect(ctx)
 	if err != nil || len(data) == 0 {
 		return

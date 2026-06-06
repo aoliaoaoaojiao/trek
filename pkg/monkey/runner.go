@@ -125,6 +125,8 @@ type Config struct {
 	ImageFingerprintRegions           []ImageFingerprintRegion
 	ImageFingerprintHammingThreshold  int
 	InputCharset                      string
+	DeviceWidth  int
+	DeviceHeight int
 	ArtifactDir                       string // 产物实时写入目录；为空则不实时写盘
 }
 

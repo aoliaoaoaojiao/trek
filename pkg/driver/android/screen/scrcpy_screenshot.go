@@ -29,7 +29,7 @@ const (
 // ScrcpyScreenshotConfig 配置 scrcpy 截图提供者。
 type ScrcpyScreenshotConfig struct {
 	Mode        ScreenshotMode   // 获取模式
-	MaxSize     int              // scrcpy max_size（默认 1080）
+	MaxSize     int              // scrcpy max_size（0 = 不缩放，使用原始分辨率）
 	MaxFPS      int              // scrcpy max_fps（默认 10）
 	CacheTTL    time.Duration    // 帧缓存 TTL（默认 200ms）
 	IdleTimeout time.Duration    // 空闲断开超时（默认 30s）
@@ -46,7 +46,7 @@ func DefaultScrcpyScreenshotConfig() ScrcpyScreenshotConfig {
 	}
 	return ScrcpyScreenshotConfig{
 		Mode:        ScreenshotModeAuto,
-		MaxSize:     1080,
+		MaxSize:     0,
 		MaxFPS:      10,
 		CacheTTL:    200 * time.Millisecond,
 		IdleTimeout: 30 * time.Second,

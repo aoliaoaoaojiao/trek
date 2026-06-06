@@ -279,7 +279,17 @@ func (p *ScrcpyScreenshotProvider) Screenshot(ctx context.Context) ([]byte, erro
 		if data := p.tryScrcpyFrame(); data != nil {
 			return data, nil
 		}
-		logger.Debug("scrcpy 帧获取超时，降级到 Tier 2 ADB")
+		// 无新帧（屏幕静止）：返回上次缓存的帧，不降级到 ADB
+		p.cache.RLock()
+		if p.cache.frame != nil {
+			frame := make([]byte, len(p.cache.frame))
+			copy(frame, p.cache.frame)
+			p.cache.RUnlock()
+			logger.Debugf("scrcpy 屏幕无变化，返回缓存帧 (%d 字节, 已缓存 %v)", len(frame), time.Since(p.cache.ts))
+			return frame, nil
+		}
+		p.cache.RUnlock()
+		logger.Debug("scrcpy 无缓存帧可用，降级到 Tier 2 ADB")
 	}
 
 	// Tier 2: ADB 快速截图（较短超时）

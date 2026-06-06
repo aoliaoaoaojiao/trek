@@ -21,7 +21,7 @@ import (
 const (
 	defaultMaxSteps                                = 300
 	defaultMaxDuration                             = 10 * time.Minute
-	defaultStepInterval                            = 300 * time.Millisecond
+	defaultStepInterval                            = 100 * time.Millisecond
 	defaultMaxConsecutiveFailures                  = 8
 	defaultFailureRecoveryInterval                 = 3
 	defaultLongClickDuration                       = 800 * time.Millisecond

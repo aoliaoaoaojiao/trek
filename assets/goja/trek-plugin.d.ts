@@ -193,7 +193,7 @@ declare namespace Trek {
    * trek.store 是跨步骤持久的，在同一脚本实例生命周期内一直存在。
    * 多插件时按 plugins 数组顺序链式调用，前一个 transformPage 的输出是下一个的输入。
    */
-  interface Plugin {
+  export interface Plugin {
     /**
      * 初始化钩子。
      * 插件加载完成后调用，仅触发一次。适合在此初始化 trek.store 或执行一次性配置。
@@ -312,7 +312,7 @@ declare namespace Trek {
     bounds: Bounds
   }
 
-  interface StaticConfig {
+  export interface StaticConfig {
     /**
      * 触摸排除区域列表，点击坐标落在矩形内的动作会被跳过。
      * 用于屏蔽广告位、系统导航栏、悬浮按钮等不该触碰的区域。
@@ -492,7 +492,6 @@ declare namespace Trek {
       /** 编号字体缩放。默认 2 */
       font_scale?: number
     }
-  }
   }
 
   // ── 运行时 API ───────────────────────────────────────────────
@@ -779,7 +778,7 @@ declare namespace Trek {
     exists(path: string): boolean
   }
 
-  interface API {
+  export interface API {
     action: ActionAPI
     page: PageAPI
     store: StoreAPI

@@ -36,7 +36,10 @@ func (r *Runner) execute(cmd *types.ActionCommand) error {
 		if err = r.driver.Click(pt); err != nil {
 			return err
 		}
-		return r.tryInputText(cmd)
+		if cmd.Text != "" {
+			return r.tryInputText(cmd)
+		}
+		return nil
 	case types.LONG_CLICK:
 		pt, err := centerPoint(cmd.Pos)
 		if err != nil {
@@ -45,7 +48,10 @@ func (r *Runner) execute(cmd *types.ActionCommand) error {
 		if err = r.driver.LongClick(pt, r.cfg.LongClickDuration.Milliseconds()); err != nil {
 			return err
 		}
-		return r.tryInputText(cmd)
+		if cmd.Text != "" {
+			return r.tryInputText(cmd)
+		}
+		return nil
 	case types.INPUT:
 		pt, err := centerPoint(cmd.Pos)
 		if err != nil {

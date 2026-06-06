@@ -250,22 +250,24 @@ func (r *Runner) nextBlockRecoveryCommand(pageName string, input coordinator.Act
 		Screenshot: input.Screenshot,
 	}, nil, nil)
 
-	// 阻塞恢复优先尝试返回键：简单、通用，能快速脱离多数卡死页面。
-	// 如果返回后页面仍未变化，block detector 会再次触发，下一轮走 planner。
-	if !r.recoveryTriedBack {
-		r.recoveryTriedBack = true
-		fallback := &types.ActionCommand{Act: types.BACK}
-		r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(fallback, perception.SourceHeuristic)}
-		logger.Infof("block recovery: trying BACK")
-		return fallback, nil
-	}
-
-	// 恢复多次失败后强制尝试 BACK（即使已经试过）
-	if r.recoveryState != nil && r.recoveryState.RecoveryAttempts() >= 3 {
-		fallback := &types.ActionCommand{Act: types.BACK}
-		r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(fallback, perception.SourceHeuristic)}
-		logger.Infof("block recovery: forcing BACK after %d failed attempts", r.recoveryState.RecoveryAttempts())
-		return fallback, nil
+	// 阻塞恢复优先尝试返回键。如果该页面 BACK 已知无效则跳过。
+	if !r.backUselessPages[pageName] {
+		if !r.recoveryTriedBack {
+			r.recoveryTriedBack = true
+			fallback := &types.ActionCommand{Act: types.BACK}
+			r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(fallback, perception.SourceHeuristic)}
+			logger.Infof("block recovery: trying BACK")
+			return fallback, nil
+		}
+		// 恢复多次失败后强制尝试 BACK（仅当 BACK 对此页有效时）
+		if r.recoveryState != nil && r.recoveryState.RecoveryAttempts() >= 3 {
+			fallback := &types.ActionCommand{Act: types.BACK}
+			r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(fallback, perception.SourceHeuristic)}
+			logger.Infof("block recovery: forcing BACK after %d failed attempts", r.recoveryState.RecoveryAttempts())
+			return fallback, nil
+		}
+	} else {
+		logger.Infof("block recovery: BACK useless on page %s, skipping", pageName)
 	}
 
 	knownFailed, knownSuccess, knownErr := r.collectBothKnownActions(ctx)
@@ -312,6 +314,13 @@ func (r *Runner) nextBlockRecoveryCommand(pageName string, input coordinator.Act
 			r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(cmd, perception.SourceHeuristic)}
 			return cmd, nil
 		}
+	}
+	// 回退：BACK 对此页无效时尝试 SCROLL，否则使用 BACK
+	if r.backUselessPages[pageName] {
+		fallback := &types.ActionCommand{Act: types.SCROLL_BOTTOM_UP}
+		r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(fallback, perception.SourceHeuristic)}
+		logger.Infof("block recovery: BACK useless, fallback to SCROLL_BOTTOM_UP")
+		return fallback, nil
 	}
 	fallback := &types.ActionCommand{Act: types.BACK}
 	r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(fallback, perception.SourceHeuristic)}
@@ -434,6 +443,20 @@ func (r *Runner) recordRecoveryOutcome(escaped bool) {
 		r.lastRecoveryAttempt = nil
 	}()
 	r.markRecoveryActionOutcome(attempt.item, escaped)
+
+	// 追踪 BACK 是否对当前页面无效
+	if attempt.item.Command != nil && attempt.item.Command.Act == types.BACK {
+		pageName := attempt.ctx.PageName
+		if pageName != "" {
+			if escaped {
+				delete(r.backUselessPages, pageName)
+				logger.Infof("block recovery: BACK worked on page %s, removed from useless list", pageName)
+			} else {
+				r.backUselessPages[pageName] = true
+				logger.Infof("block recovery: BACK useless on page %s, added to skip list", pageName)
+			}
+		}
+	}
 
 	// 恢复失败时失效 LLM 响应缓存，下次同页面+同阻塞原因重新调用 LLM
 	if !escaped && attempt.ctx.PageSignature != "" {

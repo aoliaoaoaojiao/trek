@@ -10,16 +10,19 @@ const (
 	TraversalModeSuspectBlocked = enginestate.ModeSuspectBlocked
 	TraversalModeRecover        = enginestate.ModeRecover
 	TraversalModeCooldown       = enginestate.ModeCooldown
+
+	defaultCooldownMaxSteps = 10 // 冷却时间上限，避免退避无限增长
 )
 
 // recoveryStateMachine 维护第一阶段显式恢复模式切换。
 type recoveryStateMachine struct {
-	mode              TraversalMode
-	blockReason       string
-	cooldownSteps     int
-	cooldownRemaining int
-	recoveryAttempts  int // 当前恢复周期内的尝试次数
-	maxRecoveryAttempts int // 恢复周期内最大尝试次数（0=不限制）
+	mode                 TraversalMode
+	blockReason          string
+	cooldownSteps        int
+	cooldownRemaining    int
+	recoveryAttempts     int // 当前恢复周期内的尝试次数
+	maxRecoveryAttempts  int // 恢复周期内最大尝试次数（0=不限制）
+	cooldownMultiplier   int // 冷却退避倍数，每次 Cooldown→再次阻塞 +1，成功逃离清零
 }
 
 func newRecoveryStateMachine() *recoveryStateMachine {
@@ -31,8 +34,9 @@ func newRecoveryStateMachineWithCooldown(cooldownSteps int) *recoveryStateMachin
 		cooldownSteps = 0
 	}
 	return &recoveryStateMachine{
-		mode:          TraversalModeExplore,
-		cooldownSteps: cooldownSteps,
+		mode:               TraversalModeExplore,
+		cooldownSteps:      cooldownSteps,
+		cooldownMultiplier: 1,
 	}
 }
 
@@ -92,12 +96,16 @@ func (m *recoveryStateMachine) OnBlockDetected(reason string) {
 		if m.IsRecoveryBudgetExhausted() {
 			// 预算耗尽：强制进入冷却模式
 			m.mode = TraversalModeCooldown
-			m.cooldownRemaining = m.cooldownSteps
+			m.cooldownRemaining = m.cooldownSteps * m.cooldownMultiplier
+			if m.cooldownRemaining > defaultCooldownMaxSteps {
+				m.cooldownRemaining = defaultCooldownMaxSteps
+			}
 			m.recoveryAttempts = 0
 		}
 	case TraversalModeCooldown:
 		m.mode = TraversalModeSuspectBlocked
 		m.cooldownRemaining = 0
+		m.cooldownMultiplier++ // 退避：下次冷却时间更长
 	}
 }
 
@@ -107,6 +115,7 @@ func (m *recoveryStateMachine) OnProgress(escaped bool) {
 	}
 	m.blockReason = ""
 	m.recoveryAttempts = 0
+	m.cooldownMultiplier = 1 // 成功逃离，重置退避
 	if m.cooldownSteps > 0 {
 		m.mode = TraversalModeCooldown
 		m.cooldownRemaining = m.cooldownSteps

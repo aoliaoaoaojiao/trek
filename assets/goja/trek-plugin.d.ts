@@ -29,7 +29,7 @@ declare namespace Trek {
     | "right_left"
     | "bottom_up_n"
 
-  type Bounds = [number, number, number, number]
+  export type Bounds = [number, number, number, number]
 
   interface Action {
     /** 动作类型 */

@@ -118,9 +118,8 @@ func (p *ScrcpyScreenshotProvider) Start() error {
 	})
 
 	maxSize := p.config.MaxSize
-	if maxSize <= 0 {
-		maxSize = 1080
-	}
+	// maxSize=0 表示不缩放（scrcpy 协议原生支持）
+	// 用户如需限制分辨率，在配置中设置 MaxSize>0
 
 	if err := sc.Start(maxSize); err != nil {
 		p.fallback = true

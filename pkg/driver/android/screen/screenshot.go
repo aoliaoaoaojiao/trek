@@ -15,6 +15,8 @@ import (
 
 var _ common.IScreenCapture = (*ScreenCapture)(nil)
 
+// ScreenCapture 提供 Android 设备的截图和录屏功能。
+// 支持通过 scrcpy 流进行高速截图（避免 ADB 往返延迟）。
 type ScreenCapture struct {
 	device *adb.Device
 
@@ -27,13 +29,54 @@ type ScreenCapture struct {
 	initPts     uint64
 	isInit      bool
 	isRecording bool
+
+	// scrcpy 高速截图提供者（用于快速截图）
+	screenshotProvider *ScrcpyScreenshotProvider
+	screenshotMode     ScreenshotMode
 }
 
+// NewScreenCapture 创建标准截图捕获器（仅 ADB screencap）。
 func NewScreenCapture(device *adb.Device) *ScreenCapture {
-	return &ScreenCapture{device: device}
+	return &ScreenCapture{
+		device:          device,
+		screenshotMode:  ScreenshotModeADB,
+	}
 }
 
+// NewScreenCaptureWithScrcpy 创建支持 scrcpy 高速截图的捕获器。
+// config 为 nil 时使用默认配置。
+func NewScreenCaptureWithScrcpy(device *adb.Device, config *ScrcpyScreenshotConfig) *ScreenCapture {
+	cfg := DefaultScrcpyScreenshotConfig()
+	if config != nil {
+		cfg = *config
+	}
+	provider := NewScrcpyScreenshotProvider(device, cfg)
+	return &ScreenCapture{
+		device:             device,
+		screenshotMode:     cfg.Mode,
+		screenshotProvider: provider,
+	}
+}
+
+// Screenshot 返回 PNG 格式的截图。
+// 当 scrcpy 模式启用时，优先从 scrcpy 流获取（50-150ms），
+// 回退到 ADB screencap（500-1000ms）。
 func (s *ScreenCapture) Screenshot(ctx context.Context) ([]byte, error) {
+	// 如果启用了 scrcpy 高速截图，优先使用
+	if s.screenshotMode != ScreenshotModeADB && s.screenshotProvider != nil {
+		data, err := s.screenshotProvider.Screenshot(ctx)
+		if err == nil && len(data) > 0 {
+			return data, nil
+		}
+		// scrcpy 失败且为 Auto 模式时回退 ADB
+		if s.screenshotMode == ScreenshotModeAuto {
+			logger.Warnf("scrcpy 截图失败，回退 ADB: %v", err)
+			return s.device.Screenshot(ctx)
+		}
+		return nil, err
+	}
+
+	// 标准 ADB screencap
 	logger.Debugf("Starting device screenshot, serial=%s", s.device.Serial())
 	data, err := s.device.Screenshot(ctx)
 	if err != nil {
@@ -41,6 +84,30 @@ func (s *ScreenCapture) Screenshot(ctx context.Context) ([]byte, error) {
 	}
 	logger.Debugf("Device screenshot completed, serial=%s size=%d", s.device.Serial(), len(data))
 	return data, nil
+}
+
+// SetScreenshotMode 设置截图获取模式。
+func (s *ScreenCapture) SetScreenshotMode(mode ScreenshotMode) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.screenshotMode = mode
+}
+
+// SetScreenshotProvider 设置 scrcpy 截图提供者。
+func (s *ScreenCapture) SetScreenshotProvider(provider *ScrcpyScreenshotProvider) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.screenshotProvider = provider
+	if provider != nil {
+		s.screenshotMode = provider.config.Mode
+	}
+}
+
+// ScreenshotProvider 返回当前的 scrcpy 截图提供者（可能为 nil）。
+func (s *ScreenCapture) ScreenshotProvider() *ScrcpyScreenshotProvider {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.screenshotProvider
 }
 
 func (s *ScreenCapture) SaveScreenshot(path string) error {
@@ -163,6 +230,11 @@ func (s *ScreenCapture) StopRecording() error {
 }
 
 func (s *ScreenCapture) Close() error {
+	// 关闭 scrcpy 截图提供者
+	if s.screenshotProvider != nil {
+		_ = s.screenshotProvider.Close()
+	}
+
 	if s.isRecording {
 		return s.StopRecording()
 	}

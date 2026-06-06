@@ -55,6 +55,9 @@ type StaticConfig struct {
 	EffectiveTouchArea                *StaticEffectiveTouchArea
 	UCTBandit                         StaticUCTBanditConfig
 	Reuse                             StaticReuseConfig
+	ModelFamily    string
+	DeepLocate     StaticDeepLocateConfig
+	VLMAnnotation  StaticVLMAnnotationConfig
 }
 
 type StaticLogConfig struct {
@@ -99,6 +102,20 @@ type StaticReuseConfig struct {
 	ModelSavePath          string
 	EnableModelPersistence coretypes.Optional[bool]
 	ResetModelOnStart      coretypes.Optional[bool]
+}
+
+// StaticDeepLocateConfig 配置两阶段定位（DeepLocate）。
+type StaticDeepLocateConfig struct {
+	Enabled         coretypes.Optional[bool]
+	SectionExpandPx coretypes.Optional[int]
+	SectionMinSize  coretypes.Optional[int]
+	ZoomFactor      coretypes.Optional[int]
+}
+
+// StaticVLMAnnotationConfig 配置 VLM 截图编号标注。
+type StaticVLMAnnotationConfig struct {
+	Enabled   coretypes.Optional[bool]
+	FontScale coretypes.Optional[int]
 }
 
 func LoadStaticConfigFile(path string) (StaticConfig, error) {
@@ -429,6 +446,32 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 		if modelSavePathValue := reuseObj.Get("modelSavePath"); cfg.Reuse.ModelSavePath == "" && !isEmptyJSValue(modelSavePathValue) {
 			cfg.Reuse.ModelSavePath = strings.TrimSpace(modelSavePathValue.String())
 		}
+	if modelFamilyValue := obj.Get("model_family"); !isEmptyJSValue(modelFamilyValue) {
+		cfg.ModelFamily = strings.TrimSpace(modelFamilyValue.String())
+	}
+	if modelFamilyValue := obj.Get("modelFamily"); cfg.ModelFamily == "" && !isEmptyJSValue(modelFamilyValue) {
+		cfg.ModelFamily = strings.TrimSpace(modelFamilyValue.String())
+	}
+
+	// DeepLocate
+	if dlValue := obj.Get("deep_locate"); !isEmptyJSValue(dlValue) {
+		dlObj := dlValue.ToObject(vm)
+		cfg.DeepLocate.Enabled = optionalBoolFromObj(dlObj, "enabled")
+		cfg.DeepLocate.SectionExpandPx = optionalIntFromObj(dlObj, "section_expand_px")
+		cfg.DeepLocate.SectionExpandPx = optionalIntFromObj(dlObj, "sectionExpandPx")
+		cfg.DeepLocate.SectionMinSize = optionalIntFromObj(dlObj, "section_min_size")
+		cfg.DeepLocate.SectionMinSize = optionalIntFromObj(dlObj, "sectionMinSize")
+		cfg.DeepLocate.ZoomFactor = optionalIntFromObj(dlObj, "zoom_factor")
+		cfg.DeepLocate.ZoomFactor = optionalIntFromObj(dlObj, "zoomFactor")
+	}
+
+	// VLMAnnotation
+	if vlmAnnValue := obj.Get("vlm_annotation"); !isEmptyJSValue(vlmAnnValue) {
+		vlmAnnObj := vlmAnnValue.ToObject(vm)
+		cfg.VLMAnnotation.Enabled = optionalBoolFromObj(vlmAnnObj, "enabled")
+		cfg.VLMAnnotation.FontScale = optionalIntFromObj(vlmAnnObj, "font_scale")
+		cfg.VLMAnnotation.FontScale = optionalIntFromObj(vlmAnnObj, "fontScale")
+	}
 	}
 	return cfg, nil
 }

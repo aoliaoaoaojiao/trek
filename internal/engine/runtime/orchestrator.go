@@ -127,10 +127,10 @@ func newOrchestratorWithMode(mode perceptionfusion.Mode) *Orchestrator {
 }
 
 func newOrchestratorWithModeAndModelProvider(mode perceptionfusion.Mode, modelProvider func(pageName string) *decision.Model) *Orchestrator {
-	fusionPerceptor, err := perceptionfusion.NewPerceptor(mode, &xmlObservationPerceptor{}, perceptionvision.NewPerceptor())
+	fusionPerceptor, err := perceptionfusion.NewPerceptor(mode, &xmlObservationPerceptor{}, perceptionvision.NewPerceptor(perceptionvision.DefaultPerceptorConfig()))
 	if err != nil {
 		// 瀹归敊鍥為€€锛氬紓甯告ā寮忛粯璁ら檷绾у埌 XML-only锛岄伩鍏嶄腑鏂幇鏈夋祦绋嬨€?
-		fusionPerceptor, err = perceptionfusion.NewPerceptor(perceptionfusion.ModeXMLOnly, &xmlObservationPerceptor{}, perceptionvision.NewPerceptor())
+		fusionPerceptor, err = perceptionfusion.NewPerceptor(perceptionfusion.ModeXMLOnly, &xmlObservationPerceptor{}, perceptionvision.NewPerceptor(perceptionvision.DefaultPerceptorConfig()))
 		if err != nil {
 			logger.Errorf("初始化默认感知器失败（含 XML-only 降级）: %v", err)
 			return nil

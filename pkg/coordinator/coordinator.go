@@ -26,6 +26,7 @@ import (
 	candidateproviders "trek/internal/engine/perception/providers"
 	engineruntime "trek/internal/engine/runtime"
 	enginestate "trek/internal/engine/state"
+	"trek/internal/engine/perception/providers/llm"
 	"trek/internal/engine/traversal"
 	visionfingerprint "trek/internal/vision/fingerprint"
 	"trek/logger"
@@ -61,6 +62,13 @@ type Config struct {
 	PlanCacheTTL             time.Duration // LLM 响应缓存 TTL，默认 5 分钟
 	OnPlanCacheHit           func()        // LLM 响应缓存命中回调
 	OnPlanCacheMiss          func()        // LLM 响应缓存未命中回调
+	ModelFamily              string
+	DeepLocateEnabled        bool
+	DeepLocateSectionExpandPx int
+	DeepLocateSectionMinSize  int
+	DeepLocateZoomFactor      int
+	VLMAnnotationEnabled     bool
+	VLMAnnotationFontScale   int
 }
 
 // ActionInput 动作输入，包含 XML 描述的 GUI 树和可选截图。
@@ -1138,7 +1146,24 @@ func (s *Coordinator) buildPageControlCandidates(strategy string, ctx enginestat
 		if s == nil || s.llmProvider == nil {
 			return nil, fmt.Errorf("llm 页面控件策略未启用，请配置 LLM provider")
 		}
-		return s.llmProvider.DetectPageControls(ctx)
+		candidates, err := s.llmProvider.DetectPageControls(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// 使用 ModelAdapter 做坐标适配（如果配置了模型族）
+		if s.config.ModelFamily != "" {
+			adapter := llm.NewModelAdapter(s.config.ModelFamily)
+			for i := range candidates {
+				if candidates[i].Command != nil {
+					left, top, right, bottom := adapter.AdaptBboxToRect(
+						[4]float64{candidates[i].Command.Pos.Left, candidates[i].Command.Pos.Top, candidates[i].Command.Pos.Right, candidates[i].Command.Pos.Bottom},
+						0, 0,
+					)
+					candidates[i].Command.Pos = types.Rect{Left: left, Top: top, Right: right, Bottom: bottom}
+				}
+			}
+		}
+		return candidates, nil
 	default:
 		return nil, nil
 	}

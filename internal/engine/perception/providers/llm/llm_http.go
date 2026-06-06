@@ -24,6 +24,9 @@ const (
 
 // LLMHTTPProviderConfig 定义基于 HTTP 的 LLM 候选提供器配置。
 type LLMHTTPProviderConfig struct {
+	ModelFamily string
+	AnnotationEnabled bool
+	AnnotationFontScale int
 	Endpoint string
 	APIKey   string
 	Model    string
@@ -33,6 +36,9 @@ type LLMHTTPProviderConfig struct {
 
 // LLMHTTPProvider 通过外部 HTTP 接口获取恢复候选。
 type LLMHTTPProvider struct {
+	modelFamily string
+	annotationEnabled bool
+	annotationFontScale int
 	endpoint string
 	apiKey   string
 	model    string
@@ -60,6 +66,9 @@ func NewLLMHTTPProvider(cfg LLMHTTPProviderConfig) (*LLMHTTPProvider, error) {
 		headers[k] = value
 	}
 	return &LLMHTTPProvider{
+		modelFamily:       cfg.ModelFamily,
+		annotationEnabled: cfg.AnnotationEnabled,
+		annotationFontScale: cfg.AnnotationFontScale,
 		endpoint: endpoint,
 		apiKey:   strings.TrimSpace(cfg.APIKey),
 		model:    strings.TrimSpace(cfg.Model),

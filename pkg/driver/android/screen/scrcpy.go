@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -18,10 +20,38 @@ import (
 const (
 	version          = "3.3.4"
 	deviceServerPath = "/data/local/tmp/trek_scrcpy.jar"
+
+	// pluginsScrcpyJAR 是 plugins 目录中的 scrcpy-server JAR 路径（相对于工作目录）。
+	// 参考 ADBKeyboard/UIA 的 plugins 模式，优先加载此文件，不存在时回退到嵌入的二进制。
+	pluginsScrcpyJAR = "plugins/scrcpy/scrcpy-server-v3.3.3"
 )
 
 //go:embed bin/scrcpy-server
 var scrcpyBytes []byte
+
+// loadScrcpyJAR 尝试从 plugins 目录加载 scrcpy-server JAR，不存在时回退到嵌入的二进制。
+// 采用与 ADBKeyboard APK 相同的加载策略（plugins 目录优先）。
+func loadScrcpyJAR() ([]byte, error) {
+	absPath, err := filepath.Abs(pluginsScrcpyJAR)
+	if err == nil {
+		if info, statErr := os.Stat(absPath); statErr == nil && !info.IsDir() {
+			data, readErr := os.ReadFile(absPath)
+			if readErr == nil && len(data) > 0 {
+				logger.Infof("scrcpy-server 从 plugins 目录加载: %s", absPath)
+				return data, nil
+			}
+		}
+	}
+	if len(scrcpyBytes) == 0 {
+		return nil, fmt.Errorf("scrcpy-server JAR 未找到（plugins 和嵌入均不可用）")
+	}
+	logger.Debug("scrcpy-server 使用嵌入的二进制")
+	return scrcpyBytes, nil
+}
+
+// SetScrcpyPluginJAR 可用来在初始化时指定 plugins 目录下的 scrcpy-server 路径。
+// 仅在默认路径 plugins/scrcpy/scrcpy-server-v3.3.3 不符合需求时使用。
+const SetScrcpyPluginJAR = "" // 扩展点，暂未实现
 
 type Scrcpy struct {
 	device            *adb.Device
@@ -61,23 +91,23 @@ func (s *Scrcpy) SetVideoFrameHandler(handler func(frameData []byte, oriPTS uint
 }
 
 func (s *Scrcpy) Start(maxsize int) error {
-	// todo
-	var err error
-	err = s.device.Push(context.Background(), bytes.NewReader(scrcpyBytes), deviceServerPath, time.Now())
+	// 加载 scrcpy-server JAR（plugins 目录优先，嵌入二进制兜底）
+	jarData, err := loadScrcpyJAR()
 	if err != nil {
 		return err
 	}
 
-	err = s.device.ReverseLocalAbstract(context.Background(), getSocketName(-1), s.localPort)
-	if err != nil {
+	if err = s.device.Push(context.Background(), bytes.NewReader(jarData), deviceServerPath, time.Now()); err != nil {
+		return err
+	}
+
+	if err = s.device.ReverseLocalAbstract(context.Background(), getSocketName(-1), s.localPort); err != nil {
 		return err
 	}
 
 	s.startServer()
 
-	err = s.runBinary(maxsize)
-
-	return err
+	return s.runBinary(maxsize)
 }
 
 func (s *Scrcpy) runBinary(maxSize int) error {

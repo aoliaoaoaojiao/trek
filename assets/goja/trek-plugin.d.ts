@@ -464,6 +464,35 @@ declare namespace Trek {
     }
     /** UCT Bandit 算法参数 */
     uct_bandit?: UCTBanditConfig
+    /**
+     * 模型族，影响 VLM 坐标格式适配和 prompt 优化。
+     * - "claude": 默认，[0,1000] 归一化坐标
+     * - "gpt": [0,1000] 归一化坐标
+     * - "gemini": [y1,x1,y2,x2] 轴交换，自动转换
+     * - "qwen": 原始像素坐标，自动归一化
+     */
+    model_family?: "claude" | "gpt" | "gemini" | "qwen" | "doubao" | "glm" | "autoglm"
+
+    /** DeepLocate 两阶段定位配置 */
+    deep_locate?: {
+      /** 启用/关闭 DeepLocate。默认 true */
+      enabled?: boolean
+      /** 区域扩展像素数。默认 100 */
+      section_expand_px?: number
+      /** 区域最小尺寸。默认 400 */
+      section_min_size?: number
+      /** 第二阶段放大倍数。默认 2 */
+      zoom_factor?: number
+    }
+
+    /** VLM 截图编号标注配置 */
+    vlm_annotation?: {
+      /** 启用/关闭编号标注。默认 false */
+      enabled?: boolean
+      /** 编号字体缩放。默认 2 */
+      font_scale?: number
+    }
+  }
   }
 
   // ── 运行时 API ───────────────────────────────────────────────

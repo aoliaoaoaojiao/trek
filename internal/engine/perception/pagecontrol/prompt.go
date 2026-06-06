@@ -1,16 +1,16 @@
 package pagecontrol
 
 import (
-	"bytes"
 	_ "embed"
 	"encoding/base64"
 	"fmt"
-	"image"
-	"image/jpeg"
-	_ "image/png"
 	"strings"
 
 	enginestate "trek/internal/engine/state"
+	"trek/internal/vision/imageproc"
+	"image"
+
+	trekann "trek/internal/vision/annotation"
 )
 
 //go:embed prompt_system.md
@@ -69,6 +69,7 @@ func BuildPrompt(ctx enginestate.TraversalContext) Prompt {
 }
 
 // resizeForLLM 缩放截图以减少 token 消耗，返回缩放后的字节和原始/缩放后尺寸。
+// 使用双线性插值替代原来的 nearest-neighbor，JPEG Q85 → Q90。
 func resizeForLLM(data []byte, maxWidths ...int) ([]byte, int, int, int, int) {
 	maxWidth := llmScreenshotMaxWidth
 	if len(maxWidths) > 0 && maxWidths[0] > 0 {
@@ -77,41 +78,16 @@ func resizeForLLM(data []byte, maxWidths ...int) ([]byte, int, int, int, int) {
 	if len(data) == 0 {
 		return data, 0, 0, 0, 0
 	}
-	img, _, err := image.Decode(bytes.NewReader(data))
+
+	cfg := imageproc.DefaultVLMConfig()
+	cfg.MaxWidth = maxWidth
+	cfg.Quality = 90
+
+	optimized, origW, origH, newW, newH, err := imageproc.OptimizeForVLM(data, cfg)
 	if err != nil {
-		return data, 0, 0, 0, 0
-	}
-	bounds := img.Bounds()
-	origW := bounds.Dx()
-	origH := bounds.Dy()
-	if origW <= maxWidth {
 		return data, origW, origH, origW, origH
 	}
-	scale := float64(maxWidth) / float64(origW)
-	newW := maxWidth
-	newH := int(float64(origH)*scale + 0.5)
-	if newH <= 0 {
-		newH = 1
-	}
-	resized := image.NewRGBA(image.Rect(0, 0, newW, newH))
-	for y := 0; y < newH; y++ {
-		srcY := bounds.Min.Y + int(float64(y)/scale+0.5)
-		if srcY >= bounds.Max.Y {
-			srcY = bounds.Max.Y - 1
-		}
-		for x := 0; x < newW; x++ {
-			srcX := bounds.Min.X + int(float64(x)/scale+0.5)
-			if srcX >= bounds.Max.X {
-				srcX = bounds.Max.X - 1
-			}
-			resized.Set(x, y, img.At(srcX, srcY))
-		}
-	}
-	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, resized, &jpeg.Options{Quality: 85}); err != nil {
-		return data, origW, origH, origW, origH
-	}
-	return buf.Bytes(), origW, origH, newW, newH
+	return optimized, origW, origH, newW, newH
 }
 
 func buildUserMessage(ctx enginestate.TraversalContext, origW, origH int) string {
@@ -206,4 +182,50 @@ func cloneBytes(src []byte) []byte {
 	result := make([]byte, len(src))
 	copy(result, src)
 	return result
+}
+
+// AnnotationConfig 配置 VLM 截图编号标注。
+type AnnotationConfig struct {
+	Enabled   bool
+	FontScale int
+}
+
+// BuildAnnotatedPrompt 构建带编号标注的页面控件检测提示。
+// 在发送给 VLM 前在截图上绘制带编号的边界框，使 VLM 可引用元素编号而非仅靠坐标猜测。
+// rects: 待标注的边界框列表（归一化 [0,1] 坐标），按此顺序编号 1,2,3...
+func BuildAnnotatedPrompt(ctx enginestate.TraversalContext, rects []image.Rectangle, annCfg AnnotationConfig) Prompt {
+	screenshot := cloneBytes(ctx.Screenshot)
+
+	// 执行编号标注
+	if annCfg.Enabled && len(screenshot) > 0 && len(rects) > 0 {
+		annotated, err := trekann.DrawLabeledBoxesFromBytes(screenshot, rects)
+		if err == nil && len(annotated) > 0 {
+			screenshot = annotated
+		}
+	}
+
+	origW, origH, shotW, shotH := 0, 0, 0, 0
+	resized := false
+	if len(screenshot) > 0 {
+		screenshot, origW, origH, shotW, shotH = resizeForLLM(screenshot)
+		resized = origW != shotW || origH != shotH
+	}
+	userMessage := buildUserMessage(ctx, origW, origH)
+	mediaType := "image/png"
+	if len(screenshot) == 0 {
+		mediaType = ""
+	} else if resized {
+		mediaType = "image/jpeg"
+	}
+	return Prompt{
+		SystemContent:       strings.TrimSpace(promptSystemContent),
+		UserContent:         userMessage,
+		Screenshot:          screenshot,
+		ScreenshotMediaType: mediaType,
+		ResponseSchema:      schema(),
+		OrigWidth:           origW,
+		OrigHeight:          origH,
+		ShotWidth:           shotW,
+		ShotHeight:          shotH,
+	}
 }

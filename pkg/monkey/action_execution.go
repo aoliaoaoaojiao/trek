@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"trek/internal/engine/core/types"
+	"trek/internal/vision/coord"
 	"trek/logger"
 	"trek/pkg/coordinator"
 
@@ -413,6 +414,29 @@ func (r *Runner) toAbsoluteCoordinates(cmd *types.ActionCommand, screenshot []by
 	if w <= 0 || h <= 0 {
 		return
 	}
+
+	// DPR-aware coordinate conversion when device dimensions are configured
+	if r.cfg.DeviceWidth > 0 && r.cfg.DeviceHeight > 0 {
+		dprInfo := coord.DPRInfo{
+			ScreenshotWidth:  w,
+			ScreenshotHeight: h,
+			DeviceWidth:      r.cfg.DeviceWidth,
+			DeviceHeight:     r.cfg.DeviceHeight,
+		}
+		if rect := coord.ScreenshotToDevice(&types.Rect{
+			Left: cmd.Pos.Left, Top: cmd.Pos.Top,
+			Right: cmd.Pos.Right, Bottom: cmd.Pos.Bottom,
+		}, dprInfo); rect != nil {
+			cmd.Pos = *rect
+		}
+		if cmd.DragTo != nil {
+			cmd.DragTo.X = cmd.DragTo.X * float64(r.cfg.DeviceWidth) / float64(w)
+			cmd.DragTo.Y = cmd.DragTo.Y * float64(r.cfg.DeviceHeight) / float64(h)
+		}
+		return
+	}
+
+	// Fallback: direct screenshot dimension conversion
 	fw, fh := float64(w), float64(h)
 	cmd.Pos = types.Rect{
 		Left:   cmd.Pos.Left * fw,

@@ -81,6 +81,8 @@ type TraversalContext struct {
 	// VLM 截图编号标注配置（由 coordinator 设置）
 	AnnotationEnabled   bool
 	AnnotationFontScale int
+	// TextOnly 表示仅用 XML 文本调用 LLM，不发送截图（加速）
+	TextOnly bool
 }
 
 // BuildInput 用于构建 TraversalContext。

@@ -52,6 +52,10 @@ func BuildPrompt(ctx enginestate.TraversalContext) Prompt {
 		})
 	}
 	screenshot := cloneBytes(ctx.Screenshot)
+	// TextOnly 模式：有 XML 时跳过截图，LLM 纯文本决策（~1s vs ~5s）
+	if ctx.TextOnly && len(screenshot) > 0 && strings.TrimSpace(ctx.XML) != "" {
+		screenshot = nil
+	}
 	origW, origH, shotW, shotH := 0, 0, 0, 0
 	resized := false
 	if len(screenshot) > 0 {
@@ -205,6 +209,10 @@ type AnnotationConfig struct {
 // rects 可选：传 nil 时自动从 ctx.XML 提取元素边界框（需先解码截图获取尺寸）。
 func BuildAnnotatedPrompt(ctx enginestate.TraversalContext, rects []image.Rectangle, annCfg AnnotationConfig) Prompt {
 	screenshot := cloneBytes(ctx.Screenshot)
+	// TextOnly 模式：有 XML 时跳过截图
+	if ctx.TextOnly && len(screenshot) > 0 && strings.TrimSpace(ctx.XML) != "" {
+		screenshot = nil
+	}
 
 	// 自动从 XML 提取 rects
 	if len(rects) == 0 && annCfg.Enabled && ctx.XML != "" && len(screenshot) > 0 {

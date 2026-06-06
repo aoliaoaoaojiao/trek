@@ -120,6 +120,7 @@ type Coordinator struct {
 	llmProvider          pageControlCandidateProvider
 	traversalAlgo        traversal.TraversalAlgorithm
 	pageControlCache     sync.Map
+	pageControlMemory    sync.Map // 页面控件记忆: pageName → syntheticXML（上次成功识别的结果）
 	consumedFingerprints sync.Map // 消费标记：恢复周期内跳过已消费的缓存条目
 	planCache            sync.Map // LLM 响应缓存: key="pageSignature|blockReason" → planCacheEntry
 	locateCache          sync.Map // 元素定位缓存: key="intent|pageSignature" → locateCacheEntry
@@ -852,11 +853,29 @@ func (s *Coordinator) buildPageInfoByStrategy(pageName string, input ActionInput
 		return info, nil
 	}
 
+	// memory fallback：同页面上次识别结果复用（跳过 LLM）
+	if resolvedPageName != "" {
+		if v, ok := s.pageControlMemory.Load(resolvedPageName); ok {
+			if prevXML, ok := v.(string); ok && strings.TrimSpace(prevXML) != "" {
+				if elem, err := elements.CreateAndroidElementFromXml(prevXML); err == nil {
+					logger.Debugf("coordinator 页面控件 memory 命中: page=%s", resolvedPageName)
+					info.XML = prevXML
+					info.Element = elem
+					info.CacheHit = true
+					s.storePageControlCache(strategy, input.Screenshot, prevXML)
+					return info, nil
+				}
+			}
+		}
+	}
+
+	textOnly := resolvedXML != ""
 	candidates, err := s.buildPageControlCandidates(strategy, enginestate.TraversalContext{
 		Mode:       "Explore",
 		PageName:   resolvedPageName,
 		XML:        resolvedXML,
 		Screenshot: input.Screenshot,
+		TextOnly:   textOnly,
 	})
 	if err != nil {
 		if strings.TrimSpace(info.XML) != "" {
@@ -869,6 +888,10 @@ func (s *Coordinator) buildPageInfoByStrategy(pageName string, input ActionInput
 	syntheticXML, elem := buildSyntheticXMLFromCandidates(strategy, candidates, input.Screenshot)
 	if strings.TrimSpace(syntheticXML) == "" {
 		return info, nil
+	}
+	// 存入 memory 供下次复用
+	if resolvedPageName != "" {
+		s.pageControlMemory.Store(resolvedPageName, syntheticXML)
 	}
 	s.storePageControlCache(strategy, input.Screenshot, syntheticXML)
 	info.XML = syntheticXML

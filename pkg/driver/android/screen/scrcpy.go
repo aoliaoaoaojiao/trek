@@ -22,8 +22,7 @@ const (
 	deviceServerPath = "/data/local/tmp/trek_scrcpy.jar"
 
 	// pluginsScrcpyJAR 是 plugins 目录中的 scrcpy-server JAR 路径（相对于工作目录）。
-	// 参考 ADBKeyboard/UIA 的 plugins 模式，优先加载此文件，不存在时回退到嵌入的二进制。
-	pluginsScrcpyJAR = "plugins/scrcpy/scrcpy-server-v3.3.3"
+	pluginsScrcpyJAR = "plugins/scrcpy/scrcpy-server-v3.3.4"
 )
 
 //go:embed bin/scrcpy-server
@@ -120,10 +119,10 @@ func (s *Scrcpy) runBinary(maxSize int) error {
 		"com.genymobile.scrcpy.Server",
 		version,
 		"log_level=debug",
-		"max_size=0",
+		fmt.Sprintf("max_size=%d", maxSize),
 		"max_fps=60",
 		"control=false",
-		fmt.Sprintf("max_size=%d", maxSize),
+		"audio=false",
 		"audio=false",
 		"send_codec_meta=false",
 		"size_info=true",

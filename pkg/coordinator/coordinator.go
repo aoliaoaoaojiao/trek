@@ -985,7 +985,7 @@ func (s *Coordinator) InvalidatePageControlCache(screenshot []byte) {
 }
 
 // MarkCacheConsumed 将指定截图对应的缓存指纹标记为已消费。
-// 恢复周期内后续查找会跳过该条目，强制重新识别。
+// 消费标记有 5 秒有效期，超时后自动失效，让记忆曲线 TTL 接管。
 func (s *Coordinator) MarkCacheConsumed(screenshot []byte) {
 	if s == nil || len(screenshot) == 0 {
 		return
@@ -994,7 +994,7 @@ func (s *Coordinator) MarkCacheConsumed(screenshot []byte) {
 	if fingerprint == "" {
 		return
 	}
-	s.consumedFingerprints.Store(fingerprint, struct{}{})
+	s.consumedFingerprints.Store(fingerprint, time.Now())
 }
 
 // IsCacheConsumed 检查指定截图对应的缓存指纹是否已被消费。
@@ -1006,13 +1006,24 @@ func (s *Coordinator) IsCacheConsumed(screenshot []byte) bool {
 	return s.isCacheConsumedFingerprint(fingerprint)
 }
 
-// isCacheConsumedFingerprint 检查指定指纹是否已被消费（内部版本，避免重复计算）。
+// isCacheConsumedFingerprint 检查指定指纹是否已被消费（5 秒内有效，超时自动失效）。
 func (s *Coordinator) isCacheConsumedFingerprint(fingerprint string) bool {
 	if s == nil || fingerprint == "" {
 		return false
 	}
-	_, loaded := s.consumedFingerprints.Load(fingerprint)
-	return loaded
+	v, loaded := s.consumedFingerprints.Load(fingerprint)
+	if !loaded {
+		return false
+	}
+	ts, ok := v.(time.Time)
+	if !ok {
+		return false
+	}
+	if time.Since(ts) > 5*time.Second {
+		s.consumedFingerprints.Delete(fingerprint)
+		return false
+	}
+	return true
 }
 
 // ResetConsumedMarks 清除所有消费标记，通常在页面变化时调用。

@@ -89,6 +89,7 @@ func (m *MotionTouch) Click(point primitives.Point) error {
 		Point:    point,
 		Type:     common.UP_TOUCH_EVENT,
 		FingerID: 0,
+		WaitTime: 150, // DOWN→UP 间隔 150ms，确保 Android 注册为有效点击
 	}
 	return m.TouchEvent(clickEventDown, clickEventUp)
 }

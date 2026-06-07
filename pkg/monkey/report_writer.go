@@ -294,7 +294,9 @@ func drawCross(img *image.RGBA, cx, cy, halfLen int, c color.RGBA, thickness int
 }
 
 func drawArrow(img *image.RGBA, x0, y0, x1, y1 int, c color.RGBA, thickness int) {
+	// 粗线
 	drawThickLine(img, x0, y0, x1, y1, c, thickness)
+
 	dx := float64(x1 - x0)
 	dy := float64(y1 - y0)
 	length := math.Sqrt(dx*dx + dy*dy)
@@ -302,14 +304,55 @@ func drawArrow(img *image.RGBA, x0, y0, x1, y1 int, c color.RGBA, thickness int)
 		return
 	}
 	ux, uy := dx/length, dy/length
-	arrowLen := 20.0
-	arrowWidth := 10.0
+
+	// 填充三角箭头
+	arrowLen := 30.0
+	arrowWidth := 16.0
 	ax := float64(x1) - arrowLen*ux + arrowWidth*uy
 	ay := float64(y1) - arrowLen*uy - arrowWidth*ux
 	bx := float64(x1) - arrowLen*ux - arrowWidth*uy
 	by := float64(y1) - arrowLen*uy + arrowWidth*ux
-	drawThickLine(img, x1, y1, int(ax), int(ay), c, thickness)
-	drawThickLine(img, x1, y1, int(bx), int(by), c, thickness)
+
+	pts := [][2]float64{{float64(x1), float64(y1)}, {ax, ay}, {bx, by}}
+	fillTriangle(img, pts, c)
+}
+
+// fillTriangle 用扫描线算法填充三角形。
+func fillTriangle(img *image.RGBA, pts [][2]float64, c color.RGBA) {
+	minY, maxY := int(pts[0][1]), int(pts[0][1])
+	for _, p := range pts {
+		y := int(p[1])
+		if y < minY {
+			minY = y
+		}
+		if y > maxY {
+			maxY = y
+		}
+	}
+	bounds := img.Bounds()
+	for y := minY; y <= maxY; y++ {
+		xs := []int{}
+		n := len(pts)
+		for i := 0; i < n; i++ {
+			j := (i + 1) % n
+			yi, yj := pts[i][1], pts[j][1]
+			if (yi <= float64(y) && yj > float64(y)) || (yj <= float64(y) && yi > float64(y)) {
+				t := (float64(y) - yi) / (yj - yi)
+				x := int(pts[i][0] + t*(pts[j][0]-pts[i][0]))
+				xs = append(xs, x)
+			}
+		}
+		if len(xs) >= 2 {
+			if xs[0] > xs[1] {
+				xs[0], xs[1] = xs[1], xs[0]
+			}
+			for x := xs[0]; x <= xs[1]; x++ {
+				if x >= bounds.Min.X && x < bounds.Max.X && y >= bounds.Min.Y && y < bounds.Max.Y {
+					img.SetRGBA(x, y, c)
+				}
+			}
+		}
+	}
 }
 
 func drawRectOutline(img *image.RGBA, rect image.Rectangle, c color.RGBA, thickness int) {

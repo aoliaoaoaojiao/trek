@@ -181,6 +181,16 @@ func annotateScreenshot(screenshot []byte, action string, bounds string) ([]byte
 		bottom = int(rect[3] + 0.5)
 	}
 
+	// bounds 无效（BACK/SCROLL 等无目标区域的操作）：用屏幕中心作为参考点，青色边框
+	if left >= right || top >= bottom {
+		left = int(w*0.2 + 0.5)
+		top = int(h*0.2 + 0.5)
+		right = int(w*0.8 + 0.5)
+		bottom = int(h*0.8 + 0.5)
+		rect = [4]float64{0.2, 0.2, 0.8, 0.8}
+		borderColor = color.RGBA{0, 200, 255, 255}
+	}
+
 	drawRectOutline(canvas, image.Rect(left, top, right, bottom), borderColor, borderThick)
 
 	cx := (left + right) / 2

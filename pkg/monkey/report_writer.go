@@ -223,7 +223,7 @@ func annotateScreenshot(screenshot []byte, action string, bounds string, swipeSt
 
 func isAnnotatableAction(action string) bool {
 	switch action {
-	case "CLICK", "LONG_CLICK", "INPUT",
+	case "CLICK", "LONG_CLICK", "INPUT", "BACK",
 		"SCROLL_BOTTOM_UP", "SCROLL_TOP_DOWN",
 		"SCROLL_LEFT_RIGHT", "SCROLL_RIGHT_LEFT",
 		"SCROLL_BOTTOM_UP_N":

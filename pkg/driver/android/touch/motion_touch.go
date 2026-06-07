@@ -106,6 +106,7 @@ func (m *MotionTouch) LongClick(point primitives.Point, duration int64) error {
 		Point:    point,
 		Type:     common.UP_TOUCH_EVENT,
 		FingerID: 0,
+		WaitTime: 30,
 	}
 	return m.TouchEvent(longClickEventDown, longClickEventUp)
 }
@@ -169,10 +170,11 @@ func (m *MotionTouch) Swipe(startPoint primitives.Point, endPoint primitives.Poi
 		touchEvents = append(touchEvents, moveEvent)
 	}
 
-	// 第三步：松开手指
+	// 第三步：松开手指（UP 前等待 30ms，确保 Android 注册最后一次 MOVE）
 	touchEvents = append(touchEvents, common.TouchEvent{
 		Type:     common.UP_TOUCH_EVENT,
 		FingerID: fingerID,
+		WaitTime: 30,
 	})
 
 	// 4. 执行触摸事件序列

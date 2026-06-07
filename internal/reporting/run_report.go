@@ -665,12 +665,7 @@ func truncateErr(err string, maxLen int) string {
 }
 
 func isTapAction(action string) bool {
-	switch strings.ToUpper(strings.TrimSpace(action)) {
-	case "CLICK", "LONG_CLICK", "INPUT":
-		return true
-	default:
-		return false
-	}
+	return true // 所有步骤都显示截图
 }
 
 // buildPageLabel 从控件文本中提取人类可读的页面标签。

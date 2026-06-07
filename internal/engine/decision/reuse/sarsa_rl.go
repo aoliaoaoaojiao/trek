@@ -99,10 +99,13 @@ func (a *ModelReusableAgent) computeRewardOfLatestAction() float64 {
 		rewardValue = rewardValue + a.getStateActionExpectationValue(a.newState, visitedPages)/math.Sqrt(float64(a.newState.GetVisitedCount())+1.0)
 		logger.Debugf("computeReward: final reward after state expectation %f", rewardValue)
 
-		// escaped 惩罚：上一步未逃离（页面没变）时大幅降低 reward，避免重复选择无效动作
-		if !a.lastEscaped {
+		// escaped 惩罚：连续 3 次未逃离时强惩罚，避免反复选择无效动作
+		if a.consecutiveNoEscape >= 3 {
 			rewardValue = -5.0
-			logger.Debugf("computeReward: penalized for no escape, reward=%.4f", rewardValue)
+			logger.Debugf("computeReward: penalized for %d consecutive no-escape, reward=%.4f", a.consecutiveNoEscape, rewardValue)
+		} else if !a.lastEscaped {
+			rewardValue *= 0.5
+			logger.Debugf("computeReward: mild penalty for no-escape (%d/3), reward=%.4f", a.consecutiveNoEscape, rewardValue)
 		}
 
 		logger.Debugf("total visited count %d", len(visitedPages))

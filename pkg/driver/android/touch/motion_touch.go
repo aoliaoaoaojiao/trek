@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 	"trek/internal/engine/core/primitives"
+	"trek/logger"
 	"trek/pkg/driver/android/adb"
 	"trek/pkg/driver/common"
 )
@@ -315,17 +316,18 @@ func (m *MotionTouch) touchNormalPoint(touchEvent common.TouchEvent) error {
 	var cmd string
 	switch touchEvent.Type {
 	case common.DOWN_TOUCH_EVENT, common.MOVE_TOUCH_EVENT:
-		// DOWN/MOVE：需要坐标+手指ID
 		cmd = fmt.Sprintf("touch %s %d %d %d\n",
 			touchEvent.Type, int64(touchEvent.X), int64(touchEvent.Y), touchEvent.FingerID)
+		logger.Debugf("MotionTouch normal: %s x=%d y=%d finger=%d", touchEvent.Type, int64(touchEvent.X), int64(touchEvent.Y), touchEvent.FingerID)
 	default:
-		// UP：仅需要手指ID
 		cmd = fmt.Sprintf("touch %s %d\n", common.UP_TOUCH_EVENT, touchEvent.FingerID)
+		logger.Debugf("MotionTouch normal: %s finger=%d", common.UP_TOUCH_EVENT, touchEvent.FingerID)
 	}
 	m.lock.Lock()
 	_, err := m.shellLoopConn.Write([]byte(cmd))
 	m.lock.Unlock()
 	if err != nil {
+		logger.Warnf("MotionTouch write failed: %v cmd=%s", err, strings.TrimSpace(cmd))
 		return fmt.Errorf("write normal touch cmd failed: %v, cmd: %s", err, cmd)
 	}
 	return nil
@@ -336,17 +338,18 @@ func (m *MotionTouch) touchAirtestPoint(touchEvent common.TouchEvent) error {
 	var cmd string
 	switch touchEvent.Type {
 	case common.DOWN_TOUCH_EVENT, common.MOVE_TOUCH_EVENT:
-		// DOWN/MOVE：需要坐标+手指ID
 		cmd = fmt.Sprintf("airtest %s %f %f %d\n",
 			touchEvent.Type, touchEvent.X, touchEvent.Y, touchEvent.FingerID)
+		logger.Debugf("MotionTouch airtest: %s x=%.3f y=%.3f finger=%d", touchEvent.Type, touchEvent.X, touchEvent.Y, touchEvent.FingerID)
 	default:
-		// UP：仅需要手指ID
 		cmd = fmt.Sprintf("airtest %s %d\n", common.UP_TOUCH_EVENT, touchEvent.FingerID)
+		logger.Debugf("MotionTouch airtest: %s finger=%d", common.UP_TOUCH_EVENT, touchEvent.FingerID)
 	}
 	m.lock.Lock()
 	_, err := m.shellLoopConn.Write([]byte(cmd))
 	m.lock.Unlock()
 	if err != nil {
+		logger.Warnf("MotionTouch write failed: %v cmd=%s", err, strings.TrimSpace(cmd))
 		return fmt.Errorf("write airtest touch cmd failed: %v, cmd: %s", err, cmd)
 	}
 	return nil

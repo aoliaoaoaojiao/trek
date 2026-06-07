@@ -516,6 +516,9 @@ func renderStepTimeline(records []monkey.StepRecord, pageIDMap map[string]string
 		}
 		b.WriteString(fmt.Sprintf("页面：P%s\n\n", pageID))
 		b.WriteString(fmt.Sprintf("操作：%s\n\n", escapeMarkdownCell(action)))
+		if r.TapPoint != "" {
+			b.WriteString(fmt.Sprintf("触控坐标：%s\n\n", r.TapPoint))
+		}
 		b.WriteString(fmt.Sprintf("结果：%s\n\n", resultText))
 		b.WriteString(fmt.Sprintf("页面理解：%s\n\n", strategyDesc))
 		if r.BlockDetected {

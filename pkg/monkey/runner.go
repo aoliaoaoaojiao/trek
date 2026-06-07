@@ -168,6 +168,7 @@ type StepRecord struct {
 	Action             string
 	ActionTargetBounds string `json:"action_target_bounds,omitempty"`
 	ActionWidgetInfo   string `json:"action_widget_info,omitempty"`
+	TapPoint           string `json:"tap_point,omitempty"` // MotionTouch 实际触控坐标
 	DurationMs         int64
 	Err                string
 	PageControlStrategy string          `json:"page_control_strategy,omitempty"`
@@ -701,6 +702,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		record.Action = cmd.Act.String()
 		record.ActionTargetBounds = cmd.Pos.String()
 		record.ActionWidgetInfo = strings.TrimSpace(cmd.WidgetInfo)
+		record.TapPoint = strings.TrimSpace(formatTapPointLog(cmd))
 		report.ActionCount[record.Action]++
 		report.StepsTotal++
 		r.recordActionTrace(beforePage, cmd)

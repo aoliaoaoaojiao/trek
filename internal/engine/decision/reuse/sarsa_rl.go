@@ -101,7 +101,7 @@ func (a *ModelReusableAgent) computeRewardOfLatestAction() float64 {
 
 		// escaped 惩罚：上一步未逃离（页面没变）时大幅降低 reward，避免重复选择无效动作
 		if !a.lastEscaped {
-			rewardValue *= 0.1
+			rewardValue = -5.0
 			logger.Debugf("computeReward: penalized for no escape, reward=%.4f", rewardValue)
 		}
 

@@ -191,8 +191,6 @@ func annotateScreenshot(screenshot []byte, action string, bounds string, swipeSt
 		borderColor = color.RGBA{0, 200, 255, 255}
 	}
 
-	drawRectOutline(canvas, image.Rect(left, top, right, bottom), borderColor, borderThick)
-
 	cx := (left + right) / 2
 	cy := (top + bottom) / 2
 
@@ -211,6 +209,7 @@ func annotateScreenshot(screenshot []byte, action string, bounds string, swipeSt
 		}
 		drawArrow(canvas, sx, sy, ex, ey, markColor, lineThickness)
 	default:
+		drawRectOutline(canvas, image.Rect(left, top, right, bottom), borderColor, borderThick)
 		drawFilledCircle(canvas, cx, cy, circleRadius, markColor)
 		drawCross(canvas, cx, cy, crossHalfLen, markColor, lineThickness)
 	}

@@ -169,6 +169,8 @@ type StepRecord struct {
 	ActionTargetBounds string `json:"action_target_bounds,omitempty"`
 	ActionWidgetInfo   string `json:"action_widget_info,omitempty"`
 	TapPoint           string `json:"tap_point,omitempty"` // MotionTouch 实际触控坐标
+	SwipeStart         string `json:"swipe_start,omitempty"`
+	SwipeEnd           string `json:"swipe_end,omitempty"`
 	DurationMs         int64
 	Err                string
 	PageControlStrategy string          `json:"page_control_strategy,omitempty"`
@@ -703,6 +705,13 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		record.ActionTargetBounds = cmd.Pos.String()
 		record.ActionWidgetInfo = strings.TrimSpace(cmd.WidgetInfo)
 		record.TapPoint = strings.TrimSpace(formatTapPointLog(cmd))
+		// 滑动操作：存储实际起终点坐标用于标注
+		if isScrollAction(cmd.Act.String()) {
+			if start, end, err := resolveSwipePoints(cmd.Pos, cmd.Act); err == nil {
+				record.SwipeStart = fmt.Sprintf("[%.1f,%.1f]", start.X, start.Y)
+				record.SwipeEnd = fmt.Sprintf("[%.1f,%.1f]", end.X, end.Y)
+			}
+		}
 		report.ActionCount[record.Action]++
 		report.StepsTotal++
 		r.recordActionTrace(beforePage, cmd)

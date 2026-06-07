@@ -490,7 +490,7 @@ func (r *Runner) appendRecord(report *Report, record StepRecord, stepStart time.
 			pageDirPath := filepath.Join(r.cfg.ArtifactDir, ref.PageDir)
 			saveOriginalIfNew(pageDirPath, record.BeforeScreenshot)
 			prefix := buildArtifactFilePrefix(record, "before")
-			annotateAndSaveMarked(pageDirPath, prefix, record.BeforeScreenshot, record.Action, record.ActionTargetBounds)
+			annotateAndSaveMarked(pageDirPath, prefix, record.BeforeScreenshot, record.Action, record.ActionTargetBounds, record.SwipeStart, record.SwipeEnd)
 		} else if err != nil {
 			logger.Warnf("monkey step=%d 写入 before 产物失败: %v", record.Step, err)
 		}

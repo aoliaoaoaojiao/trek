@@ -124,7 +124,7 @@ func saveOriginalIfNew(pageDirPath string, screenshot []byte) {
 }
 
 // annotateAndSaveMarked 生成标注截图并保存。
-func annotateAndSaveMarked(pageDirPath string, prefix string, screenshot []byte, action string, bounds string) {
+func annotateAndSaveMarked(pageDirPath string, prefix string, screenshot []byte, action string, bounds string, swipeStart, swipeEnd string) {
 	if len(screenshot) == 0 {
 		return
 	}
@@ -132,7 +132,7 @@ func annotateAndSaveMarked(pageDirPath string, prefix string, screenshot []byte,
 	if !isAnnotatableAction(action) {
 		return
 	}
-	marked, err := annotateScreenshot(screenshot, action, bounds)
+	marked, err := annotateScreenshot(screenshot, action, bounds, swipeStart, swipeEnd)
 	if err != nil || len(marked) == 0 {
 		return
 	}
@@ -151,7 +151,7 @@ var (
 	borderThick   = 3
 )
 
-func annotateScreenshot(screenshot []byte, action string, bounds string) ([]byte, error) {
+func annotateScreenshot(screenshot []byte, action string, bounds string, swipeStart, swipeEnd string) ([]byte, error) {
 	img, _, err := image.Decode(bytes.NewReader(screenshot))
 	if err != nil {
 		return nil, fmt.Errorf("解码截图失败: %w", err)
@@ -198,11 +198,17 @@ func annotateScreenshot(screenshot []byte, action string, bounds string) ([]byte
 
 	switch {
 	case isScrollAction(action):
-		startRatio, endRatio := swipeRatiosForAction(action)
-		sx := int((rect[0]+(rect[2]-rect[0])*startRatio[0])*w + 0.5)
-		sy := int((rect[1]+(rect[3]-rect[1])*startRatio[1])*h + 0.5)
-		ex := int((rect[0]+(rect[2]-rect[0])*endRatio[0])*w + 0.5)
-		ey := int((rect[1]+(rect[3]-rect[1])*endRatio[1])*h + 0.5)
+		var sx, sy, ex, ey int
+		// 优先用实际 swipe 坐标（完整轨迹），否则用 bounds 内比例
+		if start, end, err := parseSwipePoints(swipeStart, swipeEnd); err == nil {
+			sx, sy, ex, ey = int(start[0]), int(start[1]), int(end[0]), int(end[1])
+		} else {
+			startRatio, endRatio := swipeRatiosForAction(action)
+			sx = int((rect[0]+(rect[2]-rect[0])*startRatio[0])*w + 0.5)
+			sy = int((rect[1]+(rect[3]-rect[1])*startRatio[1])*h + 0.5)
+			ex = int((rect[0]+(rect[2]-rect[0])*endRatio[0])*w + 0.5)
+			ey = int((rect[1]+(rect[3]-rect[1])*endRatio[1])*h + 0.5)
+		}
 		drawArrow(canvas, sx, sy, ex, ey, markColor, lineThickness)
 	default:
 		drawFilledCircle(canvas, cx, cy, circleRadius, markColor)
@@ -235,6 +241,31 @@ func isScrollAction(action string) bool {
 		return true
 	}
 	return false
+}
+
+// parseSwipePoints 解析 "[x,y]" 格式的滑动起终点坐标。
+func parseSwipePoints(startStr, endStr string) ([2]float64, [2]float64, error) {
+	parse := func(s string) ([2]float64, error) {
+		s = strings.TrimSpace(s)
+		s = strings.TrimPrefix(s, "[")
+		s = strings.TrimSuffix(s, "]")
+		parts := strings.Split(s, ",")
+		if len(parts) != 2 {
+			return [2]float64{}, fmt.Errorf("invalid swipe point: %s", s)
+		}
+		x, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+		y, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+		if err1 != nil || err2 != nil {
+			return [2]float64{}, fmt.Errorf("parse swipe point failed: %s", s)
+		}
+		return [2]float64{x, y}, nil
+	}
+	start, err1 := parse(startStr)
+	end, err2 := parse(endStr)
+	if err1 != nil || err2 != nil {
+		return [2]float64{}, [2]float64{}, fmt.Errorf("parse swipe points failed")
+	}
+	return start, end, nil
 }
 
 func swipeRatiosForAction(action string) (start, end [2]float64) {

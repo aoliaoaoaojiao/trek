@@ -121,6 +121,7 @@ type Coordinator struct {
 	traversalAlgo        traversal.TraversalAlgorithm
 	pageControlCache     sync.Map
 	pageControlMemory    sync.Map // 页面控件记忆: pageName → syntheticXML（上次成功识别的结果）
+	lastPageInfo         *pageInfoCacheEntry // 上次返回的完整 PageInfo，截图指纹相同时直接复用
 	consumedFingerprints sync.Map // 消费标记：恢复周期内跳过已消费的缓存条目
 	planCache            sync.Map // LLM 响应缓存: key="pageSignature|blockReason" → planCacheEntry
 	locateCache          sync.Map // 元素定位缓存: key="intent|pageSignature" → locateCacheEntry
@@ -130,6 +131,12 @@ type pageControlCacheEntry struct {
 	SyntheticXML string
 	RefreshedAt  time.Time
 	HitCount     int
+}
+
+// pageInfoCacheEntry 缓存完整的 PageInfo + 截图指纹，页面未变时零开销复用。
+type pageInfoCacheEntry struct {
+	Info        PageInfo
+	Fingerprint string
 }
 
 type planCacheEntry struct {
@@ -751,6 +758,16 @@ func (s *Coordinator) RecordCandidateEnhancementOutcome(ctx enginestate.Traversa
 		CreatedAt:        time.Now(),
 	}
 	return s.memoryStore.AppendOutcome(record)
+}
+
+// NotifyOutcome 通知 traversal 算法上一步的执行结果（是否逃离），用于 reuse model 学习。
+func (s *Coordinator) NotifyOutcome(escaped bool) {
+	if s == nil || s.traversalAlgo == nil {
+		return
+	}
+	if adapter, ok := s.traversalAlgo.(*traversal.ReuseAdapter); ok {
+		adapter.NotifyOutcome(escaped)
+	}
 }
 
 // SetObservationMode 设置感知模式（xml-only / image-only / hybrid）。

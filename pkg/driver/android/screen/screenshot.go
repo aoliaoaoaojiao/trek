@@ -76,7 +76,12 @@ func NewScreenCaptureWithScrcpy(device *adb.Device, config *ScrcpyScreenshotConf
 // 后台模式下直接返回最新帧（零等待），否则走原有的 scrcpy/ADB 路径。
 // 如果帧时间戳早于上一步动作完成时间，会短暂等待新帧以确保截图反映动作后的状态。
 func (s *ScreenCapture) Screenshot(ctx context.Context) ([]byte, error) {
-	// 后台模式：返回最新帧，但确保是动作之后的
+	// ADB 模式（无 scrcpy）：直接同步截图，不走后台缓存
+	if s.screenshotProvider == nil || !s.screenshotProvider.IsActive() {
+		return s.device.Screenshot(ctx)
+	}
+
+	// scrcpy 模式：返回后台最新帧，确保是动作之后的
 	if v := s.bgLatest.Load(); v != nil {
 		f := v.(*bgFrame)
 		actionDone := s.lastActionDone.Load()
@@ -205,7 +210,7 @@ func (s *ScreenCapture) Record(path string) error {
 	s.isRecording = true
 
 	scrcpy := NewScrcpy(s.device)
-	scrcpy.SetVideoFrameHandler(func(frameData []byte, oriPTS uint64, isKeyFrame bool) {
+	scrcpy.SetVideoFrameHandler(func(frameData []byte, oriPTS uint64, isKeyFrame bool, isConfig bool) {
 		select {
 		case <-ctx.Done():
 			return
@@ -335,8 +340,8 @@ func (s *ScreenCapture) bgCaptureOnce() {
 		}
 	}
 
-	// scrcpy 无帧时降级 ADB（较慢，但兜底）
-	data, err := s.screenshotDirect(ctx)
+	// ADB 模式：直接同步截图，不用后台线程（ADB 每次 300-500ms，跟不上 200ms 间隔）
+	data, err := s.device.Screenshot(ctx)
 	if err != nil || len(data) == 0 {
 		return
 	}

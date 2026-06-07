@@ -56,8 +56,6 @@ type ModelReusableAgent struct {
 	reuseQValue            ActionQValue
 	qValueFilter           types.IStatefulActionFilter
 	modelSavePath          string
-	lastEscaped            bool // 上一步是否逃离（页面变化），由 runner 执行后设置
-	consecutiveNoEscape    int  // 连续未逃离次数，达到阈值时强惩罚
 	enableModelPersistence bool
 	reuseModelLock         sync.Mutex
 	visitStats             reuseVisitStats
@@ -171,16 +169,6 @@ func (a *ModelReusableAgent) GetModel() *sharedgraph.Model {
 
 func (a *ModelReusableAgent) SetModel(model *sharedgraph.Model) {
 	a.model = model
-}
-
-// SetLastEscaped 由 runner 在动作执行后调用，通知 model 上一步是否逃离。
-func (a *ModelReusableAgent) SetLastEscaped(escaped bool) {
-	a.lastEscaped = escaped
-	if escaped {
-		a.consecutiveNoEscape = 0
-	} else {
-		a.consecutiveNoEscape++
-	}
 }
 
 func (a *ModelReusableAgent) GetLastState() types.IState {

@@ -83,6 +83,9 @@ type ScrcpyScreenshotProvider struct {
 	stopIdle    chan struct{}
 	idleWg      sync.WaitGroup
 
+	// 新帧通知：onFrame 解码出新帧时发送，Screenshot 等待接收
+	keyframeNotify chan struct{}
+
 	// lava 状态
 	started  bool
 	fallback bool // scrcpy 永久不可用
@@ -113,8 +116,8 @@ func (p *ScrcpyScreenshotProvider) Start() error {
 		return fmt.Errorf("创建 scrcpy 实例失败")
 	}
 
-	sc.SetVideoFrameHandler(func(data []byte, pts uint64, isKeyFrame bool) {
-		p.onFrame(data, pts, isKeyFrame)
+	sc.SetVideoFrameHandler(func(data []byte, pts uint64, isKeyFrame bool, isConfig bool) {
+		p.onFrame(data, pts, isKeyFrame, isConfig)
 	})
 
 	maxSize := p.config.MaxSize
@@ -131,6 +134,7 @@ func (p *ScrcpyScreenshotProvider) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancelFunc = cancel
 	p.started = true
+	p.keyframeNotify = make(chan struct{}, 1)
 
 	// 启动空闲监控
 	p.idleWg.Add(1)
@@ -141,20 +145,36 @@ func (p *ScrcpyScreenshotProvider) Start() error {
 }
 
 // onFrame 处理从 scrcpy 流接收到的 H264 帧。
-func (p *ScrcpyScreenshotProvider) onFrame(data []byte, pts uint64, isKeyFrame bool) {
-	// 检查是否是配置包（包含 SPS/PPS）
-	// scrcpy 协议：配置包由 PACKET_FLAG_CONFIG 标记
-	// 在我们的解析器中，配置包 isKeyFrame=false 且 data 包含编码器配置
-	// 实际上 scrcpy 的 v3.3+ 使用独立标志来标识配置包
-	// 这里通过检查数据前导码来判断
-	if len(data) > 4 && (data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x00 && data[3] == 0x01) {
-		// 可能是 SPS/PPS 数据
+func (p *ScrcpyScreenshotProvider) onFrame(data []byte, pts uint64, isKeyFrame bool, isConfig bool) {
+	// 配置包：仅在数据是 Annex B 格式（以 00 00 00 01 开头）时存储
+	// scrcpy v3.3+ 的 config 包可能是 codec metadata（全零），不是 H.264 SPS/PPS
+	if isConfig && len(data) > 4 && data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x00 && data[3] == 0x01 {
+		p.mu.Lock()
+		p.configPkt = append([]byte{}, data...)
+		p.mu.Unlock()
+		return
+	}
+
+	// 关键帧中也检测 SPS/PPS（作为兜底 configPkt 来源）
+	if isKeyFrame && len(data) > 4 && data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x00 && data[3] == 0x01 {
 		nalType := data[4] & 0x1F
 		if nalType == 7 || nalType == 8 { // SPS=7, PPS=8
-			p.mu.Lock()
-			p.configPkt = append([]byte{}, data...)
-			p.mu.Unlock()
-			return
+			// 提取从开头到第一个非 SPS/PPS NAL 之前的数据作为 configPkt
+			configEnd := 0
+			for i := 0; i+4 <= len(data); i++ {
+				if data[i] == 0x00 && data[i+1] == 0x00 && data[i+2] == 0x00 && data[i+3] == 0x01 {
+					nal := data[i+4] & 0x1F
+					if nal != 7 && nal != 8 { // 非 SPS/PPS，找到了帧数据起点
+						configEnd = i
+						break
+					}
+				}
+			}
+			if configEnd > 0 {
+				p.mu.Lock()
+				p.configPkt = append([]byte{}, data[:configEnd]...)
+				p.mu.Unlock()
+			}
 		}
 	}
 
@@ -172,6 +192,11 @@ func (p *ScrcpyScreenshotProvider) onFrame(data []byte, pts uint64, isKeyFrame b
 				p.cache.width = bounds.Dx()
 				p.cache.height = bounds.Dy()
 				p.cache.Unlock()
+				// 通知等待新帧的 Screenshot 调用
+				select {
+				case p.keyframeNotify <- struct{}{}:
+				default:
+				}
 			}
 		}
 		p.mu.Unlock()
@@ -253,17 +278,9 @@ func (p *ScrcpyScreenshotProvider) decodeH264ToPNG(h264Data []byte) ([]byte, err
 }
 
 // Screenshot 返回 PNG 格式的截图。
-// 参考 Midscene 的三层降级策略：
-//   Tier 1: scrcpy H.264 帧缓存 / 流解码（50-150ms）
-//   Tier 2: ADB exec-out screencap 快速模式（300-500ms）
-//   Tier 3: ADB screencap 兜底（500-1000ms）
+// 参考 Midscene 的策略：先等新关键帧（300ms），超时再用缓存帧。
 func (p *ScrcpyScreenshotProvider) Screenshot(ctx context.Context) ([]byte, error) {
 	p.lastRequest = time.Now()
-
-	// Tier 1: scrcpy 帧缓存（最快路径）
-	if data := p.tryCachedFrame(); data != nil {
-		return data, nil
-	}
 
 	// 如果未启动 scrcpy，尝试启动
 	if !p.started && !p.fallback {
@@ -273,35 +290,30 @@ func (p *ScrcpyScreenshotProvider) Screenshot(ctx context.Context) ([]byte, erro
 		}
 	}
 
-	// Tier 1b: 有缓存帧时快速等 scrcpy，超时后按年龄决定是否降级 ADB
-	if p.started && !p.fallback {
-		if data := p.tryScrcpyFrameFast(); data != nil {
-			return data, nil
-		}
-		// scrcpy 未产出新帧：缓存帧足够新则直接返回，否则降级 ADB
-		p.cache.RLock()
-		if p.cache.frame != nil {
-			age := time.Since(p.cache.ts)
-			if age < 1*time.Second {
-				frame := make([]byte, len(p.cache.frame))
-				copy(frame, p.cache.frame)
-				p.cache.RUnlock()
-				logger.Debugf("scrcpy 屏幕无变化，返回缓存帧 (%d 字节, 已缓存 %v)", len(frame), age)
-				return frame, nil
+	// 核心路径：等待新关键帧到达（参考 Midscene waitForNextKeyframe）
+	if p.started && !p.fallback && p.keyframeNotify != nil {
+		select {
+		case <-p.keyframeNotify:
+			// 收到新帧通知，返回最新缓存
+			if data := p.tryCachedFrameAnyAge(); data != nil {
+				logger.Debugf("scrcpy 等到新帧，返回最新帧 (%d 字节)", len(data))
+				return data, nil
 			}
-			logger.Debugf("scrcpy 缓存帧过旧 (%v)，降级 ADB", age)
+		case <-time.After(300 * time.Millisecond):
+			// 超时，屏幕可能静止，返回缓存帧
+			logger.Debugf("scrcpy 等新帧超时(300ms)，返回缓存帧")
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
-		p.cache.RUnlock()
-		logger.Debug("scrcpy 无缓存帧可用，降级到 Tier 2 ADB")
 	}
 
-	// Tier 2: ADB 快速截图（较短超时）
-	if data := p.tryFastADB(ctx); data != nil {
+	// 兜底：返回任意缓存帧
+	if data := p.tryCachedFrameAnyAge(); data != nil {
 		return data, nil
 	}
 
-	// Tier 3: ADB 兜底（完整超时）
-	logger.Debug("ADB 快速截图失败，降级到 Tier 3 兜底")
+	// 无缓存帧，降级 ADB
+	logger.Debug("scrcpy 无缓存帧可用，降级到 ADB")
 	return p.device.Screenshot(ctx)
 }
 
@@ -320,6 +332,7 @@ func (p *ScrcpyScreenshotProvider) tryCachedFrame() []byte {
 
 // tryCachedFrameAnyAge 返回任意年龄的缓存帧（不检查 TTL），供后台线程快速取帧。
 func (p *ScrcpyScreenshotProvider) tryCachedFrameAnyAge() []byte {
+	p.lastRequest = time.Now() // 更新活跃时间，防止 idle 断开
 	p.cache.RLock()
 	defer p.cache.RUnlock()
 	if p.cache.frame == nil {

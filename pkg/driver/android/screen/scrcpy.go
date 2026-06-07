@@ -59,7 +59,8 @@ type Scrcpy struct {
 	videoSocket       net.Conn
 	exitCallBackFunc  context.CancelFunc
 	exitCtx           context.Context
-	videoFrameHandler func([]byte, uint64, bool)
+	videoFrameHandler func([]byte, uint64, bool, bool)
+	packetCount       int // 诊断用：前几个包的计数
 }
 
 func NewScrcpy(device *adb.Device) *Scrcpy {
@@ -85,7 +86,7 @@ func NewScrcpy(device *adb.Device) *Scrcpy {
 }
 
 // SetVideoFrameHandler 设置视频帧处理函数，参数为视频数据、pts(us)和是否为关键帧
-func (s *Scrcpy) SetVideoFrameHandler(handler func(frameData []byte, oriPTS uint64, isKeyFrame bool)) {
+func (s *Scrcpy) SetVideoFrameHandler(handler func(frameData []byte, oriPTS uint64, isKeyFrame bool, isConfig bool)) {
 	s.videoFrameHandler = handler
 }
 
@@ -122,7 +123,6 @@ func (s *Scrcpy) runBinary(maxSize int) error {
 		fmt.Sprintf("max_size=%d", maxSize),
 		"max_fps=60",
 		"control=false",
-		"audio=false",
 		"audio=false",
 		"send_codec_meta=false",
 		"size_info=true",
@@ -254,7 +254,14 @@ func (s *Scrcpy) writeH264() {
 			}
 
 			// 解析包头
-			packetSize, pts, isKeyFrame, _, err := s.parsePacketHeader(headerBuf)
+			packetSize, pts, isKeyFrame, isConfig, err := s.parsePacketHeader(headerBuf)
+
+			// 诊断：打印前3个包的头部和数据前8字节
+			if s.packetCount < 3 {
+				s.packetCount++
+				logger.Infof("scrcpy DIAG packet=%d header=%x data_start=%x size=%d pts=%d key=%v config=%v",
+					s.packetCount, headerBuf, dataBuf[:min(8, packetSize)], packetSize, pts, isKeyFrame, isConfig)
+			}
 
 			if err != nil {
 				logger.Errorf("parse scrcpy packet header err: %v", err)
@@ -288,7 +295,7 @@ func (s *Scrcpy) writeH264() {
 			}
 
 			// 处理完整的数据包
-			s.processVideoPacket(dataBuf[:packetSize], pts, isKeyFrame)
+			s.processVideoPacket(dataBuf[:packetSize], pts, isKeyFrame, isConfig)
 		}
 	}
 }
@@ -335,9 +342,9 @@ func (s *Scrcpy) parsePacketHeader(header []byte) (packetSize int, pts uint64, i
 }
 
 // 处理视频数据包
-func (s *Scrcpy) processVideoPacket(data []byte, pts uint64, isKeyFrame bool) {
+func (s *Scrcpy) processVideoPacket(data []byte, pts uint64, isKeyFrame bool, isConfig bool) {
 	if s.videoFrameHandler != nil {
-		s.videoFrameHandler(data, pts, isKeyFrame)
+		s.videoFrameHandler(data, pts, isKeyFrame, isConfig)
 	}
 }
 

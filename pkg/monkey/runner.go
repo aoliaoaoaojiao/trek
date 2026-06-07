@@ -772,10 +772,6 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		if cmd.Act == types.INPUT {
 			escaped = true // 输入必然改变页面内容，视为已逃离
 		}
-		// 通知 reuse model 上一步是否逃离，用于 reward 计算
-		if ad, ok := r.decider.(*coordinator.Coordinator); ok {
-			ad.NotifyOutcome(escaped)
-		}
 		r.notifyTraversalOutcome(step, beforePage, afterPage, cmd, true)
 		// 记录 step 上下文到环形缓冲区
 		afterPageName := ""

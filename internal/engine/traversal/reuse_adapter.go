@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"trek/internal/engine/core/types"
-	"trek/internal/engine/decision/reuse"
 	"trek/internal/engine/perception"
 	enginestate "trek/internal/engine/state"
 )
@@ -48,16 +47,6 @@ func NewReuseAdapter(agent types.IAgent, stateProvider StateProvider) *ReuseAdap
 // Name 返回算法名称。
 func (a *ReuseAdapter) Name() string {
 	return "reuse_adapter"
-}
-
-// NotifyOutcome 通知 adapter 上一步的执行结果（是否逃离），转发给底层 agent。
-func (a *ReuseAdapter) NotifyOutcome(escaped bool) {
-	if a == nil || a.agent == nil {
-		return
-	}
-	if agent, ok := a.agent.(*reuse.ModelReusableAgent); ok {
-		agent.SetLastEscaped(escaped)
-	}
 }
 
 // actionProvider 是 ReuseAdapter 从 agent 提取选中动作的内部接口。

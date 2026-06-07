@@ -760,15 +760,6 @@ func (s *Coordinator) RecordCandidateEnhancementOutcome(ctx enginestate.Traversa
 	return s.memoryStore.AppendOutcome(record)
 }
 
-// NotifyOutcome 通知 traversal 算法上一步的执行结果（是否逃离），用于 reuse model 学习。
-func (s *Coordinator) NotifyOutcome(escaped bool) {
-	if s == nil || s.traversalAlgo == nil {
-		return
-	}
-	if adapter, ok := s.traversalAlgo.(*traversal.ReuseAdapter); ok {
-		adapter.NotifyOutcome(escaped)
-	}
-}
 
 // SetObservationMode 设置感知模式（xml-only / image-only / hybrid）。
 func (s *Coordinator) SetObservationMode(mode string) error {

@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
 	"trek/pkg/driver/common"
 	"trek/pkg/monkey"
 )
@@ -32,7 +31,6 @@ func TestResolveFormat(t *testing.T) {
 		{name: "unsupported ext", path: "report.txt", wantErr: true},
 		{name: "unsupported format", format: "html", path: "report.html", wantErr: true},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ResolveFormat(tt.format, tt.path)
@@ -51,14 +49,12 @@ func TestResolveFormat(t *testing.T) {
 		})
 	}
 }
-
 func TestRenderRunReportJSON(t *testing.T) {
 	report := sampleReport(t)
 	content, err := RenderRunReport(FormatJSON, sampleMetadata(), report)
 	if err != nil {
 		t.Fatalf("渲染 JSON 报告失败: %v", err)
 	}
-
 	var envelope RunReportEnvelope
 	if err := json.Unmarshal(content, &envelope); err != nil {
 		t.Fatalf("解析 JSON 报告失败: %v", err)
@@ -73,14 +69,12 @@ func TestRenderRunReportJSON(t *testing.T) {
 		t.Fatalf("步骤记录数量错误: %d", len(envelope.StepRecords))
 	}
 }
-
 func TestRenderRunReportMarkdown(t *testing.T) {
 	report := sampleReport(t)
 	content, err := RenderRunReport(FormatMD, sampleMetadata(), report)
 	if err != nil {
 		t.Fatalf("渲染 Markdown 报告失败: %v", err)
 	}
-
 	text := string(content)
 	expected := []string{
 		"# Trek 运行报告",
@@ -97,16 +91,13 @@ func TestRenderRunReportMarkdown(t *testing.T) {
 		}
 	}
 }
-
 func TestWriteRunReport(t *testing.T) {
 	report := sampleReport(t)
 	outputDir := t.TempDir()
 	outputPath := filepath.Join(outputDir, "run-report.md")
-
 	if err := WriteRunReport(outputPath, "", sampleMetadata(), report); err != nil {
 		t.Fatalf("写入报告失败: %v", err)
 	}
-
 	data, err := os.ReadFile(outputPath)
 	if err != nil {
 		t.Fatalf("读取报告失败: %v", err)
@@ -115,11 +106,9 @@ func TestWriteRunReport(t *testing.T) {
 		t.Fatalf("报告内容不符合预期: %s", string(data))
 	}
 }
-
 func TestWriteRunReportWithArtifactsGroupedByPage(t *testing.T) {
 	report := sampleReport(t)
 	artifactDir := filepath.Join(t.TempDir(), "artifacts")
-
 	envelope, err := BuildRunReportEnvelope(sampleMetadata(), report, artifactDir)
 	if err != nil {
 		t.Fatalf("构建带产物的报告失败: %v", err)
@@ -137,7 +126,6 @@ func TestWriteRunReportWithArtifactsGroupedByPage(t *testing.T) {
 	if len(envelope.Pages) == 0 || envelope.Pages[0].InteractableControlCount == 0 {
 		t.Fatalf("预期生成页面控件摘要: %+v", envelope.Pages)
 	}
-
 	step := envelope.StepRecords[0]
 	if step.BeforeArtifactRef == nil {
 		t.Fatalf("预期步骤记录包含 Before 产物引用: %+v", step)
@@ -146,7 +134,8 @@ func TestWriteRunReportWithArtifactsGroupedByPage(t *testing.T) {
 	if step.AfterArtifactRef != nil {
 		t.Fatalf("中间步骤不应有 After 产物引用: %+v", step)
 	}
-	if step.BeforeArtifactRef.PageDir != "HomePage" {
+	pageDirName := step.BeforeArtifactRef.PageDir
+	if !strings.HasPrefix(pageDirName, "P") && pageDirName != "UnknownPage" {
 		t.Fatalf("页面目录命名错误: %+v", step.BeforeArtifactRef)
 	}
 	for _, relativePath := range []string{
@@ -163,7 +152,6 @@ func TestWriteRunReportWithArtifactsGroupedByPage(t *testing.T) {
 		}
 	}
 }
-
 func sampleMetadata() RunMetadata {
 	return RunMetadata{
 		PackageName:         "com.demo.app",
@@ -179,7 +167,6 @@ func sampleMetadata() RunMetadata {
 		ConfigPath:          "./config.js",
 	}
 }
-
 func sampleReport(t *testing.T) *monkey.Report {
 	t.Helper()
 	startedAt := time.Date(2026, 5, 17, 20, 0, 0, 0, time.FixedZone("CST", 8*3600))
@@ -223,7 +210,6 @@ func sampleReport(t *testing.T) *monkey.Report {
 		},
 	}
 }
-
 func samplePNG(t *testing.T, fill color.RGBA) []byte {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, 2, 2))

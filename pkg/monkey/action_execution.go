@@ -481,22 +481,31 @@ func (r *Runner) appendRecord(report *Report, record StepRecord, stepStart time.
 		record.AfterScreenshot = append([]byte(nil), after.Screenshot...)
 	}
 
+	// 页面时序编号作为目录名（P1、P2…）
+	beforePageDir := pageDirName(r.getOrAssignPageNum(record.BeforePageName))
+	afterPageDir := pageDirName(r.getOrAssignPageNum(record.AfterPageName))
+
 	// 实时写盘：截图 + XML 立即落盘，释放截图内存（XML 保留至报告生成阶段）
 	if r.cfg.ArtifactDir != "" {
 		if ref, err := writeStepSnapshotArtifacts(r.cfg.ArtifactDir, record, "before",
-			record.BeforePageName, record.BeforeXML, record.BeforeScreenshot); err == nil && ref != nil {
+			beforePageDir, record.BeforeXML, record.BeforeScreenshot); err == nil && ref != nil {
 			record.BeforeArtifactRef = ref
 			// 保存原始截图 + 标注截图
 			pageDirPath := filepath.Join(r.cfg.ArtifactDir, ref.PageDir)
 			saveOriginalIfNew(pageDirPath, record.BeforeScreenshot)
 			prefix := buildArtifactFilePrefix(record, "before")
 			annotateAndSaveMarked(pageDirPath, prefix, record.BeforeScreenshot, record.Action, record.ActionTargetBounds, record.SwipeStart, record.SwipeEnd)
+			writePageHashMarker(pageDirPath, record.BeforePageName)
 		} else if err != nil {
 			logger.Warnf("monkey step=%d 写入 before 产物失败: %v", record.Step, err)
 		}
 		if ref, err := writeStepSnapshotArtifacts(r.cfg.ArtifactDir, record, "after",
-			record.AfterPageName, record.AfterXML, record.AfterScreenshot); err == nil && ref != nil {
+			afterPageDir, record.AfterXML, record.AfterScreenshot); err == nil && ref != nil {
 			record.AfterArtifactRef = ref
+			if afterPageDir != "" && afterPageDir != beforePageDir {
+				afterDirPath := filepath.Join(r.cfg.ArtifactDir, ref.PageDir)
+				writePageHashMarker(afterDirPath, record.AfterPageName)
+			}
 		} else if err != nil {
 			logger.Warnf("monkey step=%d 写入 after 产物失败: %v", record.Step, err)
 		}
@@ -505,6 +514,29 @@ func (r *Runner) appendRecord(report *Report, record StepRecord, stepStart time.
 	}
 
 	report.Records = append(report.Records, record)
+}
+
+// getOrAssignPageNum 返回页面名的时序编号（P1 对应 1，P2 对应 2…）。
+// 首次遇到时自动分配下一个编号，页面名为空时返回 0。
+func (r *Runner) getOrAssignPageNum(pageName string) int {
+	pageName = strings.TrimSpace(pageName)
+	if pageName == "" {
+		return 0
+	}
+	if num, ok := r.pageNumCache[pageName]; ok {
+		return num
+	}
+	r.pageNumSeq++
+	r.pageNumCache[pageName] = r.pageNumSeq
+	return r.pageNumSeq
+}
+
+// pageDirName 将编号转为目录名，0 返回空串。
+func pageDirName(num int) string {
+	if num <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("P%d", num)
 }
 
 func (r *Runner) sleepStep(ctx context.Context, d time.Duration) {

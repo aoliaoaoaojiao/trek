@@ -123,6 +123,23 @@ func saveOriginalIfNew(pageDirPath string, screenshot []byte) {
 	_ = os.WriteFile(origPath, screenshot, 0644)
 }
 
+// writePageHashMarker 在页面目录下写入一个以页面 hash 命名的标识文件，
+// 方便从 P1/P2 目录反查对应的 IMGPage hash。
+func writePageHashMarker(dirPath string, pageName string) {
+	if strings.TrimSpace(pageName) == "" {
+		return
+	}
+	markerName := sanitizePageDirName(pageName)
+	if markerName == "" {
+		return
+	}
+	markerPath := filepath.Join(dirPath, "page_"+markerName)
+	if _, err := os.Stat(markerPath); err == nil {
+		return // 已存在
+	}
+	_ = os.WriteFile(markerPath, []byte(pageName), 0644)
+}
+
 // annotateAndSaveMarked 生成标注截图并保存。
 func annotateAndSaveMarked(pageDirPath string, prefix string, screenshot []byte, action string, bounds string, swipeStart, swipeEnd string) {
 	if len(screenshot) == 0 {
@@ -152,6 +169,11 @@ var (
 )
 
 func annotateScreenshot(screenshot []byte, action string, bounds string, swipeStart, swipeEnd string) ([]byte, error) {
+	// BACK 操作直接返回原图，不做标注
+	if action == "BACK" {
+		return screenshot, nil
+	}
+
 	img, _, err := image.Decode(bytes.NewReader(screenshot))
 	if err != nil {
 		return nil, fmt.Errorf("解码截图失败: %w", err)

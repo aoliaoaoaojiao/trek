@@ -350,6 +350,8 @@ type Runner struct {
 	directLLMUsed          bool          // 本次阻塞周期是否已使用过直接 LLM
 	backUselessPages       map[string]bool // 页面名 → BACK 从未成功逃离
 	pageBlockCycles        map[string]int  // 页面名 → 完整阻塞周期数（Cooldown→再次阻塞）
+	pageNumCache           map[string]int  // 页面名(hash) → 时序编号（P1、P2...）
+	pageNumSeq             int             // 下一个可用编号
 }
 
 type recoveryAttempt struct {
@@ -414,6 +416,7 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 		recoverySuccessAction:  make(map[string]bool),
 		backUselessPages:       make(map[string]bool),
 		pageBlockCycles:        make(map[string]int),
+		pageNumCache:           make(map[string]int),
 	}, nil
 }
 

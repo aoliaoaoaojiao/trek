@@ -12,8 +12,10 @@ import (
 )
 
 type BlackRect struct {
-	PageName string
-	Bounds   [4]int
+	PageName     string
+	Bounds       [4]int     // 像素坐标 [left, top, right, bottom]
+	Normalized   bool       // 是否为归一化坐标（0~1）
+	BoundsFloat  [4]float64 // 归一化坐标 [left, top, right, bottom]（仅当 Normalized=true 时有效）
 }
 
 type StaticConfig struct {
@@ -184,15 +186,12 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 					if len(rectKeys) != 4 {
 						return cfg, fmt.Errorf("excluded_touch_areas[%s] bounds 长度必须为4", legacyKey)
 					}
-					var bounds [4]int
-					for i, bk := range rectKeys {
-						val, err := intFromJSValue(targetBounds.Get(bk))
-						if err != nil {
-							return cfg, fmt.Errorf("excluded_touch_areas[%s][%d] 非法: %w", legacyKey, i, err)
-						}
-						bounds[i] = val
+					rect, err := parseBoundsFromJS(targetBounds, rectKeys)
+					if err != nil {
+						return cfg, fmt.Errorf("excluded_touch_areas[%s]: %w", legacyKey, err)
 					}
-					cfg.BlackRects = append(cfg.BlackRects, BlackRect{PageName: legacyKey, Bounds: bounds})
+					cfg.BlackRects = append(cfg.BlackRects, rect)
+					_ = legacyKey
 				}
 				continue
 			}
@@ -201,15 +200,12 @@ func LoadStaticConfig(source string) (StaticConfig, error) {
 			if len(boundsKeys) != 4 {
 				return cfg, fmt.Errorf("excluded_touch_areas[%s].bounds 长度必须为4", key)
 			}
-			var bounds [4]int
-			for i, bk := range boundsKeys {
-				val, err := intFromJSValue(boundsObj.Get(bk))
-				if err != nil {
-					return cfg, fmt.Errorf("excluded_touch_areas[%s].bounds[%d] 非法: %w", key, i, err)
-				}
-				bounds[i] = val
+			rect, err := parseBoundsFromJS(boundsObj, boundsKeys)
+			if err != nil {
+				return cfg, fmt.Errorf("excluded_touch_areas[%s]: %w", key, err)
 			}
-			cfg.BlackRects = append(cfg.BlackRects, BlackRect{PageName: pageName, Bounds: bounds})
+			rect.PageName = pageName
+			cfg.BlackRects = append(cfg.BlackRects, rect)
 		}
 	}
 
@@ -558,6 +554,42 @@ func floatFromJSValue(v goja.Value) (float64, error) {
 		return 0, errors.New("值不能为 NaN")
 	}
 	return f, nil
+}
+
+// parseBoundsFromJS 从 JS 对象解析 bounds，自动判断坐标系。
+// 如果所有值都 < 1，则认为是归一化坐标（0~1），否则为像素坐标。
+func parseBoundsFromJS(obj *goja.Object, keys []string) (BlackRect, error) {
+	if len(keys) != 4 {
+		return BlackRect{}, errors.New("bounds 长度必须为4")
+	}
+
+	// 先读取所有值为浮点数
+	var values [4]float64
+	for i, k := range keys {
+		val, err := floatFromJSValue(obj.Get(k))
+		if err != nil {
+			return BlackRect{}, fmt.Errorf("bounds[%d] 非法: %w", i, err)
+		}
+		values[i] = val
+	}
+
+	// 自动判断坐标系：如果所有值都 < 1，则认为是归一化坐标
+	isNormalized := values[0] < 1 && values[1] < 1 && values[2] < 1 && values[3] < 1
+
+	rect := BlackRect{
+		Normalized:  isNormalized,
+		BoundsFloat: values,
+	}
+	if isNormalized {
+		// 归一化坐标：存储为浮点数，Bounds 留空（运行时转换）
+		rect.Bounds = [4]int{0, 0, 0, 0}
+	} else {
+		// 像素坐标：转换为整数
+		for i, v := range values {
+			rect.Bounds[i] = int(v)
+		}
+	}
+	return rect, nil
 }
 
 // optionalBoolFromObj 从嵌套 JS 对象中解析布尔可选值（单键）。

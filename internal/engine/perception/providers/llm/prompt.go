@@ -123,15 +123,21 @@ func buildRecoveryPrompt(ctx enginestate.TraversalContext, adapter *ModelAdapter
 		userMessage = adapter.AdaptUserMessage(userMessage)
 	}
 
+	// TextOnly 模式：有 XML 时跳过截图，LLM 纯文本决策（~1s vs ~5s）
+	screenshot := ctx.Screenshot
+	if ctx.TextOnly && len(screenshot) > 0 && strings.TrimSpace(ctx.XML) != "" {
+		screenshot = nil
+	}
+
 	mediaType := "image/png"
-	if len(ctx.Screenshot) == 0 {
+	if len(screenshot) == 0 {
 		mediaType = ""
 	}
 
 	return RecoveryPrompt{
 		SystemContent:       systemInstruction,
 		UserContent:         userMessage,
-		Screenshot:          cloneBytes(ctx.Screenshot),
+		Screenshot:          cloneBytes(screenshot),
 		ScreenshotMediaType: mediaType,
 		ContextFields: RecoveryContextFields{
 			Step:                ctx.Step,

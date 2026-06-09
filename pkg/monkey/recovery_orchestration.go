@@ -193,6 +193,8 @@ func (r *Runner) buildTraversalContext(step int, page coordinator.PageSnapshot, 
 		actionCount = r.actionCount
 	}
 	signature := cachedSignature(page)
+	// 恢复阶段有 XML 时优先用文本调用 LLM，避免传输大截图
+	textOnly := mode == TraversalModeRecover && strings.TrimSpace(page.XML) != ""
 	return enginestate.BuildTraversalContext(enginestate.BuildInput{
 		Step:             step,
 		Mode:             mode,
@@ -205,6 +207,7 @@ func (r *Runner) buildTraversalContext(step int, page coordinator.PageSnapshot, 
 		RecentTrace:      r.cloneRecentTrace(),
 		PageVisitCount:   pageVisitCount,
 		ActionCount:      actionCount,
+		TextOnly:         textOnly,
 	})
 }
 
@@ -250,25 +253,28 @@ func (r *Runner) nextBlockRecoveryCommand(pageName string, input coordinator.Act
 		Screenshot: input.Screenshot,
 	}, nil, nil)
 
-	// 阻塞恢复优先尝试返回键。如果该页面 BACK 已知无效则跳过。
-	if !r.backUselessPages[pageName] {
-		if !r.recoveryTriedBack {
-			r.recoveryTriedBack = true
-			fallback := &types.ActionCommand{Act: types.BACK}
-			r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(fallback, perception.SourceHeuristic)}
-			logger.Infof("block recovery: trying BACK")
-			return fallback, nil
+		// 阻塞恢复优先尝试返回键，同一页面最多尝试 3 次再放弃。
+		backAttempts := r.backUselessPages[pageName]
+		if backAttempts < 3 {
+			if !r.recoveryTriedBack {
+				r.recoveryTriedBack = true
+				r.backUselessPages[pageName] = backAttempts + 1
+				fallback := &types.ActionCommand{Act: types.BACK}
+				r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(fallback, perception.SourceHeuristic)}
+				logger.Infof("block recovery: trying BACK (attempt %d/3)", backAttempts+1)
+				return fallback, nil
+			}
+			// 恢复多次失败后强制尝试 BACK
+			if r.recoveryState != nil && r.recoveryState.RecoveryAttempts() >= 3 {
+				r.backUselessPages[pageName] = backAttempts + 1
+				fallback := &types.ActionCommand{Act: types.BACK}
+				r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(fallback, perception.SourceHeuristic)}
+				logger.Infof("block recovery: forcing BACK after %d failed attempts (attempt %d/3)", r.recoveryState.RecoveryAttempts(), backAttempts+1)
+				return fallback, nil
+			}
+		} else {
+			logger.Infof("block recovery: BACK useless on page %s after %d attempts, skipping", pageName, backAttempts)
 		}
-		// 恢复多次失败后强制尝试 BACK（仅当 BACK 对此页有效时）
-		if r.recoveryState != nil && r.recoveryState.RecoveryAttempts() >= 3 {
-			fallback := &types.ActionCommand{Act: types.BACK}
-			r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(fallback, perception.SourceHeuristic)}
-			logger.Infof("block recovery: forcing BACK after %d failed attempts", r.recoveryState.RecoveryAttempts())
-			return fallback, nil
-		}
-	} else {
-		logger.Infof("block recovery: BACK useless on page %s, skipping", pageName)
-	}
 
 	knownFailed, knownSuccess, knownErr := r.collectBothKnownActions(ctx)
 	if knownErr != nil {
@@ -316,7 +322,7 @@ func (r *Runner) nextBlockRecoveryCommand(pageName string, input coordinator.Act
 		}
 	}
 	// 回退：BACK 对此页无效时尝试 SCROLL，否则使用 BACK
-	if r.backUselessPages[pageName] {
+	if r.backUselessPages[pageName] >= 3 {
 		fallback := &types.ActionCommand{Act: types.SCROLL_BOTTOM_UP}
 		r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(fallback, perception.SourceHeuristic)}
 		logger.Infof("block recovery: BACK useless, fallback to SCROLL_BOTTOM_UP")
@@ -444,7 +450,7 @@ func (r *Runner) recordRecoveryOutcome(escaped bool) {
 	}()
 	r.markRecoveryActionOutcome(attempt.item, escaped)
 
-	// 追踪 BACK 是否对当前页面无效
+	// 追踪 BACK 是否对当前页面无效（>=3 次失败后放弃）
 	if attempt.item.Command != nil && attempt.item.Command.Act == types.BACK {
 		pageName := attempt.ctx.PageName
 		if pageName != "" {
@@ -452,8 +458,11 @@ func (r *Runner) recordRecoveryOutcome(escaped bool) {
 				delete(r.backUselessPages, pageName)
 				logger.Infof("block recovery: BACK worked on page %s, removed from useless list", pageName)
 			} else {
-				r.backUselessPages[pageName] = true
-				logger.Infof("block recovery: BACK useless on page %s, added to skip list", pageName)
+				attempts := r.backUselessPages[pageName]
+				if attempts < 3 {
+					r.backUselessPages[pageName] = attempts + 1
+					logger.Infof("block recovery: BACK failed on page %s (attempt %d/3)", pageName, attempts+1)
+				}
 			}
 		}
 	}

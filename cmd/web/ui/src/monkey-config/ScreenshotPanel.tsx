@@ -23,6 +23,7 @@ type Props = {
   clickLog: string
   absoluteWidth: number
   absoluteHeight: number
+  pageName: string
   onImageLoad: (width: number, height: number) => void
   onImageClick: (event: MouseEvent<HTMLImageElement>) => void
   onCopyText: (text: string) => Promise<void>
@@ -76,6 +77,19 @@ export function ScreenshotPanel(props: Props) {
             </div>
           </div>
           <div className="rounded-md border bg-background p-3">
+            {props.pageName !== "" && (
+              <div className="mb-2 flex items-center gap-2">
+                <p className="break-all font-mono text-[11px] text-muted-foreground">页面名: {props.pageName}</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void props.onCopyText(props.pageName)}
+                >
+                  复制
+                </Button>
+              </div>
+            )}
             <p className="break-all font-mono text-[11px] text-muted-foreground">高亮日志: {props.highlightLog}</p>
             <div className="mt-2 grid grid-cols-1 gap-2 text-xs md:grid-cols-[1fr_auto] md:items-center">
               <p className="break-all font-mono">

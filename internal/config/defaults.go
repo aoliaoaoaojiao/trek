@@ -16,7 +16,9 @@ const (
 	DefaultImageFingerprintHammingThreshold = 10
 
 	// DefaultPageControlCacheTTLSeconds OCR/LLM 页面理解结果缓存有效期（秒）。
-	DefaultPageControlCacheTTLSeconds = 3600 // 1小时
+	// 动态 TTL 公式：effectiveTTL = baseTTL × (1 + ln(hitCount))，最大不超过 3 天。
+	// 默认 4 小时，高频访问页面自动延长：10次≈13h，100次≈22h，1000次≈32h。
+	DefaultPageControlCacheTTLSeconds = 14400 // 4小时
 
 	// DefaultExploreOCRTimeoutMs OCR 请求超时（毫秒）。
 	DefaultExploreOCRTimeoutMs = 10000

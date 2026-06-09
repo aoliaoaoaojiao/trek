@@ -148,6 +148,7 @@ export function App() {
   const [screenshotBase64, setScreenshotBase64] = useState("")
   const [usedSerial, setUsedSerial] = useState("")
   const [currentPackageName, setCurrentPackageName] = useState("")
+  const [currentPageName, setCurrentPageName] = useState("")
   const [status, setStatus] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
@@ -722,6 +723,7 @@ export function App() {
       )
       setUsedSerial(data.used_serial || "")
       setCurrentPackageName(data.package_name || "")
+      setCurrentPageName(data.page_name || "")
       setXmlPreview(data.xml)
       setScreenshotBase64(data.screenshot_base64)
       setStatus(`预览已刷新，当前设备序列号: ${data.used_serial || "未知"}`)
@@ -939,6 +941,7 @@ export function App() {
             clickLog={clickLog}
             absoluteWidth={absoluteSpace.width}
             absoluteHeight={absoluteSpace.height}
+            pageName={currentPageName}
             onImageLoad={(width, height) => setImageNaturalSize({ width, height })}
             onImageClick={handleScreenshotClick}
             onCopyText={copyText}
@@ -991,6 +994,7 @@ export function App() {
                 clickLog={clickLog}
                 absoluteWidth={absoluteSpace.width}
                 absoluteHeight={absoluteSpace.height}
+                pageName={currentPageName}
                 onImageLoad={(width, height) => setImageNaturalSize({ width, height })}
                 onImageClick={handleScreenshotClick}
                 onCopyText={copyText}

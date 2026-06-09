@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"trek/internal/engine/config"
 	"trek/internal/engine/core/types"
 	"trek/internal/vision/coord"
 	"trek/logger"
@@ -24,7 +25,13 @@ import (
 var widgetXPathRegex = regexp.MustCompile(`(?:^|[,{ ])xpath:([^,}]+)`)
 var widgetPathRegex = regexp.MustCompile(`(?:^|[,{ ])path:([^,}]+)`)
 
-func (r *Runner) execute(cmd *types.ActionCommand) error {
+func (r *Runner) execute(cmd *types.ActionCommand, pageName string) error {
+	// 检查动作是否命中黑名单区域（excluded_touch_areas）
+	if r.isInBlackRect(cmd, pageName) {
+		logger.Debugf("monkey: action %s skipped due to excluded_touch_areas", cmd.Act.String())
+		return nil
+	}
+
 	switch cmd.Act {
 	case types.NOP:
 		return nil
@@ -91,6 +98,39 @@ func (r *Runner) execute(cmd *types.ActionCommand) error {
 	default:
 		return fmt.Errorf("暂不支持动作: %s", cmd.Act.String())
 	}
+}
+
+// isInBlackRect 检查动作是否命中黑名单区域。
+// 对于点击类动作，检查中心点；对于滑动类动作，检查起始点。
+func (r *Runner) isInBlackRect(cmd *types.ActionCommand, pageName string) bool {
+	if cmd == nil || cmd.Pos.IsEmpty() {
+		return false
+	}
+
+	cfgMgr := config.GetInstance()
+	if cfgMgr == nil {
+		return false
+	}
+
+	// 对于点击类动作，检查中心点是否在黑名单内
+	switch cmd.Act {
+	case types.CLICK, types.LONG_CLICK, types.INPUT:
+		pt, err := centerPoint(cmd.Pos)
+		if err != nil {
+			return false
+		}
+		return cfgMgr.CheckPointIsInBlackRects(pageName, int(pt.X), int(pt.Y))
+	case types.SCROLL_BOTTOM_UP, types.SCROLL_TOP_DOWN, types.SCROLL_LEFT_RIGHT, types.SCROLL_RIGHT_LEFT, types.SCROLL_BOTTOM_UP_N:
+		// 对于滑动类动作，检查起始点是否在黑名单内
+		// 取矩形的中心点作为滑动起始点
+		pt, err := centerPoint(cmd.Pos)
+		if err != nil {
+			return false
+		}
+		return cfgMgr.CheckPointIsInBlackRects(pageName, int(pt.X), int(pt.Y))
+	}
+
+	return false
 }
 
 func (r *Runner) normalizePocoScrollCommand(step int, cmd *types.ActionCommand, xml string) {
@@ -407,6 +447,10 @@ func (r *Runner) resolveScreenSize(screenshot []byte) (int, int) {
 	}
 	r.cachedScreenW = cfg.Width
 	r.cachedScreenH = cfg.Height
+	// 设置屏幕分辨率到配置管理器，用于归一化坐标转换（如 excluded_touch_areas）
+	if cfgMgr := config.GetInstance(); cfgMgr != nil {
+		cfgMgr.SetScreenSize(cfg.Width, cfg.Height)
+	}
 	return r.cachedScreenW, r.cachedScreenH
 }
 

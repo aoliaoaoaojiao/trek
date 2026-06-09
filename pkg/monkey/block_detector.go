@@ -58,8 +58,12 @@ func (d *blockDetector) Observe(pageName, actionKey string, act types.ActionType
 	pageName = strings.TrimSpace(pageName)
 	actionKey = strings.TrimSpace(actionKey)
 
-	// 忽略系统级动作（BACK/RESTART 等），不纳入阻塞判断
-	if d.ignoredActionTypes[act] || pageName == "" {
+	// 忽略系统级动作（BACK/RESTART 等），不纳入阻塞判断。
+	// 注意：只跳过判断，不清零 recentTraces，避免恢复动作导致阻塞检测上下文丢失。
+	if d.ignoredActionTypes[act] {
+		return false
+	}
+	if pageName == "" {
 		d.recentTraces = d.recentTraces[:0]
 		return false
 	}

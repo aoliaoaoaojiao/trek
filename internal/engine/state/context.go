@@ -102,6 +102,7 @@ type BuildInput struct {
 	KnownFailedActions  []string
 	KnownSuccessActions []string
 	ExecutionHistory    []ExecutionRecord
+	TextOnly            bool
 }
 
 // BuildTraversalContext 基于输入构建独立快照，避免运行时状态泄漏到公共层。
@@ -124,6 +125,7 @@ func BuildTraversalContext(input BuildInput) TraversalContext {
 		KnownFailedActions:  cloneStringSlice(input.KnownFailedActions),
 		KnownSuccessActions: cloneStringSlice(input.KnownSuccessActions),
 		ExecutionHistory:    cloneExecutionHistory(input.ExecutionHistory),
+		TextOnly:            input.TextOnly,
 	}
 }
 

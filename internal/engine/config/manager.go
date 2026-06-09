@@ -50,6 +50,8 @@ type Manager struct {
 	skipAllActionsFromModel bool
 	blackRects              []scripting.BlackRect
 	staticConfig            scripting.StaticConfig
+	screenWidth             int // 屏幕宽度（像素），用于归一化坐标转换
+	screenHeight            int // 屏幕高度（像素），用于归一化坐标转换
 }
 
 var instance *Manager
@@ -250,14 +252,48 @@ func (m *Manager) LoadMixResMapping(resourceMappingPath string) error {
 	return m.LoadResourceMapping(resourceMappingPath)
 }
 
+// SetScreenSize 设置屏幕分辨率，用于归一化坐标转换。
+func (m *Manager) SetScreenSize(width, height int) {
+	if m == nil {
+		return
+	}
+	m.screenWidth = width
+	m.screenHeight = height
+}
+
+// GetScreenSize 获取屏幕分辨率。
+func (m *Manager) GetScreenSize() (int, int) {
+	if m == nil {
+		return 0, 0
+	}
+	return m.screenWidth, m.screenHeight
+}
+
 func (m *Manager) CheckPointIsInBlackRects(pageName string, pointX int, pointY int) bool {
 	for _, br := range m.blackRects {
 		if br.PageName != pageName {
 			continue
 		}
-		b := br.Bounds
-		if pointX >= b[0] && pointX <= b[2] && pointY >= b[1] && pointY <= b[3] {
-			return true
+
+		// 根据坐标系类型进行比较
+		if br.Normalized {
+			// 归一化坐标：将像素坐标转换为归一化坐标进行比较
+			if m.screenWidth <= 0 || m.screenHeight <= 0 {
+				// 未设置屏幕分辨率，跳过归一化坐标的检查
+				continue
+			}
+			normX := float64(pointX) / float64(m.screenWidth)
+			normY := float64(pointY) / float64(m.screenHeight)
+			bf := br.BoundsFloat
+			if normX >= bf[0] && normX <= bf[2] && normY >= bf[1] && normY <= bf[3] {
+				return true
+			}
+		} else {
+			// 像素坐标：直接比较
+			b := br.Bounds
+			if pointX >= b[0] && pointX <= b[2] && pointY >= b[1] && pointY <= b[3] {
+				return true
+			}
 		}
 	}
 	return false

@@ -1506,7 +1506,7 @@ const (
 	pageControlStrategyOCR     = "ocr"
 	pageControlStrategyLLM     = "llm"
 	pageControlStrategyChain   = "chain"
-	defaultPageControlCacheTTL = 1 * time.Hour
+	defaultPageControlCacheTTL = 4 * time.Hour // 基础 TTL，动态延长公式：effectiveTTL = baseTTL × (1 + ln(hitCount))，最大不超过 3 天
 	maxPageControlCacheTTL     = 72 * time.Hour // 缓存最大有效期上限（3天）
 )
 

@@ -41,6 +41,7 @@ const (
 	defaultCandidateMinFusionScore                 = -0.3
 	defaultMaxRecoveryAttempts                     = 5
 	maxRecentTraceEntries                          = 8
+	maxStepsOnSamePage   = 30       // 死胡同页面最大连续停留步数，超过则强制重启
 )
 
 const (
@@ -150,6 +151,12 @@ type ImageFingerprintRegion struct {
 	Top    float64
 	Right  float64
 	Bottom float64
+}
+
+// BlackRect 定义禁点区域（像素坐标），指定页面上的矩形区域禁止触控。
+type BlackRect struct {
+	PageName string
+	Bounds   [4]int // [left, top, right, bottom] 像素坐标
 }
 
 type ScreenOrientation string
@@ -348,7 +355,10 @@ type Runner struct {
 	pendingDirectLLMPlan   bool          // 标记需要直接 LLM 规划
 	directLLMHistorySteps  int           // 需要回溯的步数
 	directLLMUsed          bool          // 本次阻塞周期是否已使用过直接 LLM
-	backUselessPages       map[string]bool // 页面名 → BACK 从未成功逃离
+	backUselessPages       map[string]int     // 页面名 → BACK 尝试次数（>=3 后放弃）
+	deadEndPages           map[string]bool    // 已确认的死胡同页面，重入时跳过
+	samePageName           string             // 当前持续停留的页面名
+	samePageSteps          int                // 当前页面连续停留步数
 	pageBlockCycles        map[string]int  // 页面名 → 完整阻塞周期数（Cooldown→再次阻塞）
 	pageNumCache           map[string]int  // 页面名(hash) → 时序编号（P1、P2...）
 	pageNumSeq             int             // 下一个可用编号
@@ -414,7 +424,8 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 		actionCount:            make(map[string]int),
 		recoveryFailedAction:   make(map[string]bool),
 		recoverySuccessAction:  make(map[string]bool),
-		backUselessPages:       make(map[string]bool),
+		deadEndPages:           make(map[string]bool),
+		backUselessPages:       make(map[string]int),
 		pageBlockCycles:        make(map[string]int),
 		pageNumCache:           make(map[string]int),
 	}, nil
@@ -667,6 +678,12 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 
 		record.PageName = pageName
 		report.PageVisitCount[pageName]++
+		// 死胡同页面重入保护：直接重启应用
+		if r.deadEndPages[pageName] {
+			logger.Infof("re-entered dead-end page %s, forcing app restart", pageName)
+			_ = r.driver.RestartApp(r.cfg.PackageName, true)
+			continue
+		}
 
 		input := coordinator.ActionInput{
 			XMLDescOfGuiTree: xml,
@@ -722,7 +739,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		logger.Infof("monkey step=%d execute cmd={%s}%s%s", step, cmd.DetailLogString(), formatTapPointLog(cmd), formatSwipePointLog(cmd))
 
 		t3 := time.Now()
-		if err = r.execute(cmd); err != nil {
+		if err = r.execute(cmd, pageName); err != nil {
 			record.Err = err.Error()
 			afterPage := r.capturePageSnapshot(ctx, pageSource, pageName)
 			if afterPage != nil {
@@ -818,7 +835,41 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			r.resetConsumedMarks()
 			r.invalidatePlanCache(cachedSignature(beforePage))
 		}
+		// 死胡同页面检测：同一页面连续停留超过阈值时强制重启
+		if afterPage != nil {
+			if afterPage.PageName == r.samePageName {
+				r.samePageSteps++
+			} else {
+				r.samePageName = afterPage.PageName
+				r.samePageSteps = 0
+			}
+		} else if beforePage.PageName == r.samePageName {
+			r.samePageSteps++
+		} else {
+			r.samePageName = beforePage.PageName
+			r.samePageSteps = 0
+		}
+
+		// 连续超过阈值且处于恢复模式仍无法逃离，判定为死胡同
+		if r.samePageSteps >= maxStepsOnSamePage && r.recoveryState != nil && r.recoveryState.Mode() == TraversalModeRecover {
+			logger.Warnf("dead-end page detected after %d steps on %s, force-restarting app", r.samePageSteps, r.samePageName)
+			r.deadEndPages[r.samePageName] = true
+			_ = r.driver.RestartApp(r.cfg.PackageName, true)
+			r.samePageSteps = 0
+			r.samePageName = ""
+			r.blockDetector.Reset()
+			r.pendingBlockRecovery = false
+			r.directLLMUsed = false
+			continue
+		}
+		wasRecovery := r.lastRecoveryAttempt != nil
 		r.recordRecoveryOutcome(escaped)
+		// 恢复动作执行后页面未变化，重新设置 pendingBlockRecovery=true
+		// 让下一步立即再走恢复路径，避免回到正常模式后长期空转
+		if !escaped && wasRecovery {
+			r.pendingBlockRecovery = true
+			logger.Infof("monkey step=%d recovery action %s did not change page, will retry recovery next step", step, cmd.Act.String())
+		}
 		crash, anr := r.currentHealthSignals()
 		r.notifyStepResult(step, cmd, true, "", time.Since(stepStart).Milliseconds(), crash, anr, beforePage, afterPage)
 		r.appendRecord(report, record, stepStart, &beforePage, afterPage)
@@ -1153,6 +1204,8 @@ func (r *Runner) buildTraversalContextWithHistory(step int, page coordinator.Pag
 		blockReason = r.recoveryState.BlockReason()
 	}
 	signature := cachedSignature(page)
+	// 恢复阶段有 XML 时优先用文本调用 LLM，避免传输大截图
+	textOnly := mode == TraversalModeRecover && strings.TrimSpace(page.XML) != ""
 	return enginestate.BuildTraversalContext(enginestate.BuildInput{
 		Step:             step,
 		Mode:             mode,
@@ -1166,6 +1219,7 @@ func (r *Runner) buildTraversalContextWithHistory(step int, page coordinator.Pag
 		PageVisitCount:   r.pageVisitCount,
 		ActionCount:      r.actionCount,
 		ExecutionHistory: history,
+		TextOnly:         textOnly,
 	})
 }
 

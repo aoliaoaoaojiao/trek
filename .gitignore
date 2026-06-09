@@ -21,3 +21,4 @@ CLAUDE.md
 log/
 /config.generated.js
 *.sqlite
+report

@@ -47,7 +47,7 @@ const (
 	defaultCandidateMinFusionScore                 = -0.3
 	defaultMaxRecoveryAttempts                     = 5
 	maxRecentTraceEntries                          = 8
-	maxStepsOnSamePage   = 30       // 死胡同页面最大连续停留步数，超过则强制重启
+	maxStepsOnSamePage   = 15       // 死胡同页面最大连续停留步数，超过则强制重启
 	severityMax = 5   // 严重等级上限
 	defaultTransitionTTLSeconds = 259200 // 页面过渡图条目过期时间（秒），默认 3 天（与页面缓存一致）
 	maxTransitionHistoryEntries = 16   // 页面过渡历史记录数，用于循环检测

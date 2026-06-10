@@ -131,6 +131,18 @@ func (r *Runner) handleBlockDetectedWithPage(reason string, page *coordinator.Pa
 	}
 	beforeMode := r.recoveryState.Mode()
 	r.recoveryState.OnBlockDetected(reason)
+	// 完整阻塞周期计数：从 Cooldown 再次阻塞说明已耗尽一轮恢复
+	if beforeMode == TraversalModeCooldown {
+		pageName := ""
+		if page != nil {
+			pageName = page.PageName
+		} else if r.samePageName != "" {
+			pageName = r.samePageName
+		}
+		if pageName != "" {
+			r.pageBlockCycles[pageName]++
+		}
+	}
 	r.pendingBlockRecovery = r.recoveryState.Mode() == TraversalModeRecover
 	logger.Infof("recovery state transition on block: from=%s to=%s reason=%s",
 		beforeMode, r.recoveryState.Mode(), r.recoveryState.BlockReason())

@@ -502,7 +502,10 @@ func renderStepTimeline(records []monkey.StepRecord, pageIDMap map[string]string
 		if isTapAction(r.Action) && r.BeforeArtifactRef != nil && r.BeforeArtifactRef.ScreenshotFile != "" {
 			imgSrc := r.BeforeArtifactRef.ScreenshotFile
 			if marked := markedScreenshotPath(imgSrc); marked != "" {
-				imgSrc = marked
+				// 检查标注文件是否存在，不存在则用原图
+				if _, err := os.Stat(filepath.Join(targetRoot, marked)); err == nil {
+					imgSrc = marked
+				}
 			}
 			fullPath := filepath.Join(targetRoot, imgSrc)
 			style := imageStyleByAspect(fullPath)

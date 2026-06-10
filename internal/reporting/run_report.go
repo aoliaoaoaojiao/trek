@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"image"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -446,10 +447,9 @@ func renderMarkdown(envelope RunReportEnvelope) string {
 }
 
 // renderStepTimeline 将步骤时间线渲染为独立 MD 内容，每步显示前后截图，10步一个章节。
-func renderStepTimeline(records []monkey.StepRecord, pageIDMap map[string]string) string {
+func renderStepTimeline(records []monkey.StepRecord, pageIDMap map[string]string, targetRoot string) string {
 	var b strings.Builder
 	b.WriteString("# 步骤时间线\n\n")
-	imgStyle := "max-height:100px; max-width:100%; object-fit:contain; border:1px solid #444; border-radius:3px; vertical-align:middle;"
 
 	const stepsPerSection = 10
 	for i, r := range records {
@@ -504,7 +504,9 @@ func renderStepTimeline(records []monkey.StepRecord, pageIDMap map[string]string
 			if marked := markedScreenshotPath(imgSrc); marked != "" {
 				imgSrc = marked
 			}
-			markedImg = fmt.Sprintf("<div style=\"padding:4px 10px; text-align:center;\"><img src=\"%s\" style=\"%s\" /></div>\n", imgSrc, imgStyle)
+			fullPath := filepath.Join(targetRoot, imgSrc)
+			style := imageStyleByAspect(fullPath)
+			markedImg = fmt.Sprintf("<div style=\"padding:4px 10px; text-align:center;\"><img src=\"%s\" style=\"%s\" /></div>\n", imgSrc, style)
 		}
 		// 输出
 		b.WriteString(fmt.Sprintf("### step%d\n", r.Step))
@@ -528,6 +530,27 @@ func renderStepTimeline(records []monkey.StepRecord, pageIDMap map[string]string
 		}
 	}
 	return b.String()
+}
+
+// imageStyleByAspect 根据图片宽高比返回 img 样式。
+// 如果图片宽小于高（竖屏）: width=100%, max-height=200px
+// 如果图片高小于宽（横屏）: height=100%, max-width=200px
+func imageStyleByAspect(imgPath string) string {
+	file, err := os.Open(imgPath)
+	if err != nil {
+		return "max-height:100px; max-width:100%; object-fit:contain; border:1px solid #444; border-radius:3px; vertical-align:middle;"
+	}
+	defer file.Close()
+	cfg, _, err := image.DecodeConfig(file)
+	if err != nil {
+		return "max-height:100px; max-width:100%; object-fit:contain; border:1px solid #444; border-radius:3px; vertical-align:middle;"
+	}
+	if cfg.Width < cfg.Height {
+		// 竖屏：宽100%，高最多200px
+		return "max-height:200px; width:100%; object-fit:contain; border:1px solid #444; border-radius:3px; vertical-align:middle;"
+	}
+	// 横屏：高100%，宽最多200px
+	return "max-width:200px; height:100%; object-fit:contain; border:1px solid #444; border-radius:3px; vertical-align:middle;"
 }
 
 func writeIssuesSection(b *strings.Builder, records []monkey.StepRecord) {
@@ -847,7 +870,7 @@ func writeArtifacts(rootDir string, records []monkey.StepRecord) (*ArtifactSumma
 	var stepTimelineFile string
 	if len(cloned) > 0 {
 		pageIDMap := buildPageIDMap(pages)
-		timelineContent := renderStepTimeline(cloned, pageIDMap)
+		timelineContent := renderStepTimeline(cloned, pageIDMap, targetRoot)
 		timelinePath := filepath.Join(targetRoot, "step-timeline.md")
 		if err := os.WriteFile(timelinePath, []byte(timelineContent), 0644); err != nil {
 			return nil, nil, nil, fmt.Errorf("写入步骤时间线失败: %w", err)

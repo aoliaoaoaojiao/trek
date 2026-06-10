@@ -58,6 +58,7 @@ type RecoveryContextFields struct {
 	KnownFailedActions  []string                       `json:"known_failed_actions,omitempty"`
 	KnownSuccessActions []string                       `json:"known_success_actions,omitempty"`
 	ExecutionHistory    []enginestate.ExecutionRecord  `json:"execution_history,omitempty"`
+	TransitionContext   string
 }
 
 // ScreenshotBase64 返回截图的 base64 编码字符串，供 HTTP provider 使用。
@@ -82,6 +83,8 @@ func buildRecoveryPrompt(ctx enginestate.TraversalContext, adapter *ModelAdapter
 2. 对需要点击/长按的元素，返回其中心点的归一化坐标 (x, y)，取值范围 [0, 1]
 3. 页面可能处于异常状态（弹窗、卡死、无响应），优先选择返回/关闭等恢复操作
 4. 返回 JSON 格式的候选动作列表
+5. 如果截图中出现红色矩形边框标记，表示上次点击位置不准导致失败。
+   当你认为需要查看原始无标记截图来精确定位时，请在候选动作的 intent 或 reason 中包含 "need_original" 标记。
 
 ## 示例
 
@@ -152,6 +155,7 @@ func buildRecoveryPrompt(ctx enginestate.TraversalContext, adapter *ModelAdapter
 			LocalCandidates:     cloneCandidateSummary(ctx.LocalCandidates),
 			KnownFailedActions:  cloneStringSlice(limitStrings(ctx.KnownFailedActions, 12)),
 			KnownSuccessActions: cloneStringSlice(limitStrings(ctx.KnownSuccessActions, 12)),
+			TransitionContext:   ctx.TransitionContext,
 			ExecutionHistory:    cloneExecutionHistory(ctx.ExecutionHistory),
 		},
 		ResponseSchema: recoveryCandidateSchema(),
@@ -162,11 +166,13 @@ func buildRecoveryPrompt(ctx enginestate.TraversalContext, adapter *ModelAdapter
 // 由 5 个独立模块按需组合，方便调试和扩展。
 func buildUserMessage(ctx enginestate.TraversalContext) string {
 	var sb strings.Builder
+	// 稳定内容（前缀缓存友好）：页面信息 + 统计 + 候选
 	sb.WriteString(buildBasicContextModule(ctx))
 	sb.WriteString(buildStatisticsModule(ctx))
-	sb.WriteString(buildTraceModule(ctx))
 	sb.WriteString(buildCandidateModule(ctx))
 	sb.WriteString(buildPageStructureModule(ctx))
+	// 变化内容（最后追加）：截图描述 + 执行历史 + 过渡图
+	sb.WriteString(buildTraceModule(ctx))
 	return sb.String()
 }
 
@@ -212,6 +218,9 @@ func buildTraceModule(ctx enginestate.TraversalContext) string {
 			sb.WriteString(fmt.Sprintf("  %s → %s\n", trace.PageSignature, trace.ActionKey))
 		}
 	}
+	if ctx.TransitionContext != "" {
+		sb.WriteString(ctx.TransitionContext)
+	}
 	if len(ctx.ExecutionHistory) > 0 {
 		sb.WriteString("重复阻塞历史（最近操作）:\n")
 		for _, rec := range ctx.ExecutionHistory {
@@ -226,6 +235,7 @@ func buildTraceModule(ctx enginestate.TraversalContext) string {
 				rec.Step, rec.Action, rec.PageName, status))
 		}
 	}
+
 	return sb.String()
 }
 

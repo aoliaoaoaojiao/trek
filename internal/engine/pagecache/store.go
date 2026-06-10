@@ -66,6 +66,23 @@ func (pageCacheRow) TableName() string {
 	return "page_control_cache_records"
 }
 
+// TransitionRow 表示一条页面过渡记录。
+type TransitionRow struct {
+	ID        uint `gorm:"primaryKey"`
+	FromPage  string `gorm:"size:1024;not null;uniqueIndex:idx_transition"`
+	ActionKey string `gorm:"size:1024;not null;uniqueIndex:idx_transition"`
+	ToPage    string `gorm:"size:1024;not null"`
+	Count     int    `gorm:"default:1"`
+	LastSeen  int64  `gorm:"index"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (TransitionRow) TableName() string {
+	return "page_transitions"
+}
+
+
 // NewStore 创建页面理解缓存 Store，并初始化 SQLite 表结构。
 func NewStore(path string) (*Store, error) {
 	dbPath := resolveSQLitePath(path)
@@ -79,7 +96,7 @@ func NewStore(path string) (*Store, error) {
 	db = db.Session(&gorm.Session{
 		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
 	})
-	if err := db.AutoMigrate(&pageCacheRow{}); err != nil {
+	if err := db.AutoMigrate(&pageCacheRow{}, &TransitionRow{}); err != nil {
 		return nil, err
 	}
 	return &Store{
@@ -231,6 +248,68 @@ func (s *Store) Stats() (total, expired int, err error) {
 }
 
 // Get 根据缓存键读取一条记录。
+// SaveTransition 写入一条过渡记录（存在则更新 Count 和 LastSeen）。
+func (s *Store) SaveTransition(fromPage, actionKey, toPage string, lastSeen int64) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	if fromPage == "" || actionKey == "" || toPage == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var row TransitionRow
+	err := s.db.Where("from_page = ? AND action_key = ?", fromPage, actionKey).Take(&row).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return s.db.Create(&TransitionRow{
+				FromPage:  fromPage,
+				ActionKey: actionKey,
+				ToPage:    toPage,
+				Count:     1,
+				LastSeen:  lastSeen,
+			}).Error
+		}
+		return err
+	}
+	return s.db.Model(&row).Updates(map[string]any{
+		"to_page":  toPage,
+		"count":    gorm.Expr("count + 1"),
+		"last_seen": lastSeen,
+	}).Error
+}
+
+// LoadTransitions 加载所有未过期的过渡记录。
+// expiredBefore 为 0 时加载全部，否则只加载 LastSeen >= expiredBefore 的记录。
+func (s *Store) LoadTransitions(expiredBefore int64) ([]TransitionRow, error) {
+	if s == nil || s.db == nil {
+		return nil, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var rows []TransitionRow
+	query := s.db
+	if expiredBefore > 0 {
+		query = query.Where("last_seen >= ?", expiredBefore)
+	}
+	if err := query.Order("from_page, action_key").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+// DeleteExpiredTransitions 删除指定时间戳之前的过渡记录。
+func (s *Store) DeleteExpiredTransitions(expiredBefore int64) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.db.Where("last_seen > 0 AND last_seen < ?", expiredBefore).Delete(&TransitionRow{}).Error
+}
+
 func (s *Store) Get(cacheKey string) (Entry, bool) {
 	if s == nil || s.db == nil {
 		return Entry{}, false

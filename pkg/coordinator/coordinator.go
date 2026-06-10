@@ -1645,6 +1645,14 @@ func pageControlCacheFingerprint(screenshot []byte) string {
 	return strings.TrimSpace(visionfingerprint.Name(screenshot, nil))
 }
 
+// GetPageControlStore returns the page control store for transition graph persistence.
+func (s *Coordinator) GetPageControlStore() *pagecache.Store {
+	if s == nil {
+		return nil
+	}
+	return s.pageControlStore
+}
+
 func (s *Coordinator) resolvePageControlCacheTTL() time.Duration {
 	if s == nil {
 		return defaultPageControlCacheTTL

@@ -1,13 +1,19 @@
 package monkey
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/png"
 	"math/rand"
 	"strings"
 	"sync"
 	"time"
 	"trek/internal/engine/core/types"
+	"trek/internal/engine/pagecache"
 	"trek/internal/engine/perception"
 	"trek/internal/engine/recovery"
 	enginestate "trek/internal/engine/state"
@@ -42,6 +48,10 @@ const (
 	defaultMaxRecoveryAttempts                     = 5
 	maxRecentTraceEntries                          = 8
 	maxStepsOnSamePage   = 30       // 死胡同页面最大连续停留步数，超过则强制重启
+	severityMax = 5   // 严重等级上限
+	defaultTransitionTTLSeconds = 259200 // 页面过渡图条目过期时间（秒），默认 3 天（与页面缓存一致）
+	maxTransitionHistoryEntries = 16   // 页面过渡历史记录数，用于循环检测
+	maxVerboseHistorySteps     = 8    // 执行历史详细展示步数上限，超出部分压缩为摘要
 )
 
 const (
@@ -318,6 +328,12 @@ type planCacheInvalidator interface {
 	InvalidatePlanCache(pageSignature string)
 }
 
+// StoreInterface is the subset of pagecache.Store needed for transition persistence.
+type StoreInterface interface {
+	SaveTransition(fromPage, actionKey, toPage string, lastSeen int64) error
+	LoadTransitions(expiredBefore int64) ([]pagecache.TransitionRow, error)
+}
+
 // Runner 执行 Smart Monkey 真机闭环。
 type Runner struct {
 	decider                Decider
@@ -352,16 +368,36 @@ type Runner struct {
 	cachedScreenH          int
 	recoveryTriedBack      bool
 	stepContextBuffer      []stepContext // 环形缓冲区，保存最近 2*threshold+4 步
-	pendingDirectLLMPlan   bool          // 标记需要直接 LLM 规划
-	directLLMHistorySteps  int           // 需要回溯的步数
-	directLLMUsed          bool          // 本次阻塞周期是否已使用过直接 LLM
+	directLLMRemainingSteps int          // AI 直接接管剩余步数（>0 时由 LLM 决策）
+	directLLMHistorySteps   int          // 需要回溯的步数
+	lastAIPageSignature string            // 上次 AI 接管时的页面签名，用于截图复用
+	lastAIStep          int               // 上次 AI 接管时的步数，用于增量历史
+	aiSamePageSteps     int               // AI 接管中同页面连续步数，>=3 时强制发截图修正坐标
+	aiFailedClick       types.Rect        // AI 最近一次失败点击的坐标，用于在截图上标注
 	backUselessPages       map[string]int     // 页面名 → BACK 尝试次数（>=3 后放弃）
 	deadEndPages           map[string]bool    // 已确认的死胡同页面，重入时跳过
 	samePageName           string             // 当前持续停留的页面名
 	samePageSteps          int                // 当前页面连续停留步数
+	pageTransitions     map[string]map[string]*PageTransition // 页面过渡图: fromPage → actionKey → 目的地统计
+	transitionStore     StoreInterface        // SQLite 持久化存储（nil=不持久化）
+	transitionHistory   []string           // 页面过渡历史，用于循环检测
 	pageBlockCycles        map[string]int  // 页面名 → 完整阻塞周期数（Cooldown→再次阻塞）
 	pageNumCache           map[string]int  // 页面名(hash) → 时序编号（P1、P2...）
 	pageNumSeq             int             // 下一个可用编号
+}
+
+// PageTransition 记录一次页面间过渡：在 fromPage 执行 action 后到达 toPage。
+type PageTransition struct {
+	Action   string `json:"action"`
+	FromPage string `json:"from_page"`
+	ToPage   string `json:"to_page"`
+	Count    int    `json:"count"`
+	LastSeen int64  `json:"last_seen"` // Unix 时间戳，用于过期清理
+}
+
+// PageTransitionGraph 可持久化的页面过渡图快照。
+type PageTransitionGraph struct {
+	Transitions []*PageTransition `json:"transitions"`
 }
 
 type recoveryAttempt struct {
@@ -409,7 +445,7 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 		maxRecoveryAttempts = defaultMaxRecoveryAttempts
 	}
 	recoveryState.SetMaxRecoveryAttempts(maxRecoveryAttempts)
-	return &Runner{
+	runner := &Runner{
 		decider:                decider,
 		driver:                 driver,
 		cfg:                    cfg,
@@ -428,7 +464,9 @@ func NewRunner(decider Decider, driver common.IDriver, cfg Config) (*Runner, err
 		backUselessPages:       make(map[string]int),
 		pageBlockCycles:        make(map[string]int),
 		pageNumCache:           make(map[string]int),
-	}, nil
+		pageTransitions:      make(map[string]map[string]*PageTransition),
+	}
+	return runner, nil
 }
 
 // Run 启动闭环执行，返回运行报告。
@@ -442,6 +480,8 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	}
 	r.pageVisitCount = report.PageVisitCount
 	r.actionCount = report.ActionCount
+	// 加载持久化的页面过渡图
+	r.loadPageTransitions()
 	r.cooldownEnterCount = 0
 	r.cooldownStepCount = 0
 	r.enhancementCallCount = 0
@@ -754,7 +794,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		t3 := time.Now()
 		if err = r.execute(cmd, pageName); err != nil {
 			record.Err = err.Error()
-			afterPage := r.capturePageSnapshot(ctx, pageSource, pageName)
+			afterPage := r.capturePageSnapshot(ctx, pageSource, pageName, nil)
 			if afterPage != nil {
 				afterPage.Screenshot = beforePage.Screenshot
 			}
@@ -795,21 +835,58 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		}
 
 		t4 := time.Now()
-		afterPage := r.capturePageSnapshot(ctx, pageSource, pageName)
+		// 动作后重新截图，用于截图模式下的页面名解析
+		var afterScreenshot []byte
+		if r.cfg.CaptureScreenshot {
+			afterScreenshot, _ = r.driver.Screenshot(ctx)
+		}
+		afterPage := r.capturePageSnapshot(ctx, pageSource, pageName, afterScreenshot)
 		logger.Debugf("step=%d timing: afterPage=%v", step, time.Since(t4))
 		if afterPage != nil {
-			afterPage.Screenshot = beforePage.Screenshot
+			if len(afterScreenshot) > 0 {
+				afterPage.Screenshot = afterScreenshot
+			} else {
+				afterPage.Screenshot = beforePage.Screenshot
+			}
 		}
 		escaped := afterPage != nil &&
 			beforePage.Signature != afterPage.Signature
 		if cmd.Act == types.INPUT {
 			escaped = true // 输入必然改变页面内容，视为已逃离
 		}
+		// 记录 AI 失败点击坐标，用于标注截图
+		if !escaped && r.directLLMRemainingSteps > 0 && cmd != nil && cmd.Act == types.CLICK && !cmd.Pos.IsEmpty() && cmd.Pos.Left >= 0 && cmd.Pos.Top >= 0 {
+			r.aiFailedClick = cmd.Pos
+		}
 		r.notifyTraversalOutcome(step, beforePage, afterPage, cmd, true)
 		// 记录 step 上下文到环形缓冲区
 		afterPageName := ""
 		if afterPage != nil {
 			afterPageName = afterPage.PageName
+		}
+		// 记录页面过渡关系（截图模式下 afterPage 可能为 nil，用 beforePage 兜底）
+		transitionTo := afterPageName
+		if transitionTo == "" {
+			transitionTo = pageName // 页面未获取到，视为停留在当前页
+		}
+		r.recordPageTransition(pageName, transitionTo, cmd)
+		// 每 10 步持久化一次页面过渡图
+		if step%10 == 0 {
+			r.savePageTransitions()
+		}
+		// 更新过渡历史并检测页面循环
+		pageSig := transitionTo
+		if pageSig != "" {
+			r.transitionHistory = append(r.transitionHistory, pageSig)
+			if len(r.transitionHistory) > maxTransitionHistoryEntries {
+				r.transitionHistory = r.transitionHistory[len(r.transitionHistory)-maxTransitionHistoryEntries:]
+			}
+			if r.directLLMRemainingSteps <= 0 && r.detectPageLoop() {
+				severityN := r.computeSeverity()
+				r.directLLMRemainingSteps = 2 * severityN
+				r.directLLMHistorySteps = maxTransitionHistoryEntries
+				logger.Warnf("page loop detected at step %d, AI will take over for %d steps", step, r.directLLMRemainingSteps)
+			}
 		}
 		r.appendStepContext(stepContext{
 			step:      step,
@@ -821,11 +898,12 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		if r.shouldEnableBlockRecovery() && r.blockDetector.Observe(pageName, buildActionKey(cmd), cmd.Act, escaped) {
 			blockReason := r.blockDetector.LastReason()
 			r.blockDetector.RecordBlockStep(pageName, step)
-			// 检查是否触发直接 LLM 规划
-			if !r.directLLMUsed && r.blockDetector.CheckRepeatBlock(pageName, step, 2) {
-				r.pendingDirectLLMPlan = true
+			// 检查是否触发 AI 直接接管
+			if r.directLLMRemainingSteps <= 0 && r.blockDetector.CheckRepeatBlock(pageName, step, 2) {
+				severityN := r.computeSeverity()
+				r.directLLMRemainingSteps = 2 * severityN
 				r.directLLMHistorySteps = 2 * r.blockDetector.threshold
-				logger.Infof("repeat block detected on page %s at step %d, will use direct LLM planning", pageName, step)
+				logger.Warnf("repeat block detected on page %s at step %d, severity=%d AI will take over for %d steps", pageName, step, severityN, r.directLLMRemainingSteps)
 			}
 			r.handleBlockDetectedWithPage(blockReason, &beforePage)
 			report.BlockDetectionCount++
@@ -843,7 +921,9 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			r.handleProgress(escaped)
 		}
 		if escaped {
-			r.directLLMUsed = false
+			r.directLLMRemainingSteps = 0
+			r.aiSamePageSteps = 0
+			r.aiFailedClick = types.Rect{}
 			// 页面变化，重置消费标记和 LLM 响应缓存
 			r.resetConsumedMarks()
 			r.invalidatePlanCache(cachedSignature(beforePage))
@@ -872,7 +952,9 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			r.samePageName = ""
 			r.blockDetector.Reset()
 			r.pendingBlockRecovery = false
-			r.directLLMUsed = false
+			r.directLLMRemainingSteps = 0
+			r.aiSamePageSteps = 0
+			r.aiFailedClick = types.Rect{}
 			continue
 		}
 		wasRecovery := r.lastRecoveryAttempt != nil
@@ -890,11 +972,13 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		r.sleepStep(ctx, r.resolveStepDelay(cmd))
 	}
 
+	// 持久化页面过渡图
+	r.savePageTransitions()
 	report.StopReason = StopCompleted
 	return report, nil
 }
 
-func (r *Runner) capturePageSnapshot(ctx context.Context, pageSource common.IPageSource, fallbackPageName string) *coordinator.PageSnapshot {
+func (r *Runner) capturePageSnapshot(ctx context.Context, pageSource common.IPageSource, fallbackPageName string, screenshot []byte) *coordinator.PageSnapshot {
 	if pageSource == nil && !r.isScreenshotPageSource() {
 		return nil
 	}
@@ -913,7 +997,7 @@ func (r *Runner) capturePageSnapshot(ctx context.Context, pageSource common.IPag
 	if strings.TrimSpace(pageName) == "" {
 		pageName = fallbackPageName
 	}
-	nextPageName, nextXML, _, _, _, nextElement := r.resolvePageInfo(ctx, xml, nil)
+	nextPageName, nextXML, _, _, _, nextElement := r.resolvePageInfo(ctx, xml, screenshot)
 	if strings.TrimSpace(nextPageName) == "" {
 		nextPageName = pageName
 	}
@@ -1176,6 +1260,15 @@ func (r *Runner) appendStepContext(sc stepContext) {
 
 // collectStepContextHistory 从缓冲区取最近 n 步的上下文。
 func (r *Runner) collectStepContextHistory(n int) []stepContext {
+	// 增量：只返回 lastAIStep 之后的历史
+	if r.lastAIStep > 0 && len(r.stepContextBuffer) > 0 {
+		for i, sc := range r.stepContextBuffer {
+			if sc.step > r.lastAIStep {
+				r.stepContextBuffer = r.stepContextBuffer[i:]
+				break
+			}
+		}
+	}
 	if n <= 0 || len(r.stepContextBuffer) == 0 {
 		return nil
 	}
@@ -1190,6 +1283,24 @@ func (r *Runner) collectStepContextHistory(n int) []stepContext {
 
 // buildExecutionHistory 将 stepContext 列表转为 LLM 可用的 ExecutionRecord 列表。
 func (r *Runner) buildExecutionHistory(history []stepContext) []enginestate.ExecutionRecord {
+	// 增量：只返回 lastAIStep 之后的执行记录
+	if r.lastAIStep > 0 && len(history) > 0 {
+		var filtered []enginestate.ExecutionRecord
+		for _, h := range history {
+			if h.step > r.lastAIStep {
+				filtered = append(filtered, enginestate.ExecutionRecord{
+					Step:        h.step,
+					Action:      h.action,
+					PageName:    h.pageName,
+					AfterPage:   h.afterPage,
+					Escaped:     h.escaped,
+					Blocked:     h.blocked,
+					BlockReason: h.blockReason,
+				})
+			}
+		}
+		return filtered
+	}
 	if len(history) == 0 {
 		return nil
 	}
@@ -1205,7 +1316,79 @@ func (r *Runner) buildExecutionHistory(history []stepContext) []enginestate.Exec
 			BlockReason: sc.blockReason,
 		})
 	}
+	// 执行历史压缩：超出详细展示上限时，将早期记录压缩为摘要
+	if len(records) > maxVerboseHistorySteps {
+		compressEnd := len(records) - maxVerboseHistorySteps
+		var pages, actions []string
+		seen := make(map[string]bool)
+		for _, r := range records[:compressEnd] {
+			p := r.PageName
+			if p != "" && !seen[p] {
+				pages = append(pages, p)
+				seen[p] = true
+			}
+			a := extractActionType(r.Action)
+			if a != "" && !seen["act:"+a] {
+				actions = append(actions, a)
+				seen["act:"+a] = true
+			}
+		}
+		summary := fmt.Sprintf("[摘要] 前 %d 步在 %s 页面反复尝试 %s，均未逃离",
+			compressEnd, joinLimit(pages, 3), joinLimit(actions, 4))
+		compressed := enginestate.ExecutionRecord{
+			Step:        records[0].Step,
+			Action:      summary,
+			PageName:    records[0].PageName,
+			Escaped:     false,
+			Blocked:     true,
+			BlockReason: "history_compressed",
+		}
+		records = append([]enginestate.ExecutionRecord{compressed}, records[compressEnd:]...)
+	}
 	return records
+}
+
+// extractActionType 从动作记录中提取纯动作类型（去掉坐标）。
+func extractActionType(action string) string {
+	idx := strings.Index(action, "@")
+	if idx > 0 {
+		return action[:idx]
+	}
+	return action
+}
+
+// friendlyActionKey 生成 AI 友好的动作描述（不含坐标），用于过渡图展示。
+func friendlyActionKey(cmd *types.ActionCommand) string {
+	if cmd == nil {
+		return ""
+	}
+	act := cmd.Act.String()
+	// 提取有意义的控件信息：优先用 Text，其次 WidgetInfo 中的文本
+	label := strings.TrimSpace(cmd.Text)
+	if label == "" && cmd.WidgetInfo != "" {
+		// 从 WidgetInfo 提取 text 字段，如 "text:"Start"" 或 "contentDesc:"Back""
+		for _, prefix := range []string{`text:"`, `contentDesc:"`} {
+			if idx := strings.Index(cmd.WidgetInfo, prefix); idx >= 0 {
+				start := idx + len(prefix)
+				if end := strings.Index(cmd.WidgetInfo[start:], `"`); end > 0 && end < 30 {
+					label = cmd.WidgetInfo[start : start+end]
+					break
+				}
+			}
+		}
+	}
+	if label != "" {
+		return fmt.Sprintf("%s[%s]", act, label)
+	}
+	return act
+}
+
+// joinLimit 拼接字符串列表，超出限制时加省略标记。
+func joinLimit(items []string, limit int) string {
+	if len(items) <= limit {
+		return strings.Join(items, "、")
+	}
+	return strings.Join(items[:limit], "、") + "等"
 }
 
 // buildTraversalContextWithHistory 构建带有执行历史的 TraversalContext。
@@ -1216,23 +1399,26 @@ func (r *Runner) buildTraversalContextWithHistory(step int, page coordinator.Pag
 		mode = r.recoveryState.Mode()
 		blockReason = r.recoveryState.BlockReason()
 	}
+	// 恢复阶段有 XML 时优先用文本调用 LLM，避免传输大截图
 	signature := cachedSignature(page)
 	// 恢复阶段有 XML 时优先用文本调用 LLM，避免传输大截图
 	textOnly := mode == TraversalModeRecover && strings.TrimSpace(page.XML) != ""
+	transitionCtx := r.formatTransitionContext(page.PageName)
 	return enginestate.BuildTraversalContext(enginestate.BuildInput{
-		Step:             step,
-		Mode:             mode,
-		PageName:         page.PageName,
-		PageSignature:    signature,
-		ClusterSignature: signature,
-		XML:              page.XML,
-		Screenshot:       page.Screenshot,
-		BlockReason:      blockReason,
-		RecentTrace:      r.cloneRecentTrace(),
-		PageVisitCount:   r.pageVisitCount,
-		ActionCount:      r.actionCount,
-		ExecutionHistory: history,
-		TextOnly:         textOnly,
+		Step:              step,
+		Mode:              mode,
+		PageName:          page.PageName,
+		PageSignature:     signature,
+		ClusterSignature:  signature,
+		XML:               page.XML,
+		Screenshot:        page.Screenshot,
+		BlockReason:       blockReason,
+		RecentTrace:       r.cloneRecentTrace(),
+		PageVisitCount:    r.pageVisitCount,
+		ActionCount:       r.actionCount,
+		ExecutionHistory:  history,
+		TextOnly:          textOnly,
+		TransitionContext: transitionCtx,
 	})
 }
 
@@ -1244,4 +1430,244 @@ func (r *Runner) updateLastStepContextBlock(blockReason string) {
 	last := &r.stepContextBuffer[len(r.stepContextBuffer)-1]
 	last.blocked = true
 	last.blockReason = blockReason
+}
+
+// computeSeverity 根据阻塞状况计算严重等级 N，值域 [1, severityMax]。
+// N 值越高说明阻塞越严重，AI 接管步数 = 2*N。
+func (r *Runner) computeSeverity() int {
+	n := 1 // 基线等级
+
+	// 连续同页面步数
+	if r.samePageSteps >= 30 {
+		n += 2
+	} else if r.samePageSteps >= 15 {
+		n += 1
+	}
+
+	// 恢复预算耗尽
+	if r.recoveryState != nil && r.recoveryState.IsRecoveryBudgetExhausted() {
+		n++
+	}
+
+	// 完整阻塞周期数
+	if r.samePageName != "" {
+		n += r.pageBlockCycles[r.samePageName]
+	}
+
+	if n > severityMax {
+		n = severityMax
+	}
+	return n
+}
+
+// recordPageTransition 记录 (fromPage, action → toPage) 的过渡关系。
+func (r *Runner) recordPageTransition(beforePage, afterPage string, cmd *types.ActionCommand) {
+	if r.pageTransitions == nil || beforePage == "" || afterPage == "" || cmd == nil {
+		return
+	}
+	actionKey := friendlyActionKey(cmd)
+	if actionKey == "" {
+		return
+	}
+	transitions, ok := r.pageTransitions[beforePage]
+	if !ok {
+		transitions = make(map[string]*PageTransition)
+		r.pageTransitions[beforePage] = transitions
+	}
+	entry, exists := transitions[actionKey]
+	if !exists {
+		entry = &PageTransition{
+			Action:   actionKey,
+			FromPage: beforePage,
+			ToPage:   afterPage,
+		}
+		transitions[actionKey] = entry
+	}
+	entry.Count++
+	entry.LastSeen = time.Now().Unix()
+	if entry.ToPage != afterPage {
+		// 同一个动作有时会到达不同页面，记录最新目标
+		logger.Debugf("page transition %s -> %s: %s previously led to %s, now leads to %s",
+			beforePage, afterPage, actionKey, entry.ToPage, afterPage)
+		entry.ToPage = afterPage
+	}
+}
+
+// formatTransitionContext 格式化当前页面的过渡关系，供 AI 规划参考。
+func (r *Runner) formatTransitionContext(pageName string) string {
+	if r.pageTransitions == nil || pageName == "" {
+		return ""
+	}
+	transitions, ok := r.pageTransitions[pageName]
+	if !ok || len(transitions) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("\n页面过渡历史 (当前页面已知操作去向):\n")
+	for actionKey, t := range transitions {
+		if t == nil {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("  [%s] -> %s (count=%d)\n", actionKey, t.ToPage, t.Count))
+	}
+	return sb.String()
+}
+
+
+
+// detectPageLoop 检测过渡历史中是否存在重复的页面循环模式。
+// 例如 A→B→A→B（长度 2 的循环）或 A→B→C→A→B→C（长度 3 的循环）。
+func (r *Runner) detectPageLoop() bool {
+	n := len(r.transitionHistory)
+	if n < 4 {
+		return false
+	}
+	// 检测长度 L 的循环模式，L 从 2 到 n/2
+	for L := 2; L <= n/2; L++ {
+		if n < L*2 {
+			break
+		}
+		cycles := n / L
+		if cycles < 2 {
+			continue
+		}
+		match := true
+		for i := L; i < n; i++ {
+			if r.transitionHistory[i] != r.transitionHistory[i-L] {
+				match = false
+				break
+			}
+		}
+		if match {
+			logger.Infof("page loop detected: pattern length=%d cycles=%d pattern=%v..%v",
+				L, cycles, r.transitionHistory[:L], r.transitionHistory[n-L:])
+			return true
+		}
+	}
+	return false
+}
+func (r *Runner) loadPageTransitions() {
+	if r.transitionStore == nil {
+		return
+	}
+	expiredBefore := time.Now().Unix() - defaultTransitionTTLSeconds
+	rows, err := r.transitionStore.LoadTransitions(expiredBefore)
+	if err != nil {
+		logger.Warnf("load page transitions from sqlite failed: %v", err)
+		return
+	}
+	if r.pageTransitions == nil {
+		r.pageTransitions = make(map[string]map[string]*PageTransition)
+	}
+	for _, row := range rows {
+		transitions, ok := r.pageTransitions[row.FromPage]
+		if !ok {
+			transitions = make(map[string]*PageTransition)
+			r.pageTransitions[row.FromPage] = transitions
+		}
+		transitions[row.ActionKey] = &PageTransition{
+			Action:   row.ActionKey,
+			FromPage: row.FromPage,
+			ToPage:   row.ToPage,
+			Count:    row.Count,
+			LastSeen: row.LastSeen,
+		}
+	}
+	logger.Infof("loaded page transitions from sqlite: %d entries", len(rows))
+}
+
+// savePageTransitions writes the page transition graph to SQLite.
+func (r *Runner) savePageTransitions() {
+	if r.transitionStore == nil || r.pageTransitions == nil {
+		return
+	}
+	now := time.Now().Unix()
+	expiredBefore := now - defaultTransitionTTLSeconds
+	var saved int
+	for _, transitions := range r.pageTransitions {
+		for _, t := range transitions {
+			if t == nil {
+				continue
+			}
+			if t.LastSeen > 0 && t.LastSeen < expiredBefore {
+				continue
+			}
+			if err := r.transitionStore.SaveTransition(t.FromPage, t.Action, t.ToPage, t.LastSeen); err != nil {
+				logger.Warnf("save transition failed: %s -> %s: %v", t.FromPage, t.Action, err)
+				continue
+			}
+			saved++
+		}
+	}
+	logger.Debugf("saved page transitions to sqlite: %d entries", saved)
+}
+
+// SetTransitionStore sets the SQLite store for transition persistence.
+func (r *Runner) SetTransitionStore(s StoreInterface) {
+	r.transitionStore = s
+}
+// annotateFailedClick 在截图上用红色十字标注上次失败的点击位置。
+func annotateFailedClick(screenshot []byte, failedRect types.Rect) []byte {
+	if len(screenshot) == 0 || failedRect.IsEmpty() {
+		return nil
+	}
+	img, _, err := image.Decode(bytes.NewReader(screenshot))
+	if err != nil {
+		return nil
+	}
+	bounds := img.Bounds()
+	w := float64(bounds.Dx())
+	h := float64(bounds.Dy())
+
+	// 归一化坐标转像素
+	var cx, cy int
+	if failedRect.Left >= 0 && failedRect.Left <= 1 && failedRect.Top >= 0 && failedRect.Top <= 1 {
+		cx = int((failedRect.Left+failedRect.Right)/2*w + 0.5)
+		cy = int((failedRect.Top+failedRect.Bottom)/2*h + 0.5)
+	} else {
+		cx = int((failedRect.Left+failedRect.Right)/2 + 0.5)
+		cy = int((failedRect.Top+failedRect.Bottom)/2 + 0.5)
+	}
+
+	canvas := image.NewRGBA(bounds)
+	draw.Draw(canvas, bounds, img, image.Point{}, draw.Src)
+
+	// 绘制红色十字标记（10px 线长）
+	red := color.RGBA{255, 0, 0, 255}
+	size := 10
+	// 水平线
+	for x := cx - size; x <= cx+size; x++ {
+		if x >= 0 && x < bounds.Dx() && cy >= 0 && cy < bounds.Dy() {
+			canvas.Set(x, cy, red)
+		}
+	}
+	// 垂直线
+	for y := cy - size; y <= cy+size; y++ {
+		if cx >= 0 && cx < bounds.Dx() && y >= 0 && y < bounds.Dy() {
+			canvas.Set(cx, y, red)
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, canvas); err != nil {
+		return nil
+	}
+	return buf.Bytes()
+}
+
+// needsOriginal 检查 AI 候选列表中是否有条目请求查看原图。
+func needsOriginal(items []perception.Candidate) bool {
+	marker := "need_original"
+	for _, item := range items {
+		intent := strings.ToLower(strings.TrimSpace(item.Intent))
+		if strings.Contains(intent, marker) {
+			return true
+		}
+		for _, v := range item.Metadata {
+			if strings.Contains(strings.ToLower(v), marker) {
+				return true
+			}
+		}
+	}
+	return false
 }

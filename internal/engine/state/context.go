@@ -78,6 +78,8 @@ type TraversalContext struct {
 	KnownFailedActions  []string
 	KnownSuccessActions []string
 	ExecutionHistory    []ExecutionRecord
+		
+	TransitionContext   string
 	// VLM 截图编号标注配置（由 coordinator 设置）
 	AnnotationEnabled   bool
 	AnnotationFontScale int
@@ -102,6 +104,8 @@ type BuildInput struct {
 	KnownFailedActions  []string
 	KnownSuccessActions []string
 	ExecutionHistory    []ExecutionRecord
+		
+	TransitionContext   string
 	TextOnly            bool
 }
 
@@ -125,6 +129,7 @@ func BuildTraversalContext(input BuildInput) TraversalContext {
 		KnownFailedActions:  cloneStringSlice(input.KnownFailedActions),
 		KnownSuccessActions: cloneStringSlice(input.KnownSuccessActions),
 		ExecutionHistory:    cloneExecutionHistory(input.ExecutionHistory),
+		TransitionContext:   input.TransitionContext,
 		TextOnly:            input.TextOnly,
 	}
 }

@@ -13,15 +13,15 @@ import (
 func (r *Runner) nextCommandWithRecovery(step int, beforePage coordinator.PageSnapshot, pageName string, input coordinator.ActionInput) (*types.ActionCommand, error) {
 	r.lastEnhancementAttempt = nil
 
-	// 直接 LLM 规划（重复阻塞检测触发）
-	if r.pendingDirectLLMPlan {
-		r.pendingDirectLLMPlan = false
-		r.directLLMUsed = true
+	// AI 直接接管：严重阻塞时 LLM 连续决策 N 步
+	if r.directLLMRemainingSteps > 0 {
+		r.directLLMRemainingSteps--
 		cmd, err := r.nextDirectLLMPlanningCommand(step, beforePage, pageName, input)
 		if err != nil {
-			logger.Warnf("direct LLM planning failed, fallback to normal recovery: %v", err)
+			r.directLLMRemainingSteps = 0
+			logger.Warnf("AI direct planning failed, fallback to normal recovery: %v", err)
 		} else if cmd != nil {
-			logger.Infof("direct LLM planning command selected: %s", cmd.DetailLogString())
+			logger.Infof("AI direct planning command selected (remaining=%d): %s", r.directLLMRemainingSteps, cmd.DetailLogString())
 			return cmd, nil
 		}
 		// fallback 到正常恢复流程
@@ -339,12 +339,35 @@ func (r *Runner) nextDirectLLMPlanningCommand(step int, beforePage coordinator.P
 	history := r.collectStepContextHistory(r.directLLMHistorySteps)
 	execHistory := r.buildExecutionHistory(history)
 	ctx := r.buildTraversalContextWithHistory(step, beforePage, execHistory)
+	var backupScreenshot []byte
+
+	// 页面未变化时复用上次截图，连续 3+ 次同页面失败则强制发截图修正坐标
+	if beforePage.Signature != "" && beforePage.Signature == r.lastAIPageSignature {
+		r.aiSamePageSteps++
+		if r.aiSamePageSteps >= 3 {
+			ctx.TextOnly = false
+			// 标注上次失败点击位置，同时保留原图
+			if !r.aiFailedClick.IsEmpty() && len(beforePage.Screenshot) > 0 {
+				backupScreenshot = make([]byte, len(beforePage.Screenshot))
+				copy(backupScreenshot, beforePage.Screenshot)
+				if marked := annotateFailedClick(beforePage.Screenshot, r.aiFailedClick); len(marked) > 0 {
+					beforePage.Screenshot = marked
+				}
+			}
+		} else {
+			ctx.TextOnly = true
+		}
+	} else {
+		r.lastAIPageSignature = beforePage.Signature
+		r.aiSamePageSteps = 0
+	}
 
 	// 恢复多次失败后强制尝试 BACK
 	if r.recoveryState != nil && r.recoveryState.RecoveryAttempts() >= 3 {
 		fallback := &types.ActionCommand{Act: types.BACK}
 		r.lastRecoveryAttempt = &recoveryAttempt{ctx: ctx, item: candidateFromCommand(fallback, perception.SourceHeuristic)}
 		logger.Infof("direct LLM planning: forcing BACK after %d failed attempts", r.recoveryState.RecoveryAttempts())
+		r.lastAIStep = step
 		return fallback, nil
 	}
 
@@ -375,9 +398,17 @@ func (r *Runner) nextDirectLLMPlanningCommand(step int, beforePage coordinator.P
 	if !hasHighConfidenceCandidate(items) {
 		if llmItems, llmErr := provider.BuildLLMRecoveryCandidates(ctx); llmErr == nil {
 			items = append(items, llmItems...)
+			// AI 可通过 intent/reason 包含 "need_original" 请求原图
+			if len(backupScreenshot) > 0 && needsOriginal(llmItems) {
+				logger.Infof("AI requested original screenshot, making second LLM call for precise positioning")
+				ctx.Screenshot = backupScreenshot
+				if llmItems2, llmErr2 := provider.BuildLLMRecoveryCandidates(ctx); llmErr2 == nil {
+					items = append(items, llmItems2...)
+				}
+			}
 		}
 	}
-
+	r.lastAIStep = step
 	if len(items) == 0 {
 		return nil, nil
 	}

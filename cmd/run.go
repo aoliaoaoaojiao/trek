@@ -289,6 +289,11 @@ func runMonkey(logLevelStr string, opts struct {
 		return fmt.Errorf("创建 runner 失败: %w", err)
 	}
 
+	// 设置页面过渡图持久化存储（复用页面缓存 SQLite）
+	if store := coord.GetPageControlStore(); store != nil {
+		runner.SetTransitionStore(store)
+	}
+
 	// defer 保证无论正常结束还是 Ctrl+C 中断，都会写出报告和产物
 	metadata := reporting.RunMetadata{
 		PackageName:         packageName,

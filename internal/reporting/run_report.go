@@ -547,7 +547,7 @@ func imageStyleByAspect(imgPath string) string {
 	}
 	if cfg.Width < cfg.Height {
 		// 竖屏：宽100%，高最多200px
-		return "max-height:200px; width:100%; object-fit:contain; border:1px solid #444; border-radius:3px; vertical-align:middle;"
+		return "max-height:300px; width:100%; object-fit:contain; border:1px solid #444; border-radius:3px; vertical-align:middle;"
 	}
 	// 横屏：高100%，宽最多200px
 	return "max-width:200px; height:100%; object-fit:contain; border:1px solid #444; border-radius:3px; vertical-align:middle;"

@@ -118,7 +118,7 @@ func (s *Store) StartCleanup(ctx context.Context, opts CleanupOptions) {
 		opts.MaxTTL = 72 * time.Hour
 	}
 	if opts.CleanupEvery <= 0 {
-		opts.CleanupEvery = 10 * time.Minute
+		opts.CleanupEvery = 7 * 24 * time.Hour
 	}
 	s.baseTTL = opts.BaseTTL
 	s.maxTTL = opts.MaxTTL

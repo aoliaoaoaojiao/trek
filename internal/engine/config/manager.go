@@ -271,7 +271,8 @@ func (m *Manager) GetScreenSize() (int, int) {
 
 func (m *Manager) CheckPointIsInBlackRects(pageName string, pointX int, pointY int) bool {
 	for _, br := range m.blackRects {
-		if br.PageName != pageName {
+		// page_name 为空或未设置时，视为全局屏蔽区域，匹配所有页面
+		if br.PageName != "" && br.PageName != pageName {
 			continue
 		}
 

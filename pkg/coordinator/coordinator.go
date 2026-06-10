@@ -358,7 +358,7 @@ func (s *Coordinator) initPageControlCacheStore() {
 	store.StartCleanup(context.Background(), pagecache.CleanupOptions{
 		BaseTTL:      s.resolvePageControlCacheTTL(),
 		MaxTTL:       maxPageControlCacheTTL,
-		CleanupEvery: 10 * time.Minute,
+		CleanupEvery: 7 * 24 * time.Hour,
 		CleanupFn: func(count int) {
 			logger.Infof("page cache 后台清理完成: 删除 %d 条过期记录", count)
 		},

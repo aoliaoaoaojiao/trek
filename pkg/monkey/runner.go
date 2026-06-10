@@ -721,6 +721,19 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		r.applyEffectiveTouchArea(step, cmd, xml)
 		r.toAbsoluteCoordinates(cmd, screenshot)
 
+		// 执行前二次检查：如果在动作决策期间应用已切到非目标包，拦截该动作
+		if cmd.Act != types.START && cmd.Act != types.RESTART && cmd.Act != types.CLEAN_RESTART && cmd.Act != types.ACTIVATE && r.monitor != nil && r.cfg.PackageName != "" {
+			currentPkg, err, ok := r.monitor.snapshot()
+			if ok && err == nil && currentPkg != "" && currentPkg != r.cfg.PackageName {
+				logger.Warnf("monkey step=%d pre-exec guard: out of target package (current=%s), overriding action %s to ACTIVATE", step, currentPkg, cmd.Act.String())
+				cmd.Act = types.ACTIVATE
+				cmd.Pos = types.Rect{}
+				cmd.Text = ""
+				cmd.WidgetInfo = ""
+				record.Action = cmd.Act.String()
+			}
+		}
+
 		record.Action = cmd.Act.String()
 		record.ActionTargetBounds = cmd.Pos.String()
 		record.ActionWidgetInfo = strings.TrimSpace(cmd.WidgetInfo)

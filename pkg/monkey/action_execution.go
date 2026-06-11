@@ -26,13 +26,10 @@ var widgetXPathRegex = regexp.MustCompile(`(?:^|[,{ ])xpath:([^,}]+)`)
 var widgetPathRegex = regexp.MustCompile(`(?:^|[,{ ])path:([^,}]+)`)
 
 func (r *Runner) execute(cmd *types.ActionCommand, pageName string) error {
-	// 检查动作是否命中黑名单区域（excluded_touch_areas）
+	// 检查动作是否命中黑名单区域（excluded_touch_areas），无论任何模式都不允许触控
 	if r.isInBlackRect(cmd, pageName) {
-		if r.directLLMRemainingSteps > 0 {
-			return fmt.Errorf("action blocked by excluded_touch_areas at %s", cmd.Pos.String())
-		}
-		logger.Debugf("monkey: action %s skipped due to excluded_touch_areas", cmd.Act.String())
-		return nil
+		logger.Warnf("monkey: action %s blocked by excluded_touch_areas at %s", cmd.Act.String(), cmd.Pos.String())
+		return fmt.Errorf("blocked by excluded_touch_areas")
 	}
 
 	switch cmd.Act {

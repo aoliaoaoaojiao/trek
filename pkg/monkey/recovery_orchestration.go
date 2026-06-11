@@ -1,7 +1,10 @@
 package monkey
 
 import (
+	"fmt"
 	"strings"
+
+	"trek/internal/engine/config"
 	"trek/internal/engine/core/types"
 	"trek/internal/engine/perception"
 	"trek/internal/engine/recovery"
@@ -352,6 +355,25 @@ func (r *Runner) nextDirectLLMPlanningCommand(step int, beforePage coordinator.P
 	execHistory := r.buildExecutionHistory(history)
 	ctx := r.buildTraversalContextWithHistory(step, beforePage, execHistory)
 	var backupScreenshot []byte
+
+	// 黑名单区域告知 AI（excluded_touch_areas）
+	if cfg := config.GetInstance(); cfg != nil {
+		staticCfg := cfg.GetStaticConfig()
+		if len(staticCfg.BlackRects) > 0 {
+			var blackAreas []string
+			for _, br := range staticCfg.BlackRects {
+				if br.Normalized {
+					blackAreas = append(blackAreas, fmt.Sprintf("  %s bounds=[%.3f,%.3f,%.3f,%.3f] (归一化)", br.PageName, br.BoundsFloat[0], br.BoundsFloat[1], br.BoundsFloat[2], br.BoundsFloat[3]))
+				} else {
+					blackAreas = append(blackAreas, fmt.Sprintf("  %s bounds=[%d,%d,%d,%d] (像素)", br.PageName, br.Bounds[0], br.Bounds[1], br.Bounds[2], br.Bounds[3]))
+				}
+			}
+			if len(blackAreas) > 0 {
+				excludedInfo := "\n禁止触控区域（excluded_touch_areas，切勿在此范围内点击）:\n" + strings.Join(blackAreas, "\n") + "\n"
+				ctx.TransitionContext += excludedInfo
+			}
+		}
+	}
 
 	// 页面未变化时复用上次截图，连续 3+ 次同页面失败则强制发截图修正坐标
 	if beforePage.Signature != "" && beforePage.Signature == r.lastAIPageSignature {
